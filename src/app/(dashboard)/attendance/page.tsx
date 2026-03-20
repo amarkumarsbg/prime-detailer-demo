@@ -25,7 +25,6 @@ import {
   UserX,
   AlertTriangle,
   Calendar,
-  Info,
 } from "lucide-react";
 import { getShiftStatusDisplay } from "@/lib/attendance-display";
 
@@ -175,25 +174,6 @@ export default function AttendancePage() {
         <Badge variant="success" className="w-fit shrink-0">
           Live
         </Badge>
-      </div>
-
-      <div className="rounded-lg border border-blue-500/25 bg-blue-500/5 px-4 py-3 text-sm">
-        <div className="flex gap-3">
-          <Info className="h-5 w-5 shrink-0 text-blue-600 dark:text-blue-400 mt-0.5" aria-hidden />
-          <div className="space-y-1.5 min-w-0">
-            <p className="font-medium text-foreground">Real-time attendance</p>
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              Check-ins from the QR page are saved on the <strong>server</strong> and this list refreshes
-              about every <strong>2 seconds</strong>. Phone and shop PC both talk to the same dev server
-              when you use your LAN URL (e.g. <code className="rounded bg-muted px-1 py-0.5 text-[11px]">http://192.168.1.16:3000</code>
-              ).
-            </p>
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              Deployed to Vercel, use a real database for durable multi-instance data; the in-memory
-              store resets on cold starts.
-            </p>
-          </div>
-        </div>
       </div>
 
       <Tabs defaultValue="overview" className="space-y-4 sm:space-y-6">
