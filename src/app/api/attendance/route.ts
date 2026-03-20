@@ -7,10 +7,12 @@ import {
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  return NextResponse.json({ records: getServerAttendanceRecords() });
+  const records = await getServerAttendanceRecords();
+  return NextResponse.json({ records });
 }
 
 export async function DELETE() {
-  resetServerAttendanceToSeed();
-  return NextResponse.json({ ok: true, records: getServerAttendanceRecords() });
+  await resetServerAttendanceToSeed();
+  const records = await getServerAttendanceRecords();
+  return NextResponse.json({ ok: true, records });
 }

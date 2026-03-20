@@ -30,7 +30,7 @@ export async function POST(request: Request) {
         ? { name: staffName, role: staffRole }
         : undefined;
 
-    const result = serverPunch(staffId, branchId, new Date(), snapshot);
+    const result = await serverPunch(staffId, branchId, new Date(), snapshot);
     if (!result.ok) {
       return NextResponse.json({ ok: false, error: result.error });
     }
@@ -40,7 +40,7 @@ export async function POST(request: Request) {
       kind: result.kind,
       time: result.time,
       record: result.record,
-      records: getServerAttendanceRecords(),
+      records: await getServerAttendanceRecords(),
     });
   } catch {
     return NextResponse.json(

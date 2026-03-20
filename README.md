@@ -11,6 +11,10 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000) in your browser.
 
+## Attendance (Vercel / QR)
+
+On Vercel, each serverless function can run on a **different instance** with its own memory, so in-memory attendance from a phone punch may not appear on the dashboard. Set **`UPSTASH_REDIS_REST_URL`** and **`UPSTASH_REDIS_REST_TOKEN`** (e.g. Vercel → Storage → Redis / [Upstash](https://upstash.com)) — see `.env.example`. Local dev works without Redis (single-process memory).
+
 ## Tech Stack
 
 - **Framework:** Next.js 15 (App Router)
