@@ -1,0 +1,44 @@
+"use client";
+
+import { Badge } from "@/components/ui/badge";
+import type { JobCardStatus, InvoiceStatus, QuotationStatus } from "@/types";
+
+const JOB_CARD_STATUS_CONFIG: Record<JobCardStatus, { label: string; variant: "default" | "secondary" | "destructive" | "outline" | "success" | "warning" | "info" }> = {
+  RECEIVED: { label: "Received", variant: "info" },
+  INSPECTION: { label: "Inspection", variant: "default" },
+  AWAITING_SERVICE: { label: "Awaiting Service", variant: "warning" },
+  QUALITY_CHECK: { label: "Quality Check", variant: "secondary" },
+  READY: { label: "Ready", variant: "success" },
+  DELIVERED: { label: "Delivered", variant: "success" },
+  CANCELLED: { label: "Cancelled", variant: "destructive" },
+};
+
+const INVOICE_STATUS_CONFIG: Record<InvoiceStatus, { label: string; variant: "default" | "secondary" | "destructive" | "outline" | "success" | "warning" | "info" }> = {
+  DRAFT: { label: "Draft", variant: "secondary" },
+  ISSUED: { label: "Issued", variant: "info" },
+  PARTIALLY_PAID: { label: "Partial", variant: "warning" },
+  PAID: { label: "Paid", variant: "success" },
+};
+
+const QUOTATION_STATUS_CONFIG: Record<QuotationStatus, { label: string; variant: "default" | "secondary" | "destructive" | "outline" | "success" | "warning" | "info" }> = {
+  DRAFT: { label: "Draft", variant: "secondary" },
+  SENT: { label: "Sent", variant: "info" },
+  APPROVED: { label: "Approved", variant: "success" },
+  REJECTED: { label: "Rejected", variant: "destructive" },
+  CONVERTED: { label: "Converted", variant: "default" },
+};
+
+export function JobCardStatusBadge({ status }: { status: JobCardStatus }) {
+  const config = JOB_CARD_STATUS_CONFIG[status];
+  return <Badge variant={config.variant}>{config.label}</Badge>;
+}
+
+export function InvoiceStatusBadge({ status }: { status: InvoiceStatus }) {
+  const config = INVOICE_STATUS_CONFIG[status];
+  return <Badge variant={config.variant}>{config.label}</Badge>;
+}
+
+export function QuotationStatusBadge({ status }: { status: QuotationStatus }) {
+  const config = QUOTATION_STATUS_CONFIG[status];
+  return <Badge variant={config.variant}>{config.label}</Badge>;
+}

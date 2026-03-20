@@ -1,0 +1,266 @@
+"use client";
+
+import { useState, useMemo } from "react";
+import { useRouter } from "next/navigation";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { Plus, UserX } from "lucide-react";
+import { toast } from "sonner";
+import { PageHeader } from "@/components/shared/page-header";
+import { DataTable } from "@/components/shared/data-table";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { vehicles } from "@/lib/mock-data";
+import { useCustomerStore } from "@/store/customer-store";
+import { formatDate, formatCurrency, getInitials } from "@/lib/utils";
+import type { Customer } from "@/types";
+
+const addCustomerSchema = z.object({
+  name: z.string().min(1, "Name is required"),
+  phone: z.string().min(1, "Phone is required"),
+  email: z.string().email("Invalid email address"),
+  address: z.string().min(1, "Address is required"),
+});
+
+type AddCustomerFormData = z.infer<typeof addCustomerSchema>;
+
+function generateId(): string {
+  return `cust-${Date.now().toString(36)}`;
+}
+
+function generateReferralCode(): string {
+  return `REF-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+}
+
+export default function CustomersPage() {
+  const router = useRouter();
+  const { customers, addCustomer: addCustomerToStore } = useCustomerStore();
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
+
+  const tableData = useMemo(() => {
+    return customers.map((c) => {
+      const vehiclesCount = vehicles.filter((v) => v.customerId === c.id).length;
+      return {
+        id: c.id,
+        name: c.name,
+        phone: c.phone,
+        email: c.email,
+        vehiclesCount,
+        totalVisits: c.totalVisits,
+        rewardPoints: c.rewardPoints,
+        walletBalance: c.walletBalance,
+        lastVisitDate: c.lastVisitDate,
+        isInactive: c.isInactive,
+        memberSince: c.createdAt,
+      };
+    }) as Record<string, unknown>[];
+  }, [customers]);
+
+  const columns = [
+    {
+      key: "name",
+      label: "Name",
+      render: (item: Record<string, unknown>) => (
+        <div className="flex items-center gap-3">
+          <Avatar className="h-8 w-8">
+            <AvatarFallback className="text-xs">
+              {getInitials((item.name as string) ?? "")}
+            </AvatarFallback>
+          </Avatar>
+          <div className="flex items-center gap-2">
+            <span className="font-medium">{item.name as string}</span>
+            {Boolean(item.isInactive) && (
+              <Badge variant="secondary" className="gap-1 text-xs">
+                <UserX className="w-3 h-3" />
+                Inactive
+              </Badge>
+            )}
+          </div>
+        </div>
+      ),
+      sortable: true,
+    },
+    { key: "phone", label: "Phone", sortable: true },
+    { key: "email", label: "Email", sortable: true },
+    {
+      key: "vehiclesCount",
+      label: "Vehicles",
+      render: (item: Record<string, unknown>) => (
+        <span className="text-muted-foreground">{item.vehiclesCount as number}</span>
+      ),
+      sortable: true,
+    },
+    {
+      key: "totalVisits",
+      label: "Total Visits",
+      render: (item: Record<string, unknown>) => (
+        <span className="text-muted-foreground">{item.totalVisits as number}</span>
+      ),
+      sortable: true,
+    },
+    {
+      key: "rewardPoints",
+      label: "Reward Points",
+      render: (item: Record<string, unknown>) => (
+        <span className="font-medium">{item.rewardPoints as number}</span>
+      ),
+      sortable: true,
+    },
+    {
+      key: "walletBalance",
+      label: "Wallet",
+      render: (item: Record<string, unknown>) => (
+        <span className="font-medium">{formatCurrency((item.walletBalance as number) ?? 0)}</span>
+      ),
+      sortable: true,
+    },
+    {
+      key: "lastVisitDate",
+      label: "Last Visit",
+      render: (item: Record<string, unknown>) => (
+        <span className="text-muted-foreground">
+          {item.lastVisitDate ? formatDate(item.lastVisitDate as string) : "—"}
+        </span>
+      ),
+      sortable: true,
+    },
+    {
+      key: "memberSince",
+      label: "Member Since",
+      render: (item: Record<string, unknown>) => (
+        <span className="text-muted-foreground">
+          {formatDate(item.memberSince as string)}
+        </span>
+      ),
+      sortable: true,
+    },
+  ];
+
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors },
+  } = useForm<AddCustomerFormData>({
+    resolver: zodResolver(addCustomerSchema),
+    defaultValues: { name: "", phone: "", email: "", address: "" },
+  });
+
+  const onSubmit = (data: AddCustomerFormData) => {
+    const newCustomer: Customer = {
+      id: generateId(),
+      name: data.name,
+      phone: data.phone,
+      email: data.email,
+      address: data.address,
+      referralCode: generateReferralCode(),
+      totalVisits: 0,
+      rewardPoints: 0,
+      walletBalance: 0,
+      createdAt: new Date().toISOString(),
+    };
+    addCustomerToStore(newCustomer);
+    reset();
+    setAddDialogOpen(false);
+    toast.success("Customer added", { description: `${data.name} has been added successfully.` });
+  };
+
+  const handleRowClick = (item: Record<string, unknown>) => {
+    router.push(`/customers/${item.id}`);
+  };
+
+  return (
+    <div className="space-y-4 sm:space-y-6">
+      <PageHeader
+        title="Customers"
+        description="Manage your customers and their vehicles"
+        actions={
+          <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="w-4 h-4 mr-2" />
+                Add Customer
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Add Customer</DialogTitle>
+              </DialogHeader>
+              <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="name">Name</Label>
+                  <Input id="name" {...register("name")} placeholder="Full name" />
+                  {errors.name && (
+                    <p className="text-sm text-destructive">{errors.name.message}</p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="phone">Phone</Label>
+                  <Input id="phone" {...register("phone")} placeholder="+91-9876543210" />
+                  {errors.phone && (
+                    <p className="text-sm text-destructive">{errors.phone.message}</p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="email">Email</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    {...register("email")}
+                    placeholder="email@example.com"
+                  />
+                  {errors.email && (
+                    <p className="text-sm text-destructive">{errors.email.message}</p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="address">Address</Label>
+                  <Textarea
+                    id="address"
+                    {...register("address")}
+                    placeholder="Full address"
+                    rows={3}
+                  />
+                  {errors.address && (
+                    <p className="text-sm text-destructive">{errors.address.message}</p>
+                  )}
+                </div>
+                <DialogFooter>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setAddDialogOpen(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button type="submit">Add Customer</Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+        }
+      />
+
+      <DataTable
+        data={tableData}
+        columns={columns}
+        searchPlaceholder="Search by name, phone, or email..."
+        searchKeys={["name", "phone", "email"]}
+        onRowClick={handleRowClick}
+      />
+    </div>
+  );
+}
