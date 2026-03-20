@@ -3,6 +3,35 @@ import { attendanceRecords as seedRecords } from "@/lib/mock-data/attendance";
 import { staff as seedStaff } from "@/lib/mock-data/staff";
 import { applyPunchToRecords } from "@/lib/attendance-punch-logic";
 import type { AttendanceRecord, User, UserRole } from "@/types";
+import { format } from "date-fns";
+
+function serverClock(now: Date): { date: string; timeStr: string } {
+  return { date: format(now, "yyyy-MM-dd"), timeStr: format(now, "HH:mm") };
+}
+
+function mergeClock(
+  now: Date,
+  clientLocalDate?: string,
+  clientLocalTime?: string
+): { date: string; timeStr: string } {
+  const fallback = serverClock(now);
+  const dateOk =
+    typeof clientLocalDate === "string" &&
+    /^\d{4}-\d{2}-\d{2}$/.test(clientLocalDate.trim());
+  const timeOk =
+    typeof clientLocalTime === "string" &&
+    /^\d{1,2}:\d{2}$/.test(clientLocalTime.trim());
+  return {
+    date: dateOk ? clientLocalDate!.trim() : fallback.date,
+    timeStr: timeOk ? padHhMm(clientLocalTime!.trim()) : fallback.timeStr,
+  };
+}
+
+function padHhMm(t: string): string {
+  const [h, m] = t.split(":");
+  if (h == null || m == null) return t;
+  return `${h.padStart(2, "0")}:${m.padStart(2, "0")}`;
+}
 
 const REDIS_KEY = "attendance:records:v1";
 
@@ -36,16 +65,22 @@ async function readRecords(): Promise<AttendanceRecord[]> {
   if (!r) {
     return [...getMutableRecords()];
   }
-  const raw = await r.get<string>(REDIS_KEY);
+  const raw = await r.get(REDIS_KEY);
   if (raw == null || raw === "") {
     return [...seedRecords];
   }
-  try {
-    const parsed = JSON.parse(raw) as AttendanceRecord[];
-    return Array.isArray(parsed) ? parsed : [...seedRecords];
-  } catch {
-    return [...seedRecords];
+  if (Array.isArray(raw)) {
+    return raw as AttendanceRecord[];
   }
+  if (typeof raw === "string") {
+    try {
+      const parsed = JSON.parse(raw) as AttendanceRecord[];
+      return Array.isArray(parsed) ? parsed : [...seedRecords];
+    } catch {
+      return [...seedRecords];
+    }
+  }
+  return [...seedRecords];
 }
 
 async function writeRecords(records: AttendanceRecord[]): Promise<void> {
@@ -71,7 +106,9 @@ export async function serverPunch(
   branchId: string,
   now = new Date(),
   /** Staff added in-app (not in seed) — client sends name/role after PIN check (demo trust). */
-  snapshot?: { name: string; role: UserRole }
+  snapshot?: { name: string; role: UserRole },
+  /** Phone/browser local calendar day + time so records match the dashboard date filter on Vercel (UTC). */
+  clientClock?: { clientLocalDate?: string; clientLocalTime?: string }
 ) {
   let staffMember: User | undefined = seedStaff.find((s) => s.id === staffId);
   if (!staffMember && snapshot) {
@@ -93,7 +130,8 @@ export async function serverPunch(
   }
 
   const current = await readRecords();
-  const out = applyPunchToRecords(current, staffMember, branchId, now);
+  const clock = mergeClock(now, clientClock?.clientLocalDate, clientClock?.clientLocalTime);
+  const out = applyPunchToRecords(current, staffMember, branchId, clock);
   if (!out.ok) {
     return out;
   }

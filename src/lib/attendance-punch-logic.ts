@@ -14,10 +14,6 @@ function sortRecordsLatestFirst(records: AttendanceRecord[]): AttendanceRecord[]
   return [...records].sort((a, b) => attendanceIdRank(b.id) - attendanceIdRank(a.id));
 }
 
-function formatTime(d: Date): string {
-  return format(d, "HH:mm");
-}
-
 function minutesBetween(start: string, end: string): number {
   const [sh, sm] = start.split(":").map(Number);
   const [eh, em] = end.split(":").map(Number);
@@ -59,12 +55,15 @@ export type PunchApplyResult =
     }
   | { ok: false; error: "WRONG_BRANCH" | "INACTIVE" };
 
+/** Clock for punch — use the client’s local calendar day/time (phone) so Vercel UTC doesn’t shift the date). */
+export type PunchClock = { date: string; timeStr: string };
+
 /** Immutable punch: returns updated records array (shared by API + tests). */
 export function applyPunchToRecords(
   records: AttendanceRecord[],
   staff: User,
   branchId: string,
-  now: Date
+  clock: PunchClock
 ): PunchApplyResult {
   if (!staff.isActive) {
     return { ok: false, error: "INACTIVE" };
@@ -73,8 +72,8 @@ export function applyPunchToRecords(
     return { ok: false, error: "WRONG_BRANCH" };
   }
 
-  const today = format(now, "yyyy-MM-dd");
-  const timeStr = formatTime(now);
+  const today = clock.date;
+  const timeStr = clock.timeStr;
 
   const forDay = records.filter(
     (r) => r.staffId === staff.id && r.branchId === branchId && r.date === today

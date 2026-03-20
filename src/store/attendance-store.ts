@@ -1,6 +1,7 @@
 "use client";
 
 import { create } from "zustand";
+import { format } from "date-fns";
 import type { AttendanceRecord, User } from "@/types";
 
 export type PunchResult =
@@ -45,6 +46,7 @@ export const useAttendanceStore = create<AttendanceStoreState>((set) => ({
 
   punch: async ({ staff, branchId }) => {
     try {
+      const now = new Date();
       const res = await fetch("/api/attendance/punch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -53,6 +55,8 @@ export const useAttendanceStore = create<AttendanceStoreState>((set) => ({
           branchId,
           staffName: staff.name,
           staffRole: staff.role,
+          clientLocalDate: format(now, "yyyy-MM-dd"),
+          clientLocalTime: format(now, "HH:mm"),
         }),
       });
       const data = (await res.json()) as {

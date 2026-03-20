@@ -16,8 +16,11 @@ export async function POST(request: Request) {
       branchId?: string;
       staffName?: string;
       staffRole?: UserRole;
+      clientLocalDate?: string;
+      clientLocalTime?: string;
     };
-    const { staffId, branchId, staffName, staffRole } = body;
+    const { staffId, branchId, staffName, staffRole, clientLocalDate, clientLocalTime } =
+      body;
     if (!staffId || !branchId) {
       return NextResponse.json(
         { ok: false, error: "MISSING_FIELDS" },
@@ -30,7 +33,10 @@ export async function POST(request: Request) {
         ? { name: staffName, role: staffRole }
         : undefined;
 
-    const result = await serverPunch(staffId, branchId, new Date(), snapshot);
+    const result = await serverPunch(staffId, branchId, new Date(), snapshot, {
+      clientLocalDate,
+      clientLocalTime,
+    });
     if (!result.ok) {
       return NextResponse.json({ ok: false, error: result.error });
     }
