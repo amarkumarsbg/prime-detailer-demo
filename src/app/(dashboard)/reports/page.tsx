@@ -1,14 +1,17 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import Link from "next/link";
+import { dashboardStats, jobCards } from "@/lib/mock-data";
+import { useInventoryStore } from "@/store/inventory-store";
+import { useInvoiceStore } from "@/store/invoice-store";
+import { useStaffStore } from "@/store/staff-store";
+import { useExpenseStore } from "@/store/expense-store";
 import {
-  dashboardStats,
-  expenses,
-  parts,
-  jobCards,
-  staff,
-  invoices,
-} from "@/lib/mock-data";
+  getStockStatus,
+  isMlTrackedPart,
+  mlToLitres,
+} from "@/lib/inventory-units";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -61,6 +64,10 @@ const CHART_COLORS = [
 export default function ReportsPage() {
   const [dateRange, setDateRange] = useState("30d");
   const [revenueGranularity, setRevenueGranularity] = useState<"day" | "week" | "month">("month");
+  const parts = useInventoryStore((s) => s.parts);
+  const invoices = useInvoiceStore((s) => s.invoices);
+  const staff = useStaffStore((s) => s.staff);
+  const expenses = useExpenseStore((s) => s.expenses);
 
   // Revenue Report - Line chart by day/week/month
   const revenueData = useMemo(() => {
@@ -87,7 +94,7 @@ export default function ReportsPage() {
         const idxB = Object.keys(periodMap).indexOf(b.period);
         return idxA - idxB;
       });
-  }, [revenueGranularity]);
+  }, [revenueGranularity, invoices]);
 
   const totalCollected = invoices.reduce(
     (sum, inv) => sum + inv.payments.reduce((s, p) => s + p.amount, 0),
@@ -105,9 +112,12 @@ export default function ReportsPage() {
       categoryMap[exp.category] = (categoryMap[exp.category] || 0) + exp.amount;
     });
     return Object.entries(categoryMap).map(([name, value]) => ({ name, value }));
-  }, []);
+  }, [expenses]);
 
-  const totalExpenses = expenses.reduce((sum, exp) => sum + exp.amount, 0);
+  const totalExpenses = useMemo(
+    () => expenses.reduce((sum, exp) => sum + exp.amount, 0),
+    [expenses]
+  );
 
   // Profit Report
   const profitData = useMemo(
@@ -135,7 +145,7 @@ export default function ReportsPage() {
       dayMap[date].expenses += exp.amount;
     });
     return Object.entries(dayMap).map(([day, data]) => ({ day, ...data, profit: data.revenue - data.expenses }));
-  }, []);
+  }, [invoices, expenses]);
 
   // TNM Report
   const mechanicPerformance = useMemo(() => {
@@ -161,19 +171,31 @@ export default function ReportsPage() {
         incentiveEarned: totalIncentive,
       };
     });
-  }, []);
+  }, [staff, jobCards]);
 
-  // Inventory Report
+  // Inventory Report (fluid stock chart uses litre-equivalent)
   const stockLevelsData = useMemo(
-    () => parts.map((p) => ({ name: p.name.length > 20 ? p.name.slice(0, 20) + "…" : p.name, quantity: p.quantity, reorderLevel: p.reorderLevel, status: p.quantity <= p.reorderLevel ? "low" : "ok" })),
-    []
+    () =>
+      parts.map((p) => ({
+        name: p.name.length > 20 ? p.name.slice(0, 20) + "…" : p.name,
+        quantity: isMlTrackedPart(p) ? mlToLitres(p.stockQuantityMl ?? 0) : p.quantity,
+        reorderLevel: isMlTrackedPart(p) ? mlToLitres(p.reorderLevelMl ?? 0) : p.reorderLevel,
+        status: getStockStatus(p).label === "Low Stock" ? "low" : "ok",
+      })),
+    [parts]
   );
-  const lowStockParts = useMemo(() => parts.filter((p) => p.quantity <= p.reorderLevel), []);
+  const lowStockParts = useMemo(
+    () => parts.filter((p) => getStockStatus(p).label === "Low Stock"),
+    [parts]
+  );
   const consumptionByCategory = useMemo(() => {
     const categoryMap: Record<string, number> = {};
-    parts.forEach((p) => { categoryMap[p.category] = (categoryMap[p.category] || 0) + p.quantity; });
+    parts.forEach((p) => {
+      const v = isMlTrackedPart(p) ? mlToLitres(p.stockQuantityMl ?? 0) : p.quantity;
+      categoryMap[p.category] = (categoryMap[p.category] || 0) + v;
+    });
     return Object.entries(categoryMap).map(([name, value]) => ({ name, value }));
-  }, []);
+  }, [parts]);
 
   const exportCSV = (data: Record<string, unknown>[], filename: string) => {
     if (!data.length) return;
@@ -284,6 +306,14 @@ export default function ReportsPage() {
         </TabsContent>
 
         <TabsContent value="expense" className="mt-4 space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm text-muted-foreground">
+              Expenses are added from the Expenses page; totals update here automatically.
+            </p>
+            <Button variant="outline" size="sm" asChild>
+              <Link href="/expenses">Add expense</Link>
+            </Button>
+          </div>
           <Card>
             <CardContent className="p-5 flex items-center gap-4">
               <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-red-100 dark:bg-red-900/30">
@@ -506,7 +536,7 @@ export default function ReportsPage() {
             <Card>
               <CardHeader className="flex-row items-center justify-between">
                 <CardTitle className="text-base">Stock Levels by Part</CardTitle>
-                <Button variant="outline" size="sm" onClick={() => exportCSV(parts.map((p) => ({ name: p.name, sku: p.sku, category: p.category, quantity: p.quantity, reorderLevel: p.reorderLevel, status: p.quantity <= p.reorderLevel ? "Low" : "OK" })), "inventory-stock-levels")}>
+                <Button variant="outline" size="sm" onClick={() => exportCSV(parts.map((p) => ({ name: p.name, sku: p.sku, category: p.category, quantity: isMlTrackedPart(p) ? mlToLitres(p.stockQuantityMl ?? 0) : p.quantity, reorderLevel: isMlTrackedPart(p) ? mlToLitres(p.reorderLevelMl ?? 0) : p.reorderLevel, status: getStockStatus(p).label === "Low Stock" ? "Low" : "OK" })), "inventory-stock-levels")}>
                   <Download className="w-4 h-4 mr-2" />Export
                 </Button>
               </CardHeader>

@@ -7,6 +7,7 @@ export const branches: Branch[] = [
     address: "80 Feet Road, Koramangala 4th Block, Bengaluru 560034",
     phone: "+91-80-41234567",
     isActive: true,
+    qrCodeId: "qr-br-001",
   },
   {
     id: "br-002",
@@ -14,5 +15,6 @@ export const branches: Branch[] = [
     address: "EPIP Zone, Whitefield Main Road, Bengaluru 560066",
     phone: "+91-80-41234568",
     isActive: true,
+    qrCodeId: "qr-br-002",
   },
 ];

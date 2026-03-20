@@ -49,6 +49,8 @@ export interface User {
   branchId: string;
   avatar?: string;
   isActive: boolean;
+  /** Demo-only attendance PIN; production should store hashes and verify via API */
+  attendancePin?: string;
   totalJobsCompleted?: number;
   totalIncentiveEarned?: number;
 }
@@ -215,6 +217,10 @@ export interface InvoiceLineItem {
   quantity: number;
   unitPrice: number;
   total: number;
+  /** SAC/HSN for GST line (e.g. 998714). Defaults in UI when omitted. */
+  hsnSac?: string;
+  /** Line-level discount in ₹ (before tax). */
+  lineDiscount?: number;
 }
 
 export interface Payment {
@@ -249,6 +255,8 @@ export interface Invoice {
   mechanicName?: string;
   notes?: string;
   createdAt: string;
+  /** When set, inventory was already deducted for this invoice (idempotency). */
+  inventoryDeductedAt?: string;
 }
 
 export interface DashboardStats {
@@ -286,16 +294,25 @@ export interface Part {
   name: string;
   sku: string;
   category: PartCategory;
+  /** Count-based stock (pieces, sets, kg, etc.). Not used when stockQuantityMl is set. */
   quantity: number;
   primaryUnit: string;
   secondaryUnit: string;
   conversionFactor: number;
   unitPrice: number;
+  /** Reorder threshold for count-based parts. */
   reorderLevel: number;
   supplier: string;
   vendor?: string;
   purchaseDate?: string;
   lastRestocked: string;
+  /**
+   * Fluid stock in millilitres (canonical). When set, internal calculations use ml;
+   * primary display unit is litres (1 L = 1000 ml).
+   */
+  stockQuantityMl?: number;
+  /** Reorder threshold in ml for fluid parts. */
+  reorderLevelMl?: number;
 }
 
 export interface StockMovement {
@@ -306,8 +323,22 @@ export interface StockMovement {
   unit: string;
   reason: string;
   jobCardId?: string;
+  invoiceId?: string;
+  purchaseId?: string;
+  vendor?: string;
   performedBy: string;
   createdAt: string;
+}
+
+export interface ProductPurchase {
+  id: string;
+  partId: string;
+  vendorName: string;
+  quantityMl: number;
+  unitCost?: number;
+  reference?: string;
+  purchasedAt: string;
+  recordedBy: string;
 }
 
 export type AppointmentStatus =
@@ -335,6 +366,25 @@ export interface Appointment {
   notes?: string;
   whatsappSent: boolean;
   createdAt: string;
+  /** First name for "Hi *Name*" in confirmation WhatsApp */
+  customerFirstName?: string;
+  vehicleColor?: string;
+  /** Alternate WhatsApp; defaults to customerPhone */
+  whatsappPhone?: string;
+  customerAddress?: string;
+  /** e.g. list − discount = net (−additional disc) *One Time Only* */
+  bookingPricingLine?: string;
+  /** GST-exclusive subtotal for PRICE DETAILS */
+  priceSubtotalExGst?: number;
+  priceGstAmount?: number;
+  priceGrandTotal?: number;
+  advancePaid?: number;
+  /** Shown under advance (e.g. 30% advance policy) */
+  advancePolicyNote?: string;
+  /** yyyy-MM-dd */
+  expectedDeliveryDate?: string;
+  /** e.g. Saturday evening delivery note */
+  deliveryExpectationNote?: string;
 }
 
 export type ActivityEntityType =

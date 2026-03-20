@@ -9,7 +9,7 @@ import { DataTable } from "@/components/shared/data-table";
 import { KPICard } from "@/components/shared/kpi-card";
 import { QuotationStatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -117,11 +117,6 @@ export default function QuotationsPage() {
     const grandTotal = subtotal + taxAmount;
     return { subtotal, taxAmount, grandTotal };
   }, [formServiceIds, selectedVehicle?.segment]);
-
-  const filteredQuotations = useMemo(() => {
-    if (activeTab === "ALL") return quotationList;
-    return quotationList.filter((q) => q.status === activeTab);
-  }, [quotationList, activeTab]);
 
   const kpis = useMemo(() => {
     const total = quotationList.length;
@@ -335,22 +330,26 @@ export default function QuotationsPage() {
         }
       />
 
-      {/* Conversion flow pipeline */}
-      <Card className="border-dashed">
-        <CardContent className="py-4">
-          <div className="flex items-center justify-center gap-2 sm:gap-4 flex-wrap">
-            <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary/10 border border-primary/20">
-              <FileText className="h-4 w-4 text-primary" />
-              <span className="text-sm font-medium">Quotation</span>
+      {/* Conversion flow */}
+      <Card className="overflow-hidden border-border/80 shadow-sm">
+        <div className="h-1 bg-linear-to-r from-primary via-primary/70 to-primary/40" aria-hidden />
+        <CardContent className="py-4 sm:py-5">
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground text-center mb-4">
+            Typical workflow
+          </p>
+          <div className="flex items-center justify-center gap-1 sm:gap-3 flex-wrap max-w-2xl mx-auto">
+            <div className="flex items-center gap-2 rounded-xl border border-primary/25 bg-primary/5 px-4 py-2.5 shadow-sm">
+              <FileText className="h-4 w-4 text-primary shrink-0" />
+              <span className="text-sm font-semibold text-foreground">Quotation</span>
             </div>
-            <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
-            <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-muted">
-              <ClipboardList className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm font-medium text-muted-foreground">Job Card</span>
+            <ChevronRight className="h-4 w-4 text-muted-foreground/70 shrink-0 hidden sm:block" />
+            <div className="flex items-center gap-2 rounded-xl border border-border bg-muted/40 px-4 py-2.5">
+              <ClipboardList className="h-4 w-4 text-muted-foreground shrink-0" />
+              <span className="text-sm font-medium text-muted-foreground">Job card</span>
             </div>
-            <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
-            <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-muted">
-              <ArrowRightCircle className="h-4 w-4 text-muted-foreground" />
+            <ChevronRight className="h-4 w-4 text-muted-foreground/70 shrink-0 hidden sm:block" />
+            <div className="flex items-center gap-2 rounded-xl border border-border bg-muted/40 px-4 py-2.5">
+              <ArrowRightCircle className="h-4 w-4 text-muted-foreground shrink-0" />
               <span className="text-sm font-medium text-muted-foreground">Invoice</span>
             </div>
           </div>
@@ -380,40 +379,50 @@ export default function QuotationsPage() {
         />
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="flex-wrap h-auto gap-1">
-          {TAB_VALUES.map((tab) => (
-            <TabsTrigger key={tab} value={tab}>
-              {TAB_LABELS[tab]} ({tabCounts[tab] ?? 0})
-            </TabsTrigger>
-          ))}
-        </TabsList>
+      <Card className="border-border/80 shadow-sm overflow-hidden">
+        <CardHeader className="space-y-1 border-b border-border/80 bg-muted/20 pb-4">
+          <CardTitle className="text-base font-semibold">Quotation list</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Filter by status or search across customers and vehicles.
+          </p>
+        </CardHeader>
+        <CardContent className="pt-6">
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <TabsList className="flex-wrap h-auto gap-1 w-full justify-start bg-muted/50 p-1">
+              {TAB_VALUES.map((tab) => (
+                <TabsTrigger key={tab} value={tab} className="data-[state=active]:shadow-sm">
+                  {TAB_LABELS[tab]} ({tabCounts[tab] ?? 0})
+                </TabsTrigger>
+              ))}
+            </TabsList>
 
-        {TAB_VALUES.map((tab) => (
-          <TabsContent key={tab} value={tab} className="mt-4">
-            <DataTable<Quotation>
-              data={
-                tab === "ALL"
-                  ? quotationList
-                  : quotationList.filter((q) => q.status === tab)
-              }
-              columns={columns}
-              searchPlaceholder="Search by quotation #, customer, or vehicle..."
-              searchKeys={[
-                "quotationNumber",
-                "customerName",
-                "vehicleRegNumber",
-                "vehicleMakeModel",
-              ]}
-              pageSize={10}
-              onRowClick={(item) => {
-                setSelectedQuotation(item);
-                setDetailsDialogOpen(true);
-              }}
-            />
-          </TabsContent>
-        ))}
-      </Tabs>
+            {TAB_VALUES.map((tab) => (
+              <TabsContent key={tab} value={tab} className="mt-6 focus-visible:outline-none">
+                <DataTable<Quotation>
+                  data={
+                    tab === "ALL"
+                      ? quotationList
+                      : quotationList.filter((q) => q.status === tab)
+                  }
+                  columns={columns}
+                  searchPlaceholder="Search by quotation #, customer, or vehicle..."
+                  searchKeys={[
+                    "quotationNumber",
+                    "customerName",
+                    "vehicleRegNumber",
+                    "vehicleMakeModel",
+                  ]}
+                  pageSize={10}
+                  onRowClick={(item) => {
+                    setSelectedQuotation(item);
+                    setDetailsDialogOpen(true);
+                  }}
+                />
+              </TabsContent>
+            ))}
+          </Tabs>
+        </CardContent>
+      </Card>
 
       {/* New Quotation Dialog */}
       <Dialog

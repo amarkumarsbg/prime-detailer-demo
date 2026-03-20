@@ -4,8 +4,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { KPICard } from "@/components/shared/kpi-card";
 import { JobCardStatusBadge } from "@/components/shared/status-badge";
-import { dashboardStats, parts, serviceReminders } from "@/lib/mock-data";
+import { dashboardStats, serviceReminders } from "@/lib/mock-data";
 import { useJobCardStore } from "@/store/job-card-store";
+import { useInventoryStore } from "@/store/inventory-store";
+import { getStockStatus } from "@/lib/inventory-units";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import {
   Car,
@@ -43,6 +45,7 @@ import {
 
 export default function DashboardPage() {
   const { jobCards } = useJobCardStore();
+  const parts = useInventoryStore((s) => s.parts);
   const stats = dashboardStats;
 
   const alerts = useMemo(() => {
@@ -56,7 +59,7 @@ export default function DashboardPage() {
       items.push({ id: "overdue", icon: AlertTriangle, label: "Overdue job cards", count: overdueJobs.length, href: "/job-cards", color: "text-red-700 dark:text-red-400", bgColor: "bg-red-100 dark:bg-red-900/30" });
     }
 
-    const lowStock = parts.filter((p) => p.quantity <= p.reorderLevel);
+    const lowStock = parts.filter((p) => getStockStatus(p).label === "Low Stock");
     if (lowStock.length > 0) {
       items.push({ id: "stock", icon: Package, label: "Low stock items", count: lowStock.length, href: "/inventory", color: "text-amber-700 dark:text-amber-400", bgColor: "bg-amber-100 dark:bg-amber-900/30" });
     }
@@ -75,7 +78,7 @@ export default function DashboardPage() {
     }
 
     return items;
-  }, [stats.pendingPayments, stats.inactiveCustomers]);
+  }, [stats.pendingPayments, stats.inactiveCustomers, jobCards, parts]);
 
   return (
     <div className="space-y-4 sm:space-y-6">

@@ -13,21 +13,23 @@ interface AuthState {
 }
 
 const mockUser: User = {
-  id: "USR-001",
+  id: "usr-001",
   name: "Rajesh Kumar",
   email: "rajesh@primedetailers.in",
   phone: "+91 98765 43210",
   role: "ADMIN",
-  branchId: "BR-001",
+  branchId: "br-001",
   isActive: true,
+  attendancePin: "1001",
 };
 
 const mockBranch: Branch = {
-  id: "BR-001",
-  name: "Prime Detailers - Koramangala",
-  address: "123, 80 Feet Road, Koramangala, Bengaluru - 560034",
-  phone: "+91 80 4567 8901",
+  id: "br-001",
+  name: "Prime Detailers Koramangala",
+  address: "80 Feet Road, Koramangala 4th Block, Bengaluru 560034",
+  phone: "+91-80-41234567",
   isActive: true,
+  qrCodeId: "qr-br-001",
 };
 
 export const useAuthStore = create<AuthState>((set) => ({

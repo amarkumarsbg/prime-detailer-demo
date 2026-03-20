@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { DataTable } from "@/components/shared/data-table";
 import { JobCardStatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useJobCardStore } from "@/store/job-card-store";
 import { formatDate } from "@/lib/utils";
@@ -138,6 +139,7 @@ export default function JobCardsPage() {
     <div className="space-y-4 sm:space-y-6">
       <PageHeader
         title="Job Cards"
+        description="Track workshop jobs from intake to delivery. Switch to board view to see work by stage."
         actions={
           <div className="flex items-center gap-2">
             <div className="flex items-center rounded-lg border border-border overflow-hidden">
@@ -165,49 +167,59 @@ export default function JobCardsPage() {
       />
 
       {viewMode === "list" ? (
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="mb-4">
-            {TAB_STATUSES.map((status) => (
-              <TabsTrigger key={status} value={status}>
-                {TAB_LABELS[status]} ({counts[status] ?? 0})
-              </TabsTrigger>
-            ))}
-          </TabsList>
+        <Card className="border-border/80 shadow-sm overflow-hidden">
+          <CardHeader className="space-y-1 border-b border-border/80 bg-muted/20 pb-4">
+            <CardTitle className="text-base font-semibold">All job cards</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Open a row for full detail, photos, and status updates.
+            </p>
+          </CardHeader>
+          <CardContent className="pt-6">
+            <Tabs value={activeTab} onValueChange={setActiveTab}>
+              <TabsList className="flex-wrap h-auto gap-1 w-full justify-start bg-muted/50 p-1 mb-0">
+                {TAB_STATUSES.map((status) => (
+                  <TabsTrigger key={status} value={status} className="data-[state=active]:shadow-sm">
+                    {TAB_LABELS[status]} ({counts[status] ?? 0})
+                  </TabsTrigger>
+                ))}
+              </TabsList>
 
-          {TAB_STATUSES.map((status) => (
-            <TabsContent key={status} value={status} className="mt-0">
-              <DataTable<JobCard>
-                data={
-                  status === "ALL"
-                    ? jobCards
-                    : jobCards.filter((jc) => jc.status === status)
-                }
-                columns={columns}
-                searchPlaceholder="Search by job number, customer, mobile, or vehicle..."
-                searchKeys={["jobNumber", "customerName", "customerPhone", "vehicleRegNumber"]}
-                pageSize={10}
-                onRowClick={(item) => router.push(`/job-cards/${item.id}`)}
-              />
-            </TabsContent>
-          ))}
-        </Tabs>
+              {TAB_STATUSES.map((status) => (
+                <TabsContent key={status} value={status} className="mt-6 focus-visible:outline-none">
+                  <DataTable<JobCard>
+                    data={
+                      status === "ALL"
+                        ? jobCards
+                        : jobCards.filter((jc) => jc.status === status)
+                    }
+                    columns={columns}
+                    searchPlaceholder="Search by job number, customer, mobile, or vehicle..."
+                    searchKeys={["jobNumber", "customerName", "customerPhone", "vehicleRegNumber"]}
+                    pageSize={10}
+                    onRowClick={(item) => router.push(`/job-cards/${item.id}`)}
+                  />
+                </TabsContent>
+              ))}
+            </Tabs>
+          </CardContent>
+        </Card>
       ) : (
-        <div className="flex gap-3 overflow-x-auto pb-4">
+        <div className="flex gap-3 overflow-x-auto pb-4 -mx-1 px-1">
           {KANBAN_COLUMNS.map((status) => (
             <div key={status} className="shrink-0 w-[260px] sm:w-[280px]">
-              <div className={`rounded-xl border border-border bg-muted/30 border-t-4 ${KANBAN_COLORS[status]}`}>
-                <div className="flex items-center justify-between px-3 py-2.5 border-b border-border">
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <div className={`rounded-xl border border-border/80 bg-card shadow-sm border-t-4 ${KANBAN_COLORS[status]}`}>
+                <div className="flex items-center justify-between px-3 py-2.5 border-b border-border/80 bg-muted/20">
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-foreground">
                     {TAB_LABELS[status]}
                   </h3>
-                  <span className="flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full bg-muted text-muted-foreground text-xs font-bold">
+                  <span className="flex items-center justify-center min-w-6 h-6 px-1.5 rounded-full bg-background border border-border text-xs font-semibold tabular-nums">
                     {kanbanData[status]?.length ?? 0}
                   </span>
                 </div>
                 <div className="p-2 space-y-2 max-h-[calc(100vh-260px)] overflow-y-auto">
                   {(kanbanData[status] ?? []).length === 0 ? (
-                    <div className="flex items-center justify-center py-8 text-xs text-muted-foreground">
-                      No cards
+                    <div className="flex flex-col items-center justify-center gap-1 py-10 text-xs text-muted-foreground">
+                      <span>No jobs in this stage</span>
                     </div>
                   ) : (
                     (kanbanData[status] ?? []).map((jc) => (

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -21,8 +21,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { staff, serviceCatalog } from "@/lib/mock-data";
+import { serviceCatalog, vehicles } from "@/lib/mock-data";
 import { useJobCardStore } from "@/store/job-card-store";
+import { useStaffStore } from "@/store/staff-store";
 import { useHighEndServiceStore } from "@/store/high-end-service-store";
 import { useCustomerStore } from "@/store/customer-store";
 import { useWalletStore } from "@/store/wallet-store";
@@ -45,11 +46,16 @@ export default function NewJobCardPage() {
   const router = useRouter();
   const { addJobCard, getNextJobNumber } = useJobCardStore();
   const { services: highEndServices } = useHighEndServiceStore();
-  const { addCustomer, updateCustomer, findByPhone, findByReferralCode, creditWallet, customers } = useCustomerStore();
+  const { addCustomer, updateCustomer, findByPhone, findByEmail, findByReferralCode, creditWallet, customers } =
+    useCustomerStore();
   const { addTransaction } = useWalletStore();
   const { referralRewardAmount, newCustomerDiscount } = useSettingsStore();
   const { getBrandNames, getModels, getModelSegment } = useVehicleCatalogStore();
-  const mechanics = useMemo(() => staff.filter((s) => s.role === "MECHANIC"), []);
+  const staff = useStaffStore((s) => s.staff);
+  const mechanics = useMemo(
+    () => staff.filter((s) => s.role === "MECHANIC"),
+    [staff]
+  );
 
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
@@ -75,23 +81,48 @@ export default function NewJobCardPage() {
   const [referralCode, setReferralCode] = useState("");
   const [referrerInfo, setReferrerInfo] = useState<{ id: string; name: string } | null>(null);
   const [referralError, setReferralError] = useState(false);
+  const prevMatchedCustomerIdRef = useRef<string | null>(null);
+
+  const emailLooksComplete = (e: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e.trim());
 
   useEffect(() => {
-    if (customerPhone.length === 10) {
-      const existing = findByPhone(customerPhone);
-      if (existing) {
-        setExistingCustomerId(existing.id);
-        setCustomerName(existing.name);
-        setCustomerEmail(existing.email || "");
-        setCustomerAddress(existing.address || "");
-        toast.info("Existing customer found", { description: `${existing.name} — details auto-filled` });
-      } else {
-        setExistingCustomerId(null);
-      }
-    } else {
-      setExistingCustomerId(null);
+    const digits = customerPhone.replace(/\D/g, "").slice(-10);
+    const emailTrim = customerEmail.trim();
+
+    let found = digits.length === 10 ? findByPhone(customerPhone) : undefined;
+    if (!found && emailLooksComplete(emailTrim)) {
+      found = findByEmail(emailTrim);
     }
-  }, [customerPhone]);
+
+    if (!found) {
+      prevMatchedCustomerIdRef.current = null;
+      setExistingCustomerId(null);
+      return;
+    }
+
+    const isNewMatch = prevMatchedCustomerIdRef.current !== found.id;
+    prevMatchedCustomerIdRef.current = found.id;
+    setExistingCustomerId(found.id);
+    if (!isNewMatch) return;
+
+    setCustomerName(found.name);
+    const phone10 = found.phone.replace(/\D/g, "").slice(-10);
+    if (phone10.length === 10) setCustomerPhone(phone10);
+    setCustomerEmail(found.email || "");
+    setCustomerAddress(found.address || "");
+
+    const owned = vehicles.filter((v) => v.customerId === found.id);
+    if (owned.length > 0) {
+      const v = [...owned].sort((a, b) => a.registrationNumber.localeCompare(b.registrationNumber))[0];
+      setVehicleNumber(v.registrationNumber);
+      const resolvedBrand =
+        brandNames.find((b) => b.toLowerCase() === v.make.toLowerCase()) ?? v.make;
+      setVehicleBrand(resolvedBrand);
+      setVehicleModel(v.model);
+      setVehicleSegment(v.segment);
+    }
+
+  }, [customerPhone, customerEmail, findByPhone, findByEmail, brandNames]);
 
   useEffect(() => {
     const code = referralCode.trim();
@@ -266,16 +297,6 @@ export default function NewJobCardPage() {
         <Card>
           <CardHeader>
             <CardTitle>Customer Details</CardTitle>
-            {existingCustomerId && (
-              <p className="text-xs text-green-600 dark:text-green-400 mt-1">
-                Existing customer found — details auto-filled. Changes here won&apos;t update the existing record.
-              </p>
-            )}
-            {!existingCustomerId && customerPhone.length === 10 && (
-              <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
-                New customer — will be saved automatically when job card is created.
-              </p>
-            )}
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -284,10 +305,13 @@ export default function NewJobCardPage() {
                 <Input
                   id="customerPhone"
                   type="tel"
-                  placeholder="Enter 10-digit mobile number"
+                  placeholder="Mobile number"
                   value={customerPhone}
-                  onChange={(e) => setCustomerPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
-                  maxLength={10}
+                  onChange={(e) => {
+                    const d = e.target.value.replace(/\D/g, "");
+                    setCustomerPhone(d.slice(-10));
+                  }}
+                  maxLength={14}
                   required
                 />
               </div>

@@ -10,6 +10,7 @@ interface CustomerStore {
   addCustomer: (customer: Customer) => void;
   updateCustomer: (id: string, updates: Partial<Customer>) => void;
   findByPhone: (phone: string) => Customer | undefined;
+  findByEmail: (email: string) => Customer | undefined;
   findByReferralCode: (code: string) => Customer | undefined;
   creditWallet: (customerId: string, amount: number) => void;
 }
@@ -31,7 +32,14 @@ export const useCustomerStore = create<CustomerStore>()(
 
       findByPhone: (phone) => {
         const cleaned = phone.replace(/\D/g, "").slice(-10);
+        if (cleaned.length !== 10) return undefined;
         return get().customers.find((c) => c.phone.replace(/\D/g, "").slice(-10) === cleaned);
+      },
+
+      findByEmail: (email) => {
+        const norm = email.trim().toLowerCase();
+        if (!norm) return undefined;
+        return get().customers.find((c) => c.email?.trim().toLowerCase() === norm);
       },
 
       findByReferralCode: (code) => {

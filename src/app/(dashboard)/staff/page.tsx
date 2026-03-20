@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { staff, branches } from "@/lib/mock-data";
+import { branches } from "@/lib/mock-data";
+import { useStaffStore } from "@/store/staff-store";
 import { PageHeader } from "@/components/shared/page-header";
 import { DataTable } from "@/components/shared/data-table";
 import { Button } from "@/components/ui/button";
@@ -36,11 +37,30 @@ const ROLE_BADGE_MAP: Record<UserRole, { label: string; className: string; icon:
   MECHANIC: { label: "Mechanic", className: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400", icon: WrenchIcon },
 };
 
+const defaultBranchId = branches[0]?.id ?? "br-001";
+
 export default function StaffPage() {
   const router = useRouter();
   const [dialogOpen, setDialogOpen] = useState(false);
+  const staff = useStaffStore((s) => s.staff);
+  const addStaff = useStaffStore((s) => s.addStaff);
 
-  const columns = [
+  const [newName, setNewName] = useState("");
+  const [newEmail, setNewEmail] = useState("");
+  const [newPhone, setNewPhone] = useState("");
+  const [newRole, setNewRole] = useState<UserRole>("MECHANIC");
+  const [newBranchId, setNewBranchId] = useState(defaultBranchId);
+
+  const resetAddForm = () => {
+    setNewName("");
+    setNewEmail("");
+    setNewPhone("");
+    setNewRole("MECHANIC");
+    setNewBranchId(defaultBranchId);
+  };
+
+  const columns = useMemo(
+    () => [
     {
       key: "name",
       label: "Name",
@@ -121,11 +141,35 @@ export default function StaffPage() {
           },
         ]
       : []),
-  ];
+    ],
+    [staff]
+  );
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    const name = newName.trim();
+    const email = newEmail.trim();
+    const phone = newPhone.trim();
+    if (!name || !email || !phone) {
+      toast.error("Please fill in name, email, and phone.");
+      return;
+    }
+    const dup = staff.some(
+      (s) => s.email.toLowerCase() === email.toLowerCase()
+    );
+    if (dup) {
+      toast.error("A staff member with this email already exists.");
+      return;
+    }
+    addStaff({
+      name,
+      email,
+      phone,
+      role: newRole,
+      branchId: newBranchId,
+    });
     toast.success("Staff member added successfully");
+    resetAddForm();
     setDialogOpen(false);
   };
 
@@ -135,7 +179,13 @@ export default function StaffPage() {
         title="Staff Management"
         description="Manage your team members and their roles"
         actions={
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <Dialog
+            open={dialogOpen}
+            onOpenChange={(open) => {
+              setDialogOpen(open);
+              if (!open) resetAddForm();
+            }}
+          >
             <DialogTrigger asChild>
               <Button><Plus className="w-4 h-4 mr-2" />Add Staff</Button>
             </DialogTrigger>
@@ -148,20 +198,45 @@ export default function StaffPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="name">Full Name</Label>
-                    <Input id="name" placeholder="Enter full name" required />
+                    <Input
+                      id="name"
+                      placeholder="Enter full name"
+                      required
+                      value={newName}
+                      onChange={(e) => setNewName(e.target.value)}
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="email">Email</Label>
-                    <Input id="email" type="email" placeholder="email@primedetailers.in" required />
+                    <Input
+                      id="email"
+                      type="email"
+                      placeholder="email@primedetailers.in"
+                      required
+                      value={newEmail}
+                      onChange={(e) => setNewEmail(e.target.value)}
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="phone">Phone</Label>
-                    <Input id="phone" placeholder="+91-9876543210" required />
+                    <Input
+                      id="phone"
+                      placeholder="+91-9876543210"
+                      required
+                      value={newPhone}
+                      onChange={(e) => setNewPhone(e.target.value)}
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="role">Role</Label>
-                    <Select required>
-                      <SelectTrigger><SelectValue placeholder="Select role" /></SelectTrigger>
+                    <Select
+                      required
+                      value={newRole}
+                      onValueChange={(v) => setNewRole(v as UserRole)}
+                    >
+                      <SelectTrigger id="role">
+                        <SelectValue placeholder="Select role" />
+                      </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="ADMIN">Admin</SelectItem>
                         <SelectItem value="MANAGER">Manager</SelectItem>
@@ -172,11 +247,19 @@ export default function StaffPage() {
                   </div>
                   <div className="space-y-2 sm:col-span-2">
                     <Label htmlFor="branch">Branch</Label>
-                    <Select required>
-                      <SelectTrigger><SelectValue placeholder="Select branch" /></SelectTrigger>
+                    <Select
+                      required
+                      value={newBranchId}
+                      onValueChange={setNewBranchId}
+                    >
+                      <SelectTrigger id="branch">
+                        <SelectValue placeholder="Select branch" />
+                      </SelectTrigger>
                       <SelectContent>
                         {branches.map((b) => (
-                          <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
+                          <SelectItem key={b.id} value={b.id}>
+                            {b.name}
+                          </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>

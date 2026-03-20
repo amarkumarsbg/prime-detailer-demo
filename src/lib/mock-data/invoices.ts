@@ -56,6 +56,7 @@ export const invoices: Invoice[] = [
       },
     ],
     createdAt: "2026-03-10T16:30:00Z",
+    inventoryDeductedAt: "2026-03-10T16:30:00Z",
   },
   // inv-002: jc-020 - PAID
   {
@@ -92,6 +93,7 @@ export const invoices: Invoice[] = [
       },
     ],
     createdAt: "2026-03-09T17:00:00Z",
+    inventoryDeductedAt: "2026-03-09T17:00:00Z",
   },
   // inv-003: jc-021 - PAID
   {
@@ -128,6 +130,7 @@ export const invoices: Invoice[] = [
       },
     ],
     createdAt: "2026-03-08T16:45:00Z",
+    inventoryDeductedAt: "2026-03-08T16:45:00Z",
   },
   // inv-004: jc-022 - PAID
   {
@@ -165,6 +168,7 @@ export const invoices: Invoice[] = [
       },
     ],
     createdAt: "2026-03-07T17:30:00Z",
+    inventoryDeductedAt: "2026-03-07T17:30:00Z",
   },
   // inv-005: jc-023 - PAID
   {
@@ -202,6 +206,7 @@ export const invoices: Invoice[] = [
       },
     ],
     createdAt: "2026-03-06T16:00:00Z",
+    inventoryDeductedAt: "2026-03-06T16:00:00Z",
   },
   // inv-006: jc-024 - ISSUED
   {
@@ -265,6 +270,7 @@ export const invoices: Invoice[] = [
       },
     ],
     createdAt: "2026-03-04T15:30:00Z",
+    inventoryDeductedAt: "2026-03-04T15:30:00Z",
   },
   // inv-008: jc-026 - PAID
   {
@@ -300,6 +306,7 @@ export const invoices: Invoice[] = [
       },
     ],
     createdAt: "2026-03-03T16:00:00Z",
+    inventoryDeductedAt: "2026-03-03T16:00:00Z",
   },
   // inv-009: jc-027 - DRAFT
   {
@@ -362,6 +369,7 @@ export const invoices: Invoice[] = [
       },
     ],
     createdAt: "2026-03-01T16:30:00Z",
+    inventoryDeductedAt: "2026-03-01T16:30:00Z",
   },
   // inv-011: jc-029 - PAID
   {
@@ -399,6 +407,7 @@ export const invoices: Invoice[] = [
       },
     ],
     createdAt: "2026-02-28T17:00:00Z",
+    inventoryDeductedAt: "2026-02-28T17:00:00Z",
   },
   // inv-012: jc-030 - PARTIALLY_PAID
   {
@@ -473,6 +482,7 @@ export const invoices: Invoice[] = [
       },
     ],
     createdAt: "2026-02-26T16:00:00Z",
+    inventoryDeductedAt: "2026-02-26T16:00:00Z",
   },
   // inv-014: jc-032 - ISSUED
   {
@@ -539,5 +549,32 @@ export const invoices: Invoice[] = [
       },
     ],
     createdAt: "2026-02-24T16:00:00Z",
+    inventoryDeductedAt: "2026-02-24T16:00:00Z",
+  },
+  // inv-016: jc-035 - Normal Wash (ISSUED — use to test Car Shampoo ml deduction)
+  {
+    id: "inv-016",
+    invoiceNumber: "INV-2026-0016",
+    jobCardId: "jc-035",
+    jobNumber: "JC-2026-0035",
+    customerId: "cust-001",
+    customerName: "Arun Mehta",
+    customerPhone: "+91-9988776655",
+    vehicleRegNumber: "KA-01-AB-1234",
+    lineItems: [
+      createLineItem("li-016-1", "Normal Wash", "SERVICE", 1, 200),
+    ],
+    subtotal: 200,
+    taxRate: TAX_RATE,
+    taxAmount: 36,
+    discountAmount: 0,
+    rewardDiscount: 0,
+    walletAmountUsed: 0,
+    grandTotal: 236,
+    status: "ISSUED",
+    termsAndConditions: TERMS_AND_CONDITIONS,
+    mechanicName: "Murugan P",
+    payments: [],
+    createdAt: "2026-03-12T11:00:00Z",
   },
 ];

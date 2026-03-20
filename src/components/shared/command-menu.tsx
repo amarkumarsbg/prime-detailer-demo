@@ -3,9 +3,10 @@
 import { Command } from "cmdk";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useMemo } from "react";
-import { vehicles, staff, invoices } from "@/lib/mock-data";
+import { vehicles, invoices } from "@/lib/mock-data";
 import { useCustomerStore } from "@/store/customer-store";
 import { useJobCardStore } from "@/store/job-card-store";
+import { useStaffStore } from "@/store/staff-store";
 import {
   Users, Car, ClipboardList, Receipt, UserCog, Wrench,
   LayoutDashboard, Calendar, BarChart3, History, Package, Search,
@@ -35,6 +36,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
   const [search, setSearch] = useState("");
   const { customers } = useCustomerStore();
   const { jobCards } = useJobCardStore();
+  const staff = useStaffStore((s) => s.staff);
 
   const groupClass = "**:[[cmdk-group-heading]]:px-2 **:[[cmdk-group-heading]]:py-1.5 **:[[cmdk-group-heading]]:text-xs **:[[cmdk-group-heading]]:font-semibold **:[[cmdk-group-heading]]:text-muted-foreground";
   const itemClass = "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm cursor-pointer aria-selected:bg-accent";

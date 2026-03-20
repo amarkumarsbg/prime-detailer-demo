@@ -14,13 +14,12 @@ import {
   ClipboardList,
   Receipt,
   Wrench,
-  ChevronLeft,
-  ChevronRight,
   X,
   UserCog,
   Package,
   Calendar,
   BarChart3,
+  Banknote,
   History,
   Bell,
   Settings,
@@ -70,6 +69,7 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     label: "Insights",
     items: [
       { label: "Mechanics", href: "/mechanics", icon: Gauge, roles: ["ADMIN", "MANAGER"] },
+      { label: "Expenses", href: "/expenses", icon: Banknote, roles: ["ADMIN", "MANAGER"] },
       { label: "Reports", href: "/reports", icon: BarChart3, roles: ["ADMIN", "MANAGER"] },
       { label: "Activity Log", href: "/activity", icon: History, roles: ["ADMIN"] },
       { label: "Settings", href: "/settings", icon: Settings, roles: ["ADMIN"] },
@@ -77,7 +77,14 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
   },
 ];
 
-function SidebarContent({ collapsed, onNavClick }: { collapsed: boolean; onNavClick?: () => void }) {
+function SidebarContent({
+  onNavClick,
+  navOverflow = "hidden",
+}: {
+  onNavClick?: () => void;
+  /** Desktop: hidden = no scrollbar; mobile drawer: auto if list is taller than screen */
+  navOverflow?: "hidden" | "auto";
+}) {
   const pathname = usePathname();
   const userRole = useAuthStore((s) => s.user?.role);
 
@@ -89,83 +96,65 @@ function SidebarContent({ collapsed, onNavClick }: { collapsed: boolean; onNavCl
     .filter((group) => group.items.length > 0);
 
   return (
-    <>
-      <nav className="flex-1 py-2 px-2 space-y-1.5 overflow-y-auto scrollbar-none">
-        {filteredGroups.map((group) => (
-          <div key={group.label}>
-            {!collapsed && (
-              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-0.5 px-2.5">
-                {group.label}
-              </p>
-            )}
-            <div className="space-y-px">
-              {group.items.map((item) => {
-                const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    onClick={onNavClick}
-                    className={cn(
-                      "flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13px] font-medium transition-colors",
-                      isActive
-                        ? "bg-primary text-primary-foreground shadow-sm"
-                        : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-                      collapsed && "justify-center px-2"
-                    )}
-                  >
-                    <item.icon className="w-4 h-4 shrink-0" />
-                    {!collapsed && <span>{item.label}</span>}
-                  </Link>
-                );
-              })}
-            </div>
+    <nav
+      className={cn(
+        "flex-1 min-h-0 py-2 px-2 space-y-1 overflow-x-hidden",
+        navOverflow === "hidden" && "overflow-y-hidden overscroll-none",
+        navOverflow === "auto" && "overflow-y-auto scrollbar-none"
+      )}
+    >
+      {filteredGroups.map((group) => (
+        <div key={group.label}>
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-0.5 px-2.5">
+            {group.label}
+          </p>
+          <div className="space-y-px">
+            {group.items.map((item) => {
+              const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={onNavClick}
+                  className={cn(
+                    "flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13px] font-medium transition-colors",
+                    isActive
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                  )}
+                >
+                  <item.icon className="w-4 h-4 shrink-0" />
+                  <span>{item.label}</span>
+                </Link>
+              );
+            })}
           </div>
-        ))}
-      </nav>
-    </>
+        </div>
+      ))}
+    </nav>
   );
 }
 
 export function Sidebar() {
-  const { collapsed, mobileOpen, toggleCollapsed, setMobileOpen } = useSidebarStore();
+  const { mobileOpen, setMobileOpen } = useSidebarStore();
   const businessName = useSettingsStore((s) => s.businessName);
 
   return (
     <>
-      {/* Desktop Sidebar */}
-      <aside
-        className={cn(
-          "hidden md:flex fixed left-0 top-0 z-40 h-screen flex-col transition-all duration-300",
-          collapsed ? "w-[68px]" : "w-[250px]"
-        )}
-      >
-        <div className={cn(
-          "flex items-center h-16 border-b border-r border-sidebar-border bg-background px-4 shrink-0",
-          collapsed ? "justify-center" : "gap-3"
-        )}>
+      {/* Desktop Sidebar — always expanded; no collapse control */}
+      <aside className="hidden md:flex fixed left-0 top-0 z-40 h-screen w-[250px] flex-col transition-all duration-300">
+        <div className="flex items-center h-16 border-b border-r border-sidebar-border bg-background px-4 shrink-0 gap-3">
           <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-primary shrink-0">
             <Wrench className="w-5 h-5 text-primary-foreground" />
           </div>
-          {!collapsed && (
-            <div className="overflow-hidden">
-              <h1 className="text-base font-bold text-foreground leading-tight">{businessName}</h1>
-              <p className="text-[11px] text-muted-foreground truncate">Service Management</p>
-            </div>
-          )}
+          <div className="overflow-hidden min-w-0">
+            <h1 className="text-base font-bold text-foreground leading-tight">{businessName}</h1>
+            <p className="text-[11px] text-muted-foreground truncate">Service Management</p>
+          </div>
         </div>
 
-        <div className="flex-1 flex flex-col border-r border-sidebar-border bg-sidebar overflow-hidden">
-          <SidebarContent collapsed={collapsed} />
-
-          <div className="border-t border-sidebar-border p-3">
-            <button
-              onClick={toggleCollapsed}
-              className="flex items-center justify-center w-full rounded-lg py-2 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors"
-            >
-              {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
-            </button>
-          </div>
+        <div className="flex-1 flex flex-col border-r border-sidebar-border bg-sidebar overflow-hidden min-h-0">
+          <SidebarContent navOverflow="hidden" />
         </div>
       </aside>
 
@@ -202,7 +191,7 @@ export function Sidebar() {
           </button>
         </div>
 
-        <SidebarContent collapsed={false} onNavClick={() => setMobileOpen(false)} />
+        <SidebarContent onNavClick={() => setMobileOpen(false)} navOverflow="auto" />
       </aside>
     </>
   );

@@ -174,7 +174,7 @@ export const serviceCatalog: ServiceCatalogItem[] = [
     isHighEnd: false,
     incentivePercent: 5,
     consumptionProfile: [
-      { partId: "prt-013", partName: "AC Compressor Oil", quantityPerCar: 1, unit: "NOS" },
+      { partId: "prt-013", partName: "AC Compressor Oil", quantityPerCar: 250, unit: "ML" },
     ],
   },
   // --- Electrical ---
@@ -316,7 +316,8 @@ export const serviceCatalog: ServiceCatalogItem[] = [
   {
     id: "svc-016",
     name: "Normal Wash",
-    description: "Basic exterior wash with car shampoo",
+    description:
+      "Basic cleaning — water + small amount of shampoo. Takes less time. Shampoo usage: low (~8–10 ml per car).",
     defaultPrice: 250,
     segmentPricing: {
       HATCHBACK: 200,
@@ -331,13 +332,14 @@ export const serviceCatalog: ServiceCatalogItem[] = [
     isHighEnd: false,
     incentivePercent: 2,
     consumptionProfile: [
-      { partId: "prt-021", partName: "Car Shampoo", quantityPerCar: 3, unit: "ML" },
+      { partId: "prt-021", partName: "Car Shampoo", quantityPerCar: 9, unit: "ML" },
     ],
   },
   {
     id: "svc-017",
     name: "Advanced Wash",
-    description: "Premium wash with shampoo and polish application",
+    description:
+      "Better than normal — foam wash + proper wiping; may include tyre cleaning. Shampoo usage: medium (~12–18 ml per car).",
     defaultPrice: 600,
     segmentPricing: {
       HATCHBACK: 500,
@@ -352,8 +354,32 @@ export const serviceCatalog: ServiceCatalogItem[] = [
     isHighEnd: false,
     incentivePercent: 2,
     consumptionProfile: [
-      { partId: "prt-021", partName: "Car Shampoo", quantityPerCar: 5, unit: "ML" },
-      { partId: "prt-022", partName: "Polish", quantityPerCar: 2, unit: "ML" },
+      { partId: "prt-021", partName: "Car Shampoo", quantityPerCar: 15, unit: "ML" },
+      { partId: "prt-022", partName: "Car Polish Wax (1L)", quantityPerCar: 5, unit: "ML" },
+    ],
+  },
+  {
+    id: "svc-021",
+    name: "Premium Wash",
+    description:
+      "Deep cleaning — foam + wax + tyre polish + light interior touch-up. Best finish. Shampoo usage: high (~20–30 ml per car).",
+    defaultPrice: 1200,
+    segmentPricing: {
+      HATCHBACK: 950,
+      SEDAN: 1200,
+      SUV: 1500,
+      LUXURY: 2400,
+      MUV: 1700,
+      COMPACT_SUV: 1350,
+    },
+    category: "Detailing",
+    isActive: true,
+    isHighEnd: false,
+    incentivePercent: 3,
+    consumptionProfile: [
+      { partId: "prt-021", partName: "Car Shampoo", quantityPerCar: 25, unit: "ML" },
+      { partId: "prt-022", partName: "Car Polish Wax (1L)", quantityPerCar: 18, unit: "ML" },
+      { partId: "prt-023", partName: "Interior Cleaner (2L)", quantityPerCar: 40, unit: "ML" },
     ],
   },
   {
@@ -376,8 +402,8 @@ export const serviceCatalog: ServiceCatalogItem[] = [
     reminderInterval: "6_MONTHS",
     reminderDurationMonths: 36,
     consumptionProfile: [
-      { partId: "prt-023", partName: "PPF Film Sheet", quantityPerCar: 1, unit: "SET" },
-      { partId: "prt-024", partName: "PPF Installation Kit", quantityPerCar: 1, unit: "KIT" },
+      { partId: "prt-025", partName: "PPF Film (sq.ft roll)", quantityPerCar: 1, unit: "NOS" },
+      { partId: "prt-024", partName: "Microfiber Cloth", quantityPerCar: 2, unit: "NOS" },
     ],
   },
   {
@@ -400,7 +426,7 @@ export const serviceCatalog: ServiceCatalogItem[] = [
     reminderInterval: "6_MONTHS",
     reminderDurationMonths: 24,
     consumptionProfile: [
-      { partId: "prt-025", partName: "Ceramic Coating 50ml", quantityPerCar: 1, unit: "NOS" },
+      { partId: "prt-022", partName: "Car Polish Wax (1L)", quantityPerCar: 40, unit: "ML" },
       { partId: "prt-021", partName: "Car Shampoo", quantityPerCar: 10, unit: "ML" },
     ],
   },
@@ -424,9 +450,9 @@ export const serviceCatalog: ServiceCatalogItem[] = [
     reminderInterval: "YEARLY",
     reminderDurationMonths: 12,
     consumptionProfile: [
-      { partId: "prt-026", partName: "Interior Cleaner", quantityPerCar: 1, unit: "NOS" },
-      { partId: "prt-027", partName: "Leather Conditioner", quantityPerCar: 1, unit: "NOS" },
-      { partId: "prt-028", partName: "Dashboard Polish", quantityPerCar: 1, unit: "NOS" },
+      { partId: "prt-023", partName: "Interior Cleaner (2L)", quantityPerCar: 150, unit: "ML" },
+      { partId: "prt-022", partName: "Car Polish Wax (1L)", quantityPerCar: 25, unit: "ML" },
+      { partId: "prt-024", partName: "Microfiber Cloth", quantityPerCar: 2, unit: "NOS" },
     ],
   },
 ];

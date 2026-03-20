@@ -7,7 +7,7 @@ export { jobCards } from "./job-cards";
 export { invoices } from "./invoices";
 export { quotations } from "./quotations";
 export { dashboardStats } from "./dashboard";
-export { parts, stockMovements } from "./inventory";
+export { parts, stockMovements, productPurchases } from "./inventory";
 export { appointments } from "./appointments";
 export { activityLogs } from "./activity-log";
 export { serviceReminders } from "./reminders";

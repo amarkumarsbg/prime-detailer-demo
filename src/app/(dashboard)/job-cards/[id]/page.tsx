@@ -28,8 +28,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { staff } from "@/lib/mock-data";
 import { useJobCardStore } from "@/store/job-card-store";
+import { useStaffStore } from "@/store/staff-store";
 import { useHighEndServiceStore } from "@/store/high-end-service-store";
 import { useReminderStore } from "@/store/reminder-store";
 import { formatDate, formatCurrency } from "@/lib/utils";
@@ -69,13 +69,17 @@ export default function JobCardDetailPage() {
   const router = useRouter();
   const id = params.id as string;
   const { jobCards, updateJobCard } = useJobCardStore();
+  const staff = useStaffStore((s) => s.staff);
 
   const jobCard = useMemo(
     () => jobCards.find((jc) => jc.id === id),
     [jobCards, id]
   );
 
-  const mechanics = useMemo(() => staff.filter((s) => s.role === "MECHANIC"), []);
+  const mechanics = useMemo(
+    () => staff.filter((s) => s.role === "MECHANIC"),
+    [staff]
+  );
   const { services: highEndServiceConfigs } = useHighEndServiceStore();
   const { generateHighEndReminders } = useReminderStore();
 
@@ -486,72 +490,89 @@ export default function JobCardDetailPage() {
         </Card>
       )}
 
-      {/* Header Section */}
-      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold font-mono tracking-tight">
-            {jobCard.jobNumber}
-          </h1>
-          <div className="flex items-center gap-3 mt-2">
-            <JobCardStatusBadge status={currentStatus} />
-          </div>
-        </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-4 text-sm">
-          <div>
-            <p className="text-muted-foreground">Created</p>
-            <p className="font-medium">{formatDate(jobCard.createdAt)}</p>
-          </div>
-          <div>
-            <p className="text-muted-foreground">Expected Delivery</p>
-            <p className="font-medium">{formatDate(jobCard.expectedDelivery)}</p>
-          </div>
-          <div>
-            <p className="text-muted-foreground">Mechanic</p>
-            <div className="flex items-center gap-1.5">
-              <p className="font-medium">{currentMechanicName ?? "—"}</p>
-              {currentStatus !== "DELIVERED" && currentStatus !== "CANCELLED" && (
-                <button
-                  onClick={() => setShowSwitchDialog(true)}
-                  className="text-primary hover:text-primary/80 transition-colors"
-                  title="Switch Mechanic"
-                >
-                  <ArrowLeftRight className="w-3.5 h-3.5" />
-                </button>
-              )}
+      {/* Summary */}
+      <Card className="overflow-hidden border-border/80 shadow-sm">
+        <div className="h-1.5 bg-linear-to-r from-primary via-primary/80 to-primary/50" aria-hidden />
+        <CardContent className="pt-6 pb-5">
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+            <div className="space-y-3 min-w-0">
+              <Button variant="ghost" size="sm" className="-ml-2 h-8 text-muted-foreground hover:text-foreground" asChild>
+                <Link href="/job-cards">
+                  <ArrowLeft className="w-4 h-4 mr-1.5" />
+                  All job cards
+                </Link>
+              </Button>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Job card</p>
+                <h1 className="text-2xl sm:text-3xl font-bold font-mono tracking-tight mt-0.5">
+                  {jobCard.jobNumber}
+                </h1>
+                <div className="flex items-center gap-3 mt-3">
+                  <JobCardStatusBadge status={currentStatus} />
+                </div>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 gap-x-6 gap-y-4 text-sm lg:max-w-2xl lg:shrink-0">
+              <div>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Created</p>
+                <p className="font-semibold mt-1">{formatDate(jobCard.createdAt)}</p>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Expected delivery</p>
+                <p className="font-semibold mt-1">{formatDate(jobCard.expectedDelivery)}</p>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Mechanic</p>
+                <div className="flex items-center gap-1.5 mt-1">
+                  <p className="font-semibold">{currentMechanicName ?? "—"}</p>
+                  {currentStatus !== "DELIVERED" && currentStatus !== "CANCELLED" && (
+                    <button
+                      type="button"
+                      onClick={() => setShowSwitchDialog(true)}
+                      className="text-primary hover:text-primary/80 transition-colors"
+                      title="Switch mechanic"
+                    >
+                      <ArrowLeftRight className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Estimate</p>
+                <p className="font-semibold mt-1 tabular-nums">{formatCurrency(jobCard.estimatedAmount)}</p>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Incentive</p>
+                <p className="font-semibold mt-1 tabular-nums">
+                  {jobCard.incentivePercent}% ({formatCurrency(jobCard.incentiveAmount)})
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Segment</p>
+                <p className="font-semibold mt-1">{jobCard.vehicleSegment.replace(/_/g, " ")}</p>
+              </div>
             </div>
           </div>
-          <div>
-            <p className="text-muted-foreground">Estimated Amount</p>
-            <p className="font-medium">{formatCurrency(jobCard.estimatedAmount)}</p>
-          </div>
-          <div>
-            <p className="text-muted-foreground">Incentive</p>
-            <p className="font-medium">{jobCard.incentivePercent}% ({formatCurrency(jobCard.incentiveAmount)})</p>
-          </div>
-          <div>
-            <p className="text-muted-foreground">Vehicle Segment</p>
-            <p className="font-medium">{jobCard.vehicleSegment.replace(/_/g, " ")}</p>
-          </div>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card>
-          <CardHeader>
+        <Card className="border-border/80 shadow-sm">
+          <CardHeader className="pb-3 border-b border-border/60 bg-muted/20">
             <CardTitle className="text-base">Customer</CardTitle>
           </CardHeader>
-          <CardContent>
-            <p className="font-medium">{jobCard.customerName}</p>
-            <p className="text-sm text-muted-foreground">{jobCard.customerPhone}</p>
+          <CardContent className="pt-4">
+            <p className="font-semibold">{jobCard.customerName}</p>
+            <p className="text-sm text-muted-foreground mt-1">{jobCard.customerPhone}</p>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader>
+        <Card className="border-border/80 shadow-sm">
+          <CardHeader className="pb-3 border-b border-border/60 bg-muted/20">
             <CardTitle className="text-base">Vehicle</CardTitle>
           </CardHeader>
-          <CardContent>
-            <p className="font-medium">{jobCard.vehicleRegNumber}</p>
-            <p className="text-sm text-muted-foreground">{jobCard.vehicleMakeModel}</p>
+          <CardContent className="pt-4">
+            <p className="font-semibold font-mono tracking-wide">{jobCard.vehicleRegNumber}</p>
+            <p className="text-sm text-muted-foreground mt-1">{jobCard.vehicleMakeModel}</p>
           </CardContent>
         </Card>
       </div>

@@ -1,17 +1,22 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { appointments, customers, vehicles, staff, serviceCatalog } from "@/lib/mock-data";
+import { customers, vehicles, serviceCatalog } from "@/lib/mock-data";
+import { useStaffStore } from "@/store/staff-store";
+import { useAppointmentStore } from "@/store/appointment-store";
+import { useSettingsStore } from "@/store/settings-store";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -37,9 +42,26 @@ import {
   isToday,
   parseISO,
 } from "date-fns";
-import { Plus, ChevronLeft, ChevronRight, Clock, User, Car, Calendar, MessageCircle, Check } from "lucide-react";
+import {
+  Plus,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  User,
+  Calendar,
+  MessageCircle,
+  Check,
+  Copy,
+  ExternalLink,
+  Sparkles,
+} from "lucide-react";
 import type { Appointment, AppointmentStatus } from "@/types";
 import { toast } from "sonner";
+import {
+  buildBookingConfirmationMessage,
+  buildWhatsAppBookingUrl,
+  pickAppointmentForWhatsAppPreview,
+} from "@/lib/booking-confirmation-message";
 
 const STATUS_COLORS: Record<AppointmentStatus, { bg: string; text: string; dot: string }> = {
   SCHEDULED: { bg: "bg-blue-100 dark:bg-blue-900/30", text: "text-blue-700 dark:text-blue-400", dot: "bg-blue-500" },
@@ -50,9 +72,77 @@ const STATUS_COLORS: Record<AppointmentStatus, { bg: string; text: string; dot: 
 };
 
 export default function AppointmentsPage() {
+  const staff = useStaffStore((s) => s.staff);
+  const appointments = useAppointmentStore((s) => s.appointments);
+  const updateAppointment = useAppointmentStore((s) => s.updateAppointment);
+  const businessName = useSettingsStore((s) => s.businessName);
+  const businessPhone = useSettingsStore((s) => s.businessPhone);
+  const businessEmail = useSettingsStore((s) => s.businessEmail);
+  const businessAddress = useSettingsStore((s) => s.businessAddress);
+
   const [dialogOpen, setDialogOpen] = useState(false);
   const [currentMonth, setCurrentMonth] = useState(new Date(2026, 2, 12));
   const [selectedDate, setSelectedDate] = useState<Date | null>(new Date(2026, 2, 12));
+
+  const [messageDialogOpen, setMessageDialogOpen] = useState(false);
+  const [messagePreview, setMessagePreview] = useState("");
+  const [messageTarget, setMessageTarget] = useState<Appointment | null>(null);
+
+  const studioName = businessName.toLowerCase().includes("studio")
+    ? businessName
+    : `${businessName} Studio`;
+
+  const businessPayload = useMemo(
+    () => ({
+      studioName,
+      address: businessAddress,
+      phone: businessPhone,
+      email: businessEmail,
+    }),
+    [studioName, businessAddress, businessPhone, businessEmail]
+  );
+
+  const openConfirmationMessage = (apt: Appointment) => {
+    const text = buildBookingConfirmationMessage(apt, businessPayload);
+    setMessageTarget(apt);
+    setMessagePreview(text);
+    setMessageDialogOpen(true);
+  };
+
+  const openDemoWhatsAppPreview = () => {
+    const apt = pickAppointmentForWhatsAppPreview(appointments);
+    if (!apt) {
+      toast.error("No appointments available");
+      return;
+    }
+    openConfirmationMessage(apt);
+  };
+
+  const handleConfirmBooking = (apt: Appointment) => {
+    if (apt.status !== "SCHEDULED") return;
+    const next: Appointment = { ...apt, status: "CONFIRMED" };
+    updateAppointment(apt.id, { status: "CONFIRMED" });
+    openConfirmationMessage(next);
+    toast.success("Booking confirmed");
+  };
+
+  const handleCopyMessage = async () => {
+    try {
+      await navigator.clipboard.writeText(messagePreview);
+      toast.success("Message copied");
+    } catch {
+      toast.error("Could not copy");
+    }
+  };
+
+  const handleOpenWhatsApp = () => {
+    if (!messageTarget) return;
+    const url = buildWhatsAppBookingUrl(messageTarget, messagePreview);
+    window.open(url, "_blank", "noopener,noreferrer");
+    updateAppointment(messageTarget.id, { whatsappSent: true });
+    toast.success("Message sent");
+    setMessageDialogOpen(false);
+  };
 
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);
@@ -68,7 +158,7 @@ export default function AppointmentsPage() {
       map.get(key)!.push(apt);
     });
     return map;
-  }, []);
+  }, [appointments]);
 
   const selectedDayAppointments = useMemo(() => {
     if (!selectedDate) return [];
@@ -84,7 +174,7 @@ export default function AppointmentsPage() {
         const dateB = new Date(`${b.date}T${b.time}`);
         return dateA.getTime() - dateB.getTime();
       });
-  }, []);
+  }, [appointments]);
 
   const todayCount = appointmentsByDate.get(format(new Date(2026, 2, 12), "yyyy-MM-dd"))?.length ?? 0;
   const scheduledCount = appointments.filter((a) => a.status === "SCHEDULED").length;
@@ -96,7 +186,12 @@ export default function AppointmentsPage() {
         title="Appointments"
         description="Schedule and manage service appointments"
         actions={
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <div className="flex flex-wrap items-center gap-2 justify-end">
+            <Button type="button" variant="outline" onClick={openDemoWhatsAppPreview}>
+              <Sparkles className="w-4 h-4 mr-2" />
+              WhatsApp message
+            </Button>
+            <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
               <Button><Plus className="w-4 h-4 mr-2" />New Appointment</Button>
             </DialogTrigger>
@@ -171,8 +266,55 @@ export default function AppointmentsPage() {
               </form>
             </DialogContent>
           </Dialog>
+          </div>
         }
       />
+
+      <Dialog
+        open={messageDialogOpen}
+        onOpenChange={(open) => {
+          setMessageDialogOpen(open);
+          if (!open) setMessageTarget(null);
+        }}
+      >
+        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col gap-0 p-0">
+          <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
+            <DialogTitle>Booking confirmation (WhatsApp)</DialogTitle>
+            <DialogDescription>
+              {messageTarget ? (
+                <span className="text-foreground font-medium">
+                  {messageTarget.customerName}{" "}
+                  <span className="text-muted-foreground font-normal">
+                    · {messageTarget.whatsappPhone ?? messageTarget.customerPhone} · {messageTarget.bookingId}
+                  </span>
+                </span>
+              ) : null}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="px-6 flex-1 min-h-0 overflow-y-auto border-y border-border">
+            <Textarea
+              readOnly
+              value={messagePreview}
+              className="min-h-[320px] max-h-[50vh] font-mono text-xs leading-relaxed resize-none border-0 bg-muted/30 focus-visible:ring-0 rounded-none px-3 py-3"
+            />
+          </div>
+          <DialogFooter className="px-6 py-4 flex-row flex-wrap gap-2 sm:justify-between">
+            <Button type="button" variant="outline" onClick={handleCopyMessage}>
+              <Copy className="w-4 h-4 mr-2" />
+              Copy message
+            </Button>
+            <div className="flex gap-2">
+              <Button type="button" variant="outline" onClick={() => setMessageDialogOpen(false)}>
+                Close
+              </Button>
+              <Button type="button" onClick={handleOpenWhatsApp}>
+                <ExternalLink className="w-4 h-4 mr-2" />
+                Open WhatsApp
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Card>
@@ -299,25 +441,36 @@ export default function AppointmentsPage() {
                           <p className="text-xs text-muted-foreground">
                             {apt.bookingId} &middot; {apt.vehicleRegNumber} &middot; {apt.serviceType}
                           </p>
-                          <div className="flex items-center justify-between mt-2">
+                          <div className="flex flex-col gap-2 mt-3">
                             {apt.mechanicName && (
                               <p className="text-xs text-muted-foreground">Mechanic: {apt.mechanicName}</p>
                             )}
-                            <div className="flex items-center gap-2">
-                              {apt.whatsappSent ? (
-                                <span className="inline-flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400">
-                                  <Check className="w-3 h-3" /> WhatsApp sent
-                                </span>
-                              ) : (
+                            <div className="flex flex-wrap items-center gap-2">
+                              {apt.status === "SCHEDULED" && (
+                                <Button
+                                  size="sm"
+                                  className="h-8 text-xs"
+                                  onClick={() => handleConfirmBooking(apt)}
+                                >
+                                  <Check className="w-3 h-3 mr-1" />
+                                  Confirm booking
+                                </Button>
+                              )}
+                              {(apt.status === "CONFIRMED" || apt.status === "IN_PROGRESS") && !apt.whatsappSent && (
                                 <Button
                                   size="sm"
                                   variant="outline"
-                                  className="h-7 text-xs"
-                                  onClick={() => toast.success("WhatsApp sent to customer")}
+                                  className="h-8 text-xs"
+                                  onClick={() => openConfirmationMessage(apt)}
                                 >
                                   <MessageCircle className="w-3 h-3 mr-1" />
                                   Send WhatsApp
                                 </Button>
+                              )}
+                              {apt.whatsappSent && (
+                                <span className="inline-flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400">
+                                  <Check className="w-3 h-3" /> WhatsApp sent
+                                </span>
                               )}
                             </div>
                           </div>
@@ -340,7 +493,7 @@ export default function AppointmentsPage() {
                 upcomingAppointments.map((apt) => {
                   const sc = STATUS_COLORS[apt.status];
                   return (
-                    <div key={apt.id} className="flex items-center gap-4 p-4 hover:bg-muted/30 transition-colors">
+                    <div key={apt.id} className="flex flex-col sm:flex-row sm:items-center gap-4 p-4 hover:bg-muted/30 transition-colors">
                       <div className={`flex items-center justify-center w-10 h-10 rounded-full shrink-0 ${sc.bg}`}>
                         <Calendar className={`w-5 h-5 ${sc.text}`} />
                       </div>
@@ -361,19 +514,29 @@ export default function AppointmentsPage() {
                           {apt.vehicleRegNumber} &middot; {apt.serviceType}
                         </p>
                       </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        {!apt.whatsappSent && (
+                      <div className="flex flex-wrap items-center gap-2 shrink-0">
+                        {apt.status === "SCHEDULED" && (
+                          <Button
+                            size="sm"
+                            className="h-8 text-xs"
+                            onClick={() => handleConfirmBooking(apt)}
+                          >
+                            <Check className="w-3.5 h-3.5 mr-1.5" />
+                            Confirm booking
+                          </Button>
+                        )}
+                        {(apt.status === "CONFIRMED" || apt.status === "IN_PROGRESS") && !apt.whatsappSent && (
                           <Button
                             size="sm"
                             variant="outline"
                             className="h-8 text-xs"
-                            onClick={() => toast.success("WhatsApp sent to customer")}
+                            onClick={() => openConfirmationMessage(apt)}
                           >
                             <MessageCircle className="w-3.5 h-3.5 mr-1.5" />
                             Send WhatsApp
                           </Button>
                         )}
-                        <div className="text-right hidden sm:block">
+                        <div className="text-right hidden sm:block min-w-[72px]">
                           <p className="text-sm font-medium">{format(parseISO(apt.date), "d MMM")}</p>
                           <p className="text-xs text-muted-foreground">{apt.time}</p>
                         </div>

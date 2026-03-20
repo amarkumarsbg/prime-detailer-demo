@@ -8,7 +8,8 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { JobCardStatusBadge } from "@/components/shared/status-badge";
-import { staff, jobCards } from "@/lib/mock-data";
+import { jobCards } from "@/lib/mock-data";
+import { useStaffStore } from "@/store/staff-store";
 import { getInitials } from "@/lib/utils";
 import type { JobCard } from "@/types";
 import {
@@ -35,7 +36,11 @@ interface MechanicStats {
 }
 
 export default function MechanicsPage() {
-  const mechanics = useMemo(() => staff.filter((s) => s.role === "MECHANIC"), []);
+  const staff = useStaffStore((s) => s.staff);
+  const mechanics = useMemo(
+    () => staff.filter((s) => s.role === "MECHANIC"),
+    [staff]
+  );
 
   const mechanicStats = useMemo<MechanicStats[]>(() => {
     return mechanics.map((mech) => {

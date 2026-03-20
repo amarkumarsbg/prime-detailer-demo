@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -33,12 +33,24 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { InvoiceStatusBadge } from "@/components/shared/status-badge";
-import { invoices, jobCards } from "@/lib/mock-data";
+import { useInvoiceStore } from "@/store/invoice-store";
+import { useJobCardStore } from "@/store/job-card-store";
+import { useAuthStore } from "@/store/auth-store";
 import { useCustomerStore } from "@/store/customer-store";
 import { useSettingsStore } from "@/store/settings-store";
 import { formatCurrency, formatDate, formatDateTime } from "@/lib/utils";
+import {
+  additionalDiscountTotal,
+  buildTaxInvoicePrintHtml,
+  DEFAULT_SERVICE_HSN,
+  gstHalfPercentLabel,
+  lineGrandWithTax,
+  lineRateDisplay,
+  netTaxableForDisplay,
+  splitCgstSgst,
+} from "@/lib/tax-invoice-format";
 import { toast } from "sonner";
-import type { Invoice, Payment, PaymentMethod } from "@/types";
+import type { Payment, PaymentMethod } from "@/types";
 
 const PAYMENT_METHODS: { value: PaymentMethod; label: string; icon: typeof Banknote }[] = [
   { value: "CASH", label: "Cash", icon: Banknote },
@@ -62,29 +74,47 @@ export default function InvoiceDetailPage() {
   const router = useRouter();
   const id = params.id as string;
 
+  const invoices = useInvoiceStore((s) => s.invoices);
+  const recordInvoicePayment = useInvoiceStore((s) => s.recordPayment);
+  const jobCards = useJobCardStore((s) => s.jobCards);
+  const user = useAuthStore((s) => s.user);
+
   const invoice = useMemo(
     () => invoices.find((inv) => inv.id === id),
-    [id]
+    [invoices, id]
   );
 
   const jobCard = useMemo(
     () => (invoice ? jobCards.find((jc) => jc.id === invoice.jobCardId) : null),
-    [invoice]
+    [invoice, jobCards]
   );
 
   const { customers } = useCustomerStore();
-  const { referralRewardAmount, newCustomerDiscount } = useSettingsStore();
+  const {
+    referralRewardAmount,
+    newCustomerDiscount,
+    businessName,
+    businessTagline,
+    businessPhone,
+    businessWhatsApp,
+    businessEmail,
+    businessAddress,
+    businessWebsite,
+    gstin,
+    companyPan,
+    bankName,
+    bankBranch,
+    bankAccountNumber,
+    bankIfsc,
+    bankUpi,
+  } = useSettingsStore();
 
   const invoiceCustomer = useMemo(
     () => (invoice ? customers.find((c) => c.id === invoice.customerId) : null),
     [invoice, customers]
   );
 
-  const [payments, setPayments] = useState<Payment[]>([]);
-
-  useEffect(() => {
-    if (invoice) setPayments(invoice.payments);
-  }, [invoice?.id]);
+  const payments = invoice?.payments ?? [];
   const [recordDialogOpen, setRecordDialogOpen] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("CASH");
@@ -107,169 +137,67 @@ export default function InvoiceDetailPage() {
     const amount = Number(paymentAmount);
     if (!invoice || isNaN(amount) || amount <= 0) return;
 
-    const newPayment: Payment = {
-      id: `pay-${Date.now()}`,
-      invoiceId: invoice.id,
-      amount,
-      method: paymentMethod,
-      referenceNumber: referenceNumber || undefined,
-      paidAt: new Date().toISOString(),
-    };
-    setPayments((prev) => [...prev, newPayment]);
+    const performedBy = user?.id?.toLowerCase() ?? "usr-001";
+    const result = recordInvoicePayment(
+      invoice.id,
+      {
+        invoiceId: invoice.id,
+        amount,
+        method: paymentMethod,
+        referenceNumber: referenceNumber || undefined,
+        paidAt: new Date().toISOString(),
+      },
+      { performedBy }
+    );
+    if (result.inventoryError) {
+      toast.error("Could not update inventory", {
+        description: result.inventoryError,
+      });
+    } else {
+      toast.success("Payment recorded");
+    }
     setRecordDialogOpen(false);
   };
 
   const handlePrint = () => {
+    if (!invoice) return;
     const printWindow = window.open("", "_blank");
-    if (!printWindow) { window.print(); return; }
-
-    const vehicleMakeModel = jobCard?.vehicleMakeModel ?? "—";
-    const statusLabel = invoice?.status === "PAID" ? "PAID" : invoice?.status === "PARTIALLY_PAID" ? "PARTIAL" : invoice?.status ?? "";
-    const statusColor = invoice?.status === "PAID" ? "#16a34a" : invoice?.status === "PARTIALLY_PAID" ? "#d97706" : "#6366f1";
-
-    printWindow.document.write(`<!DOCTYPE html><html><head><title>Invoice ${invoice?.invoiceNumber ?? ""}</title>
-<style>
-@page { margin: 0; size: A4; }
-* { margin: 0; padding: 0; box-sizing: border-box; }
-body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; color: #1a1a2e; background: #fff; }
-.page { max-width: 800px; margin: 0 auto; padding: 40px 48px; }
-.brand-bar { height: 6px; background: linear-gradient(90deg, #6366f1, #8b5cf6, #a855f7); }
-.header { display: flex; justify-content: space-between; align-items: flex-start; margin-top: 32px; margin-bottom: 32px; }
-.logo { font-size: 28px; font-weight: 800; letter-spacing: -0.5px; color: #6366f1; }
-.logo span { color: #1a1a2e; }
-.company-info { font-size: 11px; color: #64748b; line-height: 1.6; margin-top: 6px; }
-.invoice-badge { text-align: right; }
-.invoice-title { font-size: 32px; font-weight: 800; letter-spacing: -1px; color: #1a1a2e; }
-.invoice-num { font-size: 14px; font-family: 'SF Mono', 'Fira Code', monospace; color: #6366f1; font-weight: 600; margin-top: 4px; }
-.status-pill { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #fff; background: ${statusColor}; margin-top: 8px; }
-.meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 32px; padding: 20px 24px; background: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0; }
-.meta-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: #94a3b8; margin-bottom: 4px; }
-.meta-value { font-size: 14px; font-weight: 600; color: #1a1a2e; }
-.meta-sub { font-size: 12px; color: #64748b; margin-top: 2px; }
-table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
-thead th { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: #94a3b8; padding: 12px 16px; border-bottom: 2px solid #e2e8f0; text-align: left; }
-thead th:last-child, thead th:nth-child(3), thead th:nth-child(4) { text-align: right; }
-tbody td { padding: 14px 16px; font-size: 13px; border-bottom: 1px solid #f1f5f9; color: #334155; }
-tbody td:last-child, tbody td:nth-child(3), tbody td:nth-child(4) { text-align: right; }
-tbody td:last-child { font-weight: 600; color: #1a1a2e; }
-.type-tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 600; text-transform: uppercase; background: #ede9fe; color: #6366f1; }
-.totals-box { margin-left: auto; max-width: 320px; }
-.totals-row { display: flex; justify-content: space-between; padding: 8px 0; font-size: 13px; color: #64748b; }
-.totals-row span:last-child { color: #1a1a2e; font-weight: 500; }
-.totals-divider { border-top: 2px solid #1a1a2e; margin-top: 8px; padding-top: 12px; }
-.grand-total { font-size: 20px; font-weight: 800; color: #1a1a2e; }
-.grand-total span:last-child { color: #6366f1; }
-.payments-section { margin-top: 32px; padding: 20px 24px; background: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0; }
-.payments-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: #94a3b8; margin-bottom: 12px; }
-.payment-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; font-size: 13px; border-bottom: 1px solid #e2e8f0; }
-.payment-row:last-child { border-bottom: none; }
-.payment-method { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 600; background: #e0f2fe; color: #0284c7; }
-.balance-row { display: flex; justify-content: space-between; padding: 10px 0; margin-top: 8px; border-top: 1px dashed #cbd5e1; font-weight: 700; color: #d97706; font-size: 14px; }
-.footer { margin-top: 48px; padding-top: 20px; border-top: 1px solid #e2e8f0; text-align: center; }
-.footer-thanks { font-size: 14px; font-weight: 600; color: #1a1a2e; margin-bottom: 4px; }
-.footer-sub { font-size: 11px; color: #94a3b8; }
-.footer-brand { font-size: 10px; color: #cbd5e1; margin-top: 12px; }
-@media print { body { print-color-adjust: exact; -webkit-print-color-adjust: exact; } .page { padding: 32px 40px; } }
-</style></head><body>
-<div class="brand-bar"></div>
-<div class="page">
-  <div class="header">
-    <div>
-      <div class="logo">Prime<span>Detailers</span></div>
-      <div class="company-info">
-        80 Feet Road, Koramangala 4th Block<br>
-        Bengaluru, Karnataka 560034<br>
-        +91-80-4123-4567 &bull; hello@primedetailers.in<br>
-        GSTIN: 29AABCT1234F1ZP
-      </div>
-    </div>
-    <div class="invoice-badge">
-      <div class="invoice-title">INVOICE</div>
-      <div class="invoice-num">${invoice?.invoiceNumber ?? ""}</div>
-      <div class="status-pill">${statusLabel}</div>
-    </div>
-  </div>
-
-  <div class="meta-grid">
-    <div>
-      <div class="meta-label">Bill To</div>
-      <div class="meta-value">${invoice?.customerName ?? ""}</div>
-      <div class="meta-sub">${invoice?.customerPhone ?? ""}</div>
-    </div>
-    <div>
-      <div class="meta-label">Vehicle</div>
-      <div class="meta-value">${invoice?.vehicleRegNumber ?? ""}</div>
-      <div class="meta-sub">${vehicleMakeModel}</div>
-    </div>
-    <div>
-      <div class="meta-label">Invoice Date</div>
-      <div class="meta-value">${invoice ? formatDate(invoice.createdAt) : ""}</div>
-    </div>
-    <div>
-      <div class="meta-label">Job Card</div>
-      <div class="meta-value">${invoice?.jobNumber ?? ""}</div>
-    </div>
-  </div>
-
-  <table>
-    <thead><tr><th>Description</th><th>Type</th><th>Qty</th><th>Unit Price</th><th>Total</th></tr></thead>
-    <tbody>${invoice?.lineItems.map((li, i) => `
-      <tr>
-        <td>${li.description}</td>
-        <td><span class="type-tag">${li.type}</span></td>
-        <td style="text-align:right">${li.quantity}</td>
-        <td style="text-align:right">${formatCurrency(li.unitPrice)}</td>
-        <td style="text-align:right">${formatCurrency(li.total)}</td>
-      </tr>`).join("") ?? ""}</tbody>
-  </table>
-
-  <div class="totals-box">
-    <div class="totals-row"><span>Subtotal</span><span>${invoice ? formatCurrency(invoice.subtotal) : ""}</span></div>
-    <div class="totals-row"><span>Tax (${invoice ? Math.round(invoice.taxRate * 100) : 0}%)</span><span>${invoice ? formatCurrency(invoice.taxAmount) : ""}</span></div>
-    ${(invoice?.discountAmount ?? 0) > 0 ? `<div class="totals-row"><span>Discount</span><span>-${formatCurrency(invoice!.discountAmount)}</span></div>` : ""}
-    ${(invoice?.rewardDiscount ?? 0) > 0 ? `<div class="totals-row"><span>Reward Discount</span><span>-${formatCurrency(invoice!.rewardDiscount)}</span></div>` : ""}
-    ${invoiceCustomer?.referredBy ? `<div class="totals-row"><span>Referral Discount</span><span style="color:#16a34a;">-${formatCurrency(newCustomerDiscount)}</span></div>` : ""}
-    <div class="totals-row totals-divider grand-total"><span>Grand Total</span><span>${invoice ? formatCurrency(invoice.grandTotal) : ""}</span></div>
-  </div>
-
-  ${payments.length > 0 ? `
-  <div class="payments-section">
-    <div class="payments-title">Payment History</div>
-    ${payments.map((p) => `
-    <div class="payment-row">
-      <div><span>${formatDateTime(p.paidAt)}</span> <span class="payment-method">${p.method}</span>${p.referenceNumber ? ` <span style="font-size:11px;color:#94a3b8;">Ref: ${p.referenceNumber}</span>` : ""}</div>
-      <div style="font-weight:600">${formatCurrency(p.amount)}</div>
-    </div>`).join("")}
-    ${remainingBalance > 0 ? `<div class="balance-row"><span>Remaining Balance</span><span>${formatCurrency(remainingBalance)}</span></div>` : ""}
-  </div>` : ""}
-
-  ${(invoice?.termsAndConditions || jobCard?.termsAndConditions) ? `
-  <div style="margin-top:28px;">
-    <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:#94a3b8;margin-bottom:8px;">Terms & Conditions</div>
-    <div style="font-size:12px;color:#64748b;line-height:1.6;white-space:pre-wrap;">${invoice?.termsAndConditions || jobCard?.termsAndConditions}</div>
-  </div>` : ""}
-
-  ${(invoice?.notes || jobCard?.notes) ? `
-  <div style="margin-top:20px;">
-    <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:#94a3b8;margin-bottom:8px;">Notes</div>
-    <div style="font-size:12px;color:#64748b;line-height:1.6;white-space:pre-wrap;">${invoice?.notes || jobCard?.notes}</div>
-  </div>` : ""}
-
-  ${invoiceCustomer?.referralCode ? `
-  <div style="margin-top:32px;padding:20px 24px;border:2px dashed #6366f1;border-radius:12px;text-align:center;background:#f5f3ff;">
-    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:#6366f1;margin-bottom:6px;">Your Referral Code</div>
-    <div style="font-size:28px;font-weight:800;letter-spacing:2px;color:#1a1a2e;font-family:'SF Mono','Fira Code',monospace;">${invoiceCustomer.referralCode}</div>
-    <div style="font-size:12px;color:#64748b;margin-top:8px;">Share this code with friends! They get <strong>${formatCurrency(newCustomerDiscount)} off</strong> their first service, and you earn <strong>${formatCurrency(referralRewardAmount)}</strong> in your wallet.</div>
-  </div>` : ""}
-
-  <div class="footer">
-    <div class="footer-thanks">Thank you for choosing Prime Detailers!</div>
-    <div class="footer-sub">For questions about this invoice, contact us at hello@primedetailers.in</div>
-    <div class="footer-brand">Powered by Prime Detailers &bull; Service Management Platform</div>
-  </div>
-</div>
-<script>window.onload=function(){window.print();}</script>
-</body></html>`);
+    if (!printWindow) {
+      window.print();
+      return;
+    }
+    const html = buildTaxInvoicePrintHtml({
+      invoice,
+      jobCard: jobCard ?? null,
+      customerName: invoice.customerName,
+      customerPhone: invoice.customerPhone,
+      customerEmail: invoiceCustomer?.email ?? "",
+      customerAddress: invoiceCustomer?.address ?? "",
+      vehicleMakeModel: jobCard?.vehicleMakeModel ?? "—",
+      business: {
+        businessName,
+        businessTagline,
+        businessAddress,
+        businessPhone,
+        businessWhatsApp,
+        businessEmail,
+        businessWebsite,
+        gstin,
+        companyPan,
+        bankName,
+        bankBranch,
+        bankAccountNumber,
+        bankIfsc,
+        bankUpi,
+      },
+      payments,
+      totalPaid,
+      remainingBalance,
+      referralCode: invoiceCustomer?.referralCode,
+      referralRewardAmount,
+      newCustomerDiscount,
+    });
+    printWindow.document.write(html);
     printWindow.document.close();
   };
 
@@ -286,6 +214,10 @@ tbody td:last-child { font-weight: 600; color: #1a1a2e; }
   }
 
   const vehicleMakeModel = jobCard?.vehicleMakeModel ?? "—";
+  const { cgst, sgst } = splitCgstSgst(invoice.taxAmount);
+  const addDisc = additionalDiscountTotal(invoice);
+  const taxable = netTaxableForDisplay(invoice);
+  const gstPct = Math.round(invoice.taxRate * 100);
 
   return (
     <div className="space-y-6 print:hidden">
@@ -293,171 +225,252 @@ tbody td:last-child { font-weight: 600; color: #1a1a2e; }
         { label: "Billing", href: "/billing" },
         { label: invoice.invoiceNumber },
       ]} />
-      <div className="flex flex-wrap items-center gap-2 sm:gap-4">
-        <div className="flex-1" />
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => toast.success("Invoice sent via WhatsApp")}
-        >
-          <MessageCircle className="w-4 h-4 mr-2" />
-          Send via WhatsApp
-        </Button>
-        <Button variant="outline" size="sm" onClick={handlePrint}>
-          <Printer className="w-4 h-4 mr-2" />
-          Print
-        </Button>
-        {(invoice.status === "ISSUED" || invoice.status === "PARTIALLY_PAID") &&
-          remainingBalance > 0 && (
-            <Button size="sm" onClick={openRecordDialog}>Record Payment</Button>
-          )}
-      </div>
 
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold font-mono">{invoice.invoiceNumber}</h1>
-          <div className="flex items-center gap-3 mt-2">
-            <InvoiceStatusBadge status={invoice.status} />
-            <span className="text-muted-foreground text-sm">
-              {formatDate(invoice.createdAt)}
-            </span>
-            <Link
-              href={`/job-cards/${invoice.jobCardId}`}
-              className="text-sm text-primary hover:underline"
-            >
-              {invoice.jobNumber}
-            </Link>
-          </div>
-        </div>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Customer & Vehicle</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          <div>
-            <span className="font-medium">{invoice.customerName}</span>
-          </div>
-          <div className="text-sm text-muted-foreground">{invoice.customerPhone}</div>
-          <div className="text-sm">
-            Vehicle: {invoice.vehicleRegNumber} · {vehicleMakeModel}
-          </div>
-          {invoice.mechanicName && (
-            <div className="text-sm text-muted-foreground">
-              Mechanic: {invoice.mechanicName}
+      <Card className="overflow-hidden border-indigo-200/40 dark:border-indigo-800/40 shadow-md shadow-indigo-500/10 bg-gradient-to-br from-card via-card to-violet-50/40 dark:to-violet-950/20">
+        <div className="h-2 bg-gradient-to-r from-indigo-500 via-violet-500 to-cyan-400" aria-hidden />
+        <CardContent className="pt-5 pb-5 space-y-5">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <Button variant="ghost" size="sm" className="-ml-2 h-8 w-fit text-muted-foreground hover:text-foreground" asChild>
+              <Link href="/billing">
+                <ArrowLeft className="w-4 h-4 mr-1.5" />
+                All invoices
+              </Link>
+            </Button>
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => toast.success("Invoice sent via WhatsApp")}
+              >
+                <MessageCircle className="w-4 h-4 mr-2" />
+                WhatsApp
+              </Button>
+              <Button variant="outline" size="sm" onClick={handlePrint}>
+                <Printer className="w-4 h-4 mr-2" />
+                Print
+              </Button>
+              {(invoice.status === "ISSUED" || invoice.status === "PARTIALLY_PAID") &&
+                remainingBalance > 0 && (
+                  <Button size="sm" onClick={openRecordDialog}>Record payment</Button>
+                )}
             </div>
-          )}
+          </div>
+
+          <div className="flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-start border-b border-indigo-200/50 dark:border-indigo-800/40 pb-5 rounded-lg bg-gradient-to-r from-indigo-500/5 via-violet-500/5 to-cyan-500/5 -mx-1 px-3 py-4 sm:py-3">
+            <div className="space-y-1 min-w-0">
+              <p className="text-lg font-bold bg-gradient-to-r from-indigo-600 to-violet-600 bg-clip-text text-transparent dark:from-indigo-400 dark:to-violet-400">{businessName}</p>
+              <p className="text-xs font-medium text-violet-600 dark:text-violet-400">{businessTagline}</p>
+              <p className="text-xs text-muted-foreground max-w-md leading-relaxed">{businessAddress}</p>
+              <p className="text-xs text-muted-foreground pt-1">
+                Phone: {businessPhone} <span className="text-indigo-300 dark:text-indigo-700">|</span> WhatsApp: {businessWhatsApp}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Email: {businessEmail} <span className="text-indigo-300 dark:text-indigo-700">|</span> {businessWebsite}
+              </p>
+            </div>
+            <div className="text-left sm:text-right shrink-0">
+              <p className="text-xl sm:text-2xl font-extrabold tracking-[0.2em] bg-gradient-to-r from-indigo-600 via-violet-600 to-fuchsia-600 bg-clip-text text-transparent dark:from-indigo-400 dark:via-violet-400 dark:to-fuchsia-400">TAX INVOICE</p>
+              <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground justify-start sm:justify-end">
+                <InvoiceStatusBadge status={invoice.status} />
+                <Link
+                  href={`/job-cards/${invoice.jobCardId}`}
+                  className="text-sm font-medium text-primary hover:underline"
+                >
+                  Job {invoice.jobNumber}
+                </Link>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs font-mono rounded-lg border border-indigo-200/60 dark:border-indigo-800/50 bg-gradient-to-r from-indigo-50/90 to-cyan-50/80 dark:from-indigo-950/50 dark:to-cyan-950/40 px-3 py-2.5 shadow-sm">
+            <span className="text-muted-foreground">eBill No: <span className="text-indigo-700 dark:text-indigo-300 font-semibold">{invoice.invoiceNumber}</span></span>
+            <span className="text-indigo-200 dark:text-indigo-800 hidden sm:inline">|</span>
+            <span className="text-muted-foreground">Booking Ref: <span className="text-violet-700 dark:text-violet-300 font-semibold">{invoice.jobNumber}</span></span>
+            <span className="text-indigo-200 dark:text-indigo-800 hidden sm:inline">|</span>
+            <span className="text-muted-foreground">Date: <span className="text-cyan-800 dark:text-cyan-300 font-semibold">{formatDate(invoice.createdAt)}</span></span>
+          </div>
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Line Items</CardTitle>
+      <div className="grid gap-4 md:grid-cols-2">
+        <Card className="border-indigo-200/50 dark:border-indigo-800/40 overflow-hidden shadow-md shadow-indigo-500/5 border-l-4 border-l-indigo-500">
+          <CardHeader className="pb-3 border-b-0 bg-gradient-to-r from-indigo-600 to-violet-600 text-white">
+            <CardTitle className="text-xs font-bold uppercase tracking-widest text-white">Billed to</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-4 space-y-2 text-sm">
+            <p className="font-semibold text-foreground">{invoice.customerName}</p>
+            <p><span className="text-muted-foreground">Mobile:</span> {invoice.customerPhone}</p>
+            <p><span className="text-muted-foreground">Email:</span> {invoiceCustomer?.email ?? "—"}</p>
+            <p><span className="text-muted-foreground">Address:</span> {invoiceCustomer?.address ?? "—"}</p>
+          </CardContent>
+        </Card>
+        <Card className="border-cyan-200/50 dark:border-cyan-900/40 overflow-hidden shadow-md shadow-cyan-500/5 border-l-4 border-l-cyan-500">
+          <CardHeader className="pb-3 border-b-0 bg-gradient-to-r from-cyan-600 to-teal-600 text-white">
+            <CardTitle className="text-xs font-bold uppercase tracking-widest text-white">Booking details</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-4 space-y-2 text-sm">
+            <p>
+              <span className="text-muted-foreground">Booking date:</span>{" "}
+              {jobCard ? formatDateTime(jobCard.createdAt) : formatDateTime(invoice.createdAt)}
+            </p>
+            <p><span className="text-muted-foreground">Mode:</span> Visit outlet</p>
+            <p>
+              <span className="text-muted-foreground">Expected delivery:</span>{" "}
+              {jobCard?.expectedDelivery ? formatDateTime(jobCard.expectedDelivery) : "—"}
+            </p>
+            <p><span className="text-muted-foreground">Vehicle:</span> {vehicleMakeModel}</p>
+            <p><span className="text-muted-foreground">Vehicle no:</span> <span className="font-mono font-medium">{invoice.vehicleRegNumber}</span></p>
+            {invoice.mechanicName && (
+              <p className="text-muted-foreground pt-1">
+                Mechanic: <span className="text-foreground font-medium">{invoice.mechanicName}</span>
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card className="border-indigo-200/40 dark:border-indigo-800/40 shadow-md shadow-indigo-500/10 overflow-hidden">
+        <CardHeader className="border-b-0 bg-gradient-to-r from-indigo-600 via-violet-600 to-purple-600 text-white">
+          <CardTitle className="text-base text-white">Services &amp; charges</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-0 sm:p-0">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-xs sm:text-sm min-w-[720px]">
               <thead>
-                <tr className="border-b border-border">
-                  <th className="text-left font-medium text-muted-foreground py-3 px-4">
-                    Description
-                  </th>
-                  <th className="text-left font-medium text-muted-foreground py-3 px-4">
-                    Type
-                  </th>
-                  <th className="text-right font-medium text-muted-foreground py-3 px-4">
-                    Qty
-                  </th>
-                  <th className="text-right font-medium text-muted-foreground py-3 px-4">
-                    Unit Price
-                  </th>
-                  <th className="text-right font-medium text-muted-foreground py-3 px-4">
-                    Total
-                  </th>
+                <tr className="border-b border-indigo-400/30 bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-sm">
+                  <th className="text-center font-semibold py-2.5 px-2 w-8 text-white/95">#</th>
+                  <th className="text-left font-semibold py-2.5 px-2 text-white/95">Service / description</th>
+                  <th className="text-center font-semibold py-2.5 px-2 w-20 text-white/95">HSN/SAC</th>
+                  <th className="text-right font-semibold py-2.5 px-2 w-24 text-white/95">Rate (Rs.)</th>
+                  <th className="text-right font-semibold py-2.5 px-2 w-20 text-white/95">Discount</th>
+                  <th className="text-right font-semibold py-2.5 px-2 w-24 text-white/95">Price</th>
+                  <th className="text-center font-semibold py-2.5 px-2 w-14 text-white/95">GST %</th>
+                  <th className="text-right font-semibold py-2.5 px-2 w-28 text-white/95">G-Total</th>
                 </tr>
               </thead>
               <tbody>
-                {invoice.lineItems.map((item) => (
-                  <tr key={item.id} className="border-b border-border">
-                    <td className="py-3 px-4">{item.description}</td>
-                    <td className="py-3 px-4">
-                      <Badge variant="secondary">{item.type}</Badge>
-                    </td>
-                    <td className="py-3 px-4 text-right">{item.quantity}</td>
-                    <td className="py-3 px-4 text-right">
-                      {formatCurrency(item.unitPrice)}
-                    </td>
-                    <td className="py-3 px-4 text-right font-medium">
-                      {formatCurrency(item.total)}
-                    </td>
-                  </tr>
-                ))}
+                {invoice.lineItems.map((item, idx) => {
+                  const disc = item.lineDiscount ?? 0;
+                  return (
+                    <tr key={item.id} className={`border-b border-indigo-100/80 dark:border-indigo-950/50 last:border-0 transition-colors ${idx % 2 === 0 ? "bg-white dark:bg-background" : "bg-indigo-50/50 dark:bg-indigo-950/20"} hover:bg-violet-50/80 dark:hover:bg-violet-950/25`}>
+                      <td className="py-2.5 px-2 text-center tabular-nums text-muted-foreground">{idx + 1}</td>
+                      <td className="py-2.5 px-2 align-top">
+                        <span className="text-foreground">{item.description}</span>
+                        <Badge variant="outline" className="ml-2 text-[10px] font-normal align-middle">{item.type}</Badge>
+                      </td>
+                      <td className="py-2.5 px-2 text-center font-mono text-xs">{item.hsnSac ?? DEFAULT_SERVICE_HSN}</td>
+                      <td className="py-2.5 px-2 text-right tabular-nums">{formatCurrency(lineRateDisplay(item))}</td>
+                      <td className="py-2.5 px-2 text-right tabular-nums text-muted-foreground">
+                        {disc > 0 ? formatCurrency(disc) : "—"}
+                      </td>
+                      <td className="py-2.5 px-2 text-right tabular-nums font-medium">{formatCurrency(item.total)}</td>
+                      <td className="py-2.5 px-2 text-center">{gstPct}%</td>
+                      <td className="py-2.5 px-2 text-right tabular-nums font-semibold text-indigo-700 dark:text-indigo-300">{formatCurrency(lineGrandWithTax(item, invoice))}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
               <tfoot>
-                <tr className="border-t border-border">
-                  <td colSpan={4} className="py-3 px-4 text-right text-muted-foreground">
-                    Subtotal
+                <tr className="border-t border-indigo-200/60 dark:border-indigo-800/50 bg-gradient-to-r from-slate-50 to-indigo-50/40 dark:from-slate-900/80 dark:to-indigo-950/40">
+                  <td colSpan={7} className="py-2.5 px-4 text-right text-muted-foreground font-medium">
+                    Sub-Total
                   </td>
-                  <td className="py-3 px-4 text-right">{formatCurrency(invoice.subtotal)}</td>
+                  <td className="py-2.5 px-2 text-right font-semibold tabular-nums text-foreground">{formatCurrency(invoice.subtotal)}</td>
                 </tr>
-                <tr>
-                  <td colSpan={4} className="py-2 px-4 text-right text-muted-foreground">
-                    Tax ({Math.round(invoice.taxRate * 100)}%)
-                  </td>
-                  <td className="py-2 px-4 text-right">{formatCurrency(invoice.taxAmount)}</td>
-                </tr>
-                <tr>
-                  <td colSpan={4} className="py-2 px-4 text-right text-muted-foreground">
-                    Discount
-                  </td>
-                  <td className="py-2 px-4 text-right">{formatCurrency(invoice.discountAmount)}</td>
-                </tr>
-                <tr>
-                  <td colSpan={4} className="py-2 px-4 text-right text-muted-foreground">
-                    Reward Discount
-                  </td>
-                  <td className="py-2 px-4 text-right">{formatCurrency(invoice.rewardDiscount)}</td>
-                </tr>
-                {invoiceCustomer?.referredBy && (
+                {addDisc > 0 && (
                   <tr>
-                    <td colSpan={4} className="py-2 px-4 text-right text-muted-foreground">
-                      Referral Discount
+                    <td colSpan={7} className="py-2 px-4 text-right text-muted-foreground">
+                      Additional discount
                     </td>
-                    <td className="py-2 px-4 text-right text-green-600 dark:text-green-400">
-                      -{formatCurrency(newCustomerDiscount)}
+                    <td className="py-2 px-2 text-right tabular-nums text-amber-700 dark:text-amber-400">
+                      -{formatCurrency(addDisc)}
                     </td>
                   </tr>
                 )}
-                {invoice.walletAmountUsed > 0 && (
-                  <tr>
-                    <td colSpan={4} className="py-2 px-4 text-right text-muted-foreground">
-                      Wallet Used
-                    </td>
-                    <td className="py-2 px-4 text-right">{formatCurrency(invoice.walletAmountUsed)}</td>
-                  </tr>
-                )}
-                <tr className="border-t-2 border-border">
-                  <td colSpan={4} className="py-4 px-4 text-right font-bold text-lg">
-                    Grand Total
+                <tr>
+                  <td colSpan={7} className="py-2 px-4 text-right text-muted-foreground">
+                    Taxable amount
                   </td>
-                  <td className="py-4 px-4 text-right font-bold text-lg">
+                  <td className="py-2 px-2 text-right tabular-nums">{formatCurrency(taxable)}</td>
+                </tr>
+                <tr className="bg-cyan-50/60 dark:bg-cyan-950/20">
+                  <td colSpan={7} className="py-2 px-4 text-right text-cyan-800 dark:text-cyan-300 font-medium">
+                    CGST ({gstHalfPercentLabel(invoice.taxRate)})
+                  </td>
+                  <td className="py-2 px-2 text-right tabular-nums font-semibold text-cyan-800 dark:text-cyan-300">{formatCurrency(cgst)}</td>
+                </tr>
+                <tr className="bg-sky-50/60 dark:bg-sky-950/20">
+                  <td colSpan={7} className="py-2 px-4 text-right text-sky-800 dark:text-sky-300 font-medium">
+                    SGST ({gstHalfPercentLabel(invoice.taxRate)})
+                  </td>
+                  <td className="py-2 px-2 text-right tabular-nums font-semibold text-sky-800 dark:text-sky-300">{formatCurrency(sgst)}</td>
+                </tr>
+                <tr className="border-t-2 border-indigo-300/60 dark:border-indigo-700 bg-gradient-to-r from-indigo-600 via-violet-600 to-purple-600 text-white shadow-inner">
+                  <td colSpan={7} className="py-3 px-4 text-right font-bold text-base text-white">
+                    Grand total
+                  </td>
+                  <td className="py-3 px-2 text-right font-bold text-base tabular-nums text-white">
                     {formatCurrency(invoice.grandTotal)}
                   </td>
                 </tr>
+                {totalPaid > 0 && (
+                  <tr>
+                    <td colSpan={7} className="py-2 px-4 text-right text-muted-foreground">
+                      Advance paid
+                    </td>
+                    <td className="py-2 px-2 text-right tabular-nums font-medium">{formatCurrency(totalPaid)}</td>
+                  </tr>
+                )}
+                {remainingBalance > 0 && (
+                  <tr>
+                    <td colSpan={7} className="py-2 px-4 text-right font-semibold text-amber-700 dark:text-amber-400">
+                      Balance due
+                    </td>
+                    <td className="py-2 px-2 text-right tabular-nums font-bold text-amber-700 dark:text-amber-400">
+                      {formatCurrency(remainingBalance)}
+                    </td>
+                  </tr>
+                )}
               </tfoot>
             </table>
           </div>
         </CardContent>
       </Card>
 
-      {(invoice.termsAndConditions || jobCard?.termsAndConditions) && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Terms & Conditions</CardTitle>
+      <div className="grid gap-4 md:grid-cols-2">
+        <Card className="border-violet-200/50 dark:border-violet-900/40 overflow-hidden shadow-md border-l-4 border-l-violet-500">
+          <CardHeader className="pb-3 border-b-0 bg-gradient-to-r from-violet-600 to-purple-600 text-white">
+            <CardTitle className="text-xs font-bold uppercase tracking-widest text-white">Bank details</CardTitle>
           </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+          <CardContent className="pt-4 space-y-1.5 text-sm text-muted-foreground">
+            <p><span className="text-foreground/80">Bank:</span> {bankName}</p>
+            <p><span className="text-foreground/80">Branch:</span> {bankBranch}</p>
+            <p><span className="text-foreground/80">A/c No:</span> {bankAccountNumber}</p>
+            <p><span className="text-foreground/80">IFSC:</span> {bankIfsc}</p>
+            <p><span className="text-foreground/80">UPI / PayTM:</span> {bankUpi}</p>
+          </CardContent>
+        </Card>
+        <Card className="border-fuchsia-200/50 dark:border-fuchsia-900/40 overflow-hidden shadow-md border-l-4 border-l-fuchsia-500">
+          <CardHeader className="pb-3 border-b-0 bg-gradient-to-r from-fuchsia-600 to-pink-600 text-white">
+            <CardTitle className="text-xs font-bold uppercase tracking-widest text-white">Company info</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-4 space-y-1.5 text-sm text-muted-foreground">
+            <p className="font-semibold text-foreground">{businessName}</p>
+            <p><span className="text-foreground/80">PAN:</span> {companyPan}</p>
+            <p><span className="text-foreground/80">GSTIN:</span> {gstin}</p>
+            <p><span className="text-foreground/80">Address:</span> {businessAddress}</p>
+            <p><span className="text-foreground/80">Contact:</span> {businessPhone}</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {(invoice.termsAndConditions || jobCard?.termsAndConditions) && (
+        <Card className="border-border/80 shadow-sm">
+          <CardHeader className="border-b border-border/80 bg-muted/20">
+            <CardTitle className="text-base">Terms & Conditions</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-4">
+            <p className="text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">
               {invoice.termsAndConditions || jobCard?.termsAndConditions}
             </p>
           </CardContent>
@@ -465,12 +478,12 @@ tbody td:last-child { font-weight: 600; color: #1a1a2e; }
       )}
 
       {(invoice.notes || jobCard?.notes) && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Notes</CardTitle>
+        <Card className="border-border/80 shadow-sm">
+          <CardHeader className="border-b border-border/80 bg-muted/20">
+            <CardTitle className="text-base">Notes</CardTitle>
           </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+          <CardContent className="pt-4">
+            <p className="text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">
               {invoice.notes || jobCard?.notes}
             </p>
           </CardContent>
@@ -478,34 +491,36 @@ tbody td:last-child { font-weight: 600; color: #1a1a2e; }
       )}
 
       {invoiceCustomer?.referralCode && (
-        <Card className="border-primary/30 bg-primary/5">
-          <CardContent className="py-6 text-center">
-            <p className="text-xs font-semibold uppercase tracking-wider text-primary mb-2">
-              Your Referral Code
+        <Card className="border-border bg-muted/30 shadow-sm">
+          <CardContent className="py-5 text-center">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-2">
+              Your referral code
             </p>
-            <p className="text-3xl font-extrabold tracking-widest font-mono border-2 border-dashed border-primary/40 rounded-lg py-3 px-6 inline-block">
+            <p className="text-2xl font-semibold tracking-wider font-mono border border-dashed border-border rounded-md py-2.5 px-5 inline-block bg-background">
               {invoiceCustomer.referralCode}
             </p>
-            <p className="text-sm text-muted-foreground mt-3 max-w-md mx-auto">
-              Share this code with friends! They get <span className="font-semibold text-green-600 dark:text-green-400">{formatCurrency(newCustomerDiscount)} off</span> their first service, and you earn <span className="font-semibold text-primary">{formatCurrency(referralRewardAmount)}</span> in your wallet.
+            <p className="text-sm text-muted-foreground mt-3 max-w-md mx-auto leading-relaxed">
+              Share this code with friends. When they book their <span className="font-medium text-foreground">first service</span> using your code, they save{" "}
+              <span className="font-semibold text-foreground">{formatCurrency(newCustomerDiscount)}</span> and you receive{" "}
+              <span className="font-semibold text-foreground">{formatCurrency(referralRewardAmount)}</span> in your wallet.
             </p>
           </CardContent>
         </Card>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Payment History</CardTitle>
+      <Card className="border-border/80 shadow-sm">
+        <CardHeader className="border-b border-border/80 bg-muted/20">
+          <CardTitle className="text-base">Payment history</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="pt-4">
           {payments.length === 0 ? (
-            <p className="text-muted-foreground text-sm">No payments recorded yet.</p>
+            <p className="text-muted-foreground text-sm py-2">No payments recorded yet.</p>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-0 divide-y divide-border/80">
               {payments.map((payment) => (
                 <div
                   key={payment.id}
-                  className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between py-3 border-b border-border last:border-0"
+                  className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between py-4 first:pt-0"
                 >
                   <div className="flex flex-wrap items-center gap-2 sm:gap-3">
                     <span className="text-sm text-muted-foreground">
