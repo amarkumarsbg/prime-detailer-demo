@@ -82,9 +82,25 @@ export default function AttendancePage() {
   );
 
   const kpis = useMemo(() => {
-    const present = todayRecords.filter((r) => r.status === "PRESENT").length;
-    const late = todayRecords.filter((r) => r.status === "LATE").length;
-    const absent = todayRecords.filter((r) => r.status === "ABSENT").length;
+    /** Headcount: one row per staff. Short shifts are HALF_DAY, not PRESENT — still “showed up”. */
+    const presentStaff = new Set(
+      todayRecords
+        .filter(
+          (r) =>
+            r.checkIn &&
+            (r.status === "PRESENT" ||
+              r.status === "LATE" ||
+              r.status === "HALF_DAY")
+        )
+        .map((r) => r.staffId)
+    );
+    const present = presentStaff.size;
+    const late = new Set(
+      todayRecords.filter((r) => r.status === "LATE").map((r) => r.staffId)
+    ).size;
+    /** Active branch roster who have not checked in today (complements Present; includes explicit ABSENT + no row). */
+    const roster = staffForBranch.filter((s) => s.isActive);
+    const absent = roster.filter((s) => !presentStaff.has(s.id)).length;
     const withDuration = todayRecords.filter(
       (r) => r.durationMinutes != null && r.durationMinutes > 0
     );
@@ -98,7 +114,7 @@ export default function AttendancePage() {
         : "0";
 
     return { present, late, absent, avgHours };
-  }, [todayRecords]);
+  }, [todayRecords, staffForBranch]);
 
   const absenceAlerts = useMemo(() => {
     const cutoff = "09:30";
@@ -188,7 +204,7 @@ export default function AttendancePage() {
             <KPICard
               title="Present Today"
               value={kpis.present}
-              subtitle="staff"
+              subtitle="checked in"
               icon={UserCheck}
             />
             <KPICard
@@ -200,7 +216,7 @@ export default function AttendancePage() {
             <KPICard
               title="Absent Today"
               value={kpis.absent}
-              subtitle="staff"
+              subtitle="no check-in"
               icon={UserX}
             />
             <KPICard
