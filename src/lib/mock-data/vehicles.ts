@@ -26,6 +26,14 @@ export const vehicles: Vehicle[] = [
     color: "Titan Grey",
     year: 2023,
     segment: "SUV",
+    previousOwners: [
+      {
+        customerId: "cust-001",
+        customerName: "Arun Mehta",
+        transferDate: "2025-08-20",
+        reason: "Gifted within family",
+      },
+    ],
   },
   {
     id: "veh-003",
@@ -39,6 +47,14 @@ export const vehicles: Vehicle[] = [
     color: "Calcutta Teal",
     year: 2024,
     segment: "SUV",
+    previousOwners: [
+      {
+        customerId: "cust-001",
+        customerName: "Arun Mehta",
+        transferDate: "2026-03-15",
+        reason: "Vehicle sold",
+      },
+    ],
   },
   {
     id: "veh-004",
@@ -52,6 +68,14 @@ export const vehicles: Vehicle[] = [
     color: "Radiant Red",
     year: 2021,
     segment: "SEDAN",
+    previousOwners: [
+      {
+        customerId: "cust-002",
+        customerName: "Lakshmi Venkatesh",
+        transferDate: "2025-04-12",
+        reason: "Relocation sale",
+      },
+    ],
   },
   {
     id: "veh-005",
@@ -78,6 +102,14 @@ export const vehicles: Vehicle[] = [
     color: "Midnight Black",
     year: 2023,
     segment: "SUV",
+    previousOwners: [
+      {
+        customerId: "cust-005",
+        customerName: "Mohammed Irfan",
+        transferDate: "2025-02-28",
+        reason: "Vehicle sold",
+      },
+    ],
   },
   {
     id: "veh-007",
@@ -135,6 +167,7 @@ export const vehicles: Vehicle[] = [
         customerId: "cust-003",
         customerName: "Sandeep Patel",
         transferDate: "2025-06-15",
+        reason: "Not specified",
       },
     ],
   },
@@ -151,6 +184,14 @@ export const vehicles: Vehicle[] = [
     year: 2020,
     notes: "Second car - used for city commute",
     segment: "SEDAN",
+    previousOwners: [
+      {
+        customerId: "cust-017",
+        customerName: "Manish Agarwal",
+        transferDate: "2024-03-01",
+        reason: "Pre-owned purchase",
+      },
+    ],
   },
   {
     id: "veh-012",
@@ -268,6 +309,14 @@ export const vehicles: Vehicle[] = [
     color: "Titan Grey",
     year: 2022,
     segment: "SEDAN",
+    previousOwners: [
+      {
+        customerId: "cust-008",
+        customerName: "Meera Sundaram",
+        transferDate: "2024-12-01",
+        reason: "Upgrade",
+      },
+    ],
   },
   {
     id: "veh-021",
@@ -307,6 +356,14 @@ export const vehicles: Vehicle[] = [
     color: "Silky Silver",
     year: 2021,
     segment: "HATCHBACK",
+    previousOwners: [
+      {
+        customerId: "cust-012",
+        customerName: "Anjali Menon",
+        transferDate: "2025-01-20",
+        reason: "Not specified",
+      },
+    ],
   },
   {
     id: "veh-024",

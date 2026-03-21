@@ -9,9 +9,29 @@ import { Breadcrumbs } from "@/components/shared/breadcrumbs";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { getInitials, formatDate, formatCurrency } from "@/lib/utils";
 import { JobCardStatusBadge } from "@/components/shared/status-badge";
-import { ArrowLeft, Mail, Phone, MapPin, Shield, ClipboardList, CheckCircle2, Clock, IndianRupee, KeyRound } from "lucide-react";
+import {
+  ArrowLeft,
+  Mail,
+  Phone,
+  MapPin,
+  Shield,
+  ClipboardList,
+  CheckCircle2,
+  Clock,
+  IndianRupee,
+  KeyRound,
+  Pencil,
+} from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
@@ -24,20 +44,43 @@ const ROLE_LABELS: Record<UserRole, string> = {
   MECHANIC: "Mechanic",
 };
 
+const ROLE_OPTIONS: UserRole[] = ["ADMIN", "MANAGER", "RECEPTIONIST", "MECHANIC"];
+
 export default function StaffDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
   const user = useAuthStore((s) => s.user);
   const member = useStaffStore((s) => s.staff.find((row) => row.id === id));
   const updateAttendancePin = useStaffStore((s) => s.updateAttendancePin);
+  const updateStaff = useStaffStore((s) => s.updateStaff);
 
   const [pinInput, setPinInput] = useState("");
+  const [editingProfile, setEditingProfile] = useState(false);
+  const [editName, setEditName] = useState("");
+  const [editEmail, setEditEmail] = useState("");
+  const [editPhone, setEditPhone] = useState("");
+  const [editRole, setEditRole] = useState<UserRole>("MECHANIC");
+  const [editBranchId, setEditBranchId] = useState("");
+  const [editIsActive, setEditIsActive] = useState(true);
+
   useEffect(() => {
     if (member) setPinInput(member.attendancePin ?? "");
   }, [member?.id, member?.attendancePin]);
 
-  const canEditAttendancePin =
+  const syncEditFromMember = () => {
+    if (!member) return;
+    setEditName(member.name);
+    setEditEmail(member.email);
+    setEditPhone(member.phone);
+    setEditRole(member.role);
+    setEditBranchId(member.branchId);
+    setEditIsActive(member.isActive);
+  };
+
+  const canEditStaff =
     user?.role === "ADMIN" || user?.role === "MANAGER";
+
+  const canEditAttendancePin = canEditStaff;
 
   if (!member) {
     return (
@@ -67,6 +110,44 @@ export default function StaffDetailPage({ params }: { params: Promise<{ id: stri
     toast.success("Attendance PIN saved.");
   };
 
+  const handleStartEditProfile = () => {
+    syncEditFromMember();
+    setEditingProfile(true);
+  };
+
+  const handleCancelEditProfile = () => {
+    setEditingProfile(false);
+    syncEditFromMember();
+  };
+
+  const handleSaveProfile = () => {
+    const name = editName.trim();
+    const email = editEmail.trim();
+    const phone = editPhone.trim();
+    if (!name || !email || !phone) {
+      toast.error("Name, email, and phone are required.");
+      return;
+    }
+    const result = updateStaff(member.id, {
+      name,
+      email,
+      phone,
+      role: editRole,
+      branchId: editBranchId,
+      isActive: editIsActive,
+    });
+    if (!result.ok) {
+      if (result.error === "DUPLICATE_EMAIL") {
+        toast.error("Another staff member already uses this email.");
+      } else {
+        toast.error("Could not save changes.");
+      }
+      return;
+    }
+    toast.success("Profile updated.");
+    setEditingProfile(false);
+  };
+
   const handleGenerateAttendancePin = () => {
     if (!member) return;
     for (let i = 0; i < 60; i++) {
@@ -92,31 +173,137 @@ export default function StaffDetailPage({ params }: { params: Promise<{ id: stri
 
       <Card>
         <CardContent className="p-6!">
-          <div className="flex flex-col sm:flex-row sm:items-center items-start gap-6">
-            <Avatar className="w-20 h-20">
-              <AvatarFallback className="bg-primary text-primary-foreground text-2xl font-bold">
-                {getInitials(member.name)}
-              </AvatarFallback>
-            </Avatar>
-            <div className="flex-1 space-y-3">
-              <div>
-                <h2 className="text-xl font-bold">{member.name}</h2>
-                <span className="inline-flex items-center gap-1.5 mt-1 px-2.5 py-1 rounded-full text-xs font-medium bg-primary/10 text-primary">
-                  <Shield className="w-3 h-3" />
-                  {ROLE_LABELS[member.role]}
-                </span>
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="flex flex-col sm:flex-row sm:items-center items-start gap-6 flex-1 min-w-0">
+                <Avatar className="w-20 h-20 shrink-0">
+                  <AvatarFallback className="bg-primary text-primary-foreground text-2xl font-bold">
+                    {getInitials(editingProfile ? editName || member.name : member.name)}
+                  </AvatarFallback>
+                </Avatar>
+                {!editingProfile ? (
+                  <div className="flex-1 space-y-3 min-w-0">
+                    <div>
+                      <h2 className="text-xl font-bold">{member.name}</h2>
+                      <span className="inline-flex items-center gap-1.5 mt-1 px-2.5 py-1 rounded-full text-xs font-medium bg-primary/10 text-primary">
+                        <Shield className="w-3 h-3" />
+                        {ROLE_LABELS[member.role]}
+                      </span>
+                      {!member.isActive && (
+                        <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground">
+                          Inactive
+                        </span>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+                      <div className="flex items-center gap-2 text-muted-foreground min-w-0">
+                        <Mail className="w-4 h-4 shrink-0" />
+                        <span className="truncate">{member.email}</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <Phone className="w-4 h-4 shrink-0" />
+                        {member.phone}
+                      </div>
+                      <div className="flex items-center gap-2 text-muted-foreground min-w-0">
+                        <MapPin className="w-4 h-4 shrink-0" />
+                        <span className="truncate">{branch?.name ?? "—"}</span>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex-1 w-full max-w-xl space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-2 sm:col-span-2">
+                        <Label htmlFor="staff-name">Name</Label>
+                        <Input
+                          id="staff-name"
+                          value={editName}
+                          onChange={(e) => setEditName(e.target.value)}
+                          autoComplete="name"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="staff-email">Email</Label>
+                        <Input
+                          id="staff-email"
+                          type="email"
+                          value={editEmail}
+                          onChange={(e) => setEditEmail(e.target.value)}
+                          autoComplete="email"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="staff-phone">Phone</Label>
+                        <Input
+                          id="staff-phone"
+                          value={editPhone}
+                          onChange={(e) => setEditPhone(e.target.value)}
+                          inputMode="tel"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Role</Label>
+                        <Select value={editRole} onValueChange={(v) => setEditRole(v as UserRole)}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {ROLE_OPTIONS.map((r) => (
+                              <SelectItem key={r} value={r}>
+                                {ROLE_LABELS[r]}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Branch</Label>
+                        <Select value={editBranchId} onValueChange={setEditBranchId}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Branch" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {branches.map((b) => (
+                              <SelectItem key={b.id} value={b.id}>
+                                {b.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="flex items-center gap-2 sm:col-span-2 pt-2">
+                        <Checkbox
+                          id="staff-active"
+                          checked={editIsActive}
+                          onCheckedChange={(c) => setEditIsActive(c === true)}
+                        />
+                        <Label htmlFor="staff-active" className="text-sm font-normal cursor-pointer">
+                          Active (can log in and appear on rosters)
+                        </Label>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <Mail className="w-4 h-4" />{member.email}
+              {canEditStaff && (
+                <div className="flex flex-wrap gap-2 shrink-0">
+                  {!editingProfile ? (
+                    <Button type="button" variant="outline" size="sm" onClick={handleStartEditProfile}>
+                      <Pencil className="w-4 h-4 mr-2" />
+                      Edit profile
+                    </Button>
+                  ) : (
+                    <>
+                      <Button type="button" variant="outline" size="sm" onClick={handleCancelEditProfile}>
+                        Cancel
+                      </Button>
+                      <Button type="button" size="sm" onClick={handleSaveProfile}>
+                        Save changes
+                      </Button>
+                    </>
+                  )}
                 </div>
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <Phone className="w-4 h-4" />{member.phone}
-                </div>
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <MapPin className="w-4 h-4" />{branch?.name ?? "—"}
-                </div>
-              </div>
+              )}
             </div>
           </div>
         </CardContent>

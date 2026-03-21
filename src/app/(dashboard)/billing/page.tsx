@@ -10,6 +10,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { useInvoiceStore } from "@/store/invoice-store";
+import { useDashboardFilterStore, DASHBOARD_FILTER } from "@/store/dashboard-filter-store";
+import { isPendingPaymentInvoice } from "@/lib/dashboard-filters";
+import { FilterBanner } from "@/components/shared/filter-banner";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import type { Invoice, InvoiceStatus } from "@/types";
 import { IndianRupee, TrendingUp, FileText, Receipt } from "lucide-react";
@@ -33,16 +36,23 @@ function getPaymentMethodLabel(method: string): string {
 
 export default function BillingPage() {
   const router = useRouter();
+  const activeFilter = useDashboardFilterStore((s) => s.activeFilter);
+  const setActiveFilter = useDashboardFilterStore((s) => s.setActiveFilter);
   const [activeTab, setActiveTab] = useState<string>("all");
   const invoices = useInvoiceStore((s) => s.invoices);
 
+  const invoicesForView = useMemo(() => {
+    if (activeFilter !== DASHBOARD_FILTER.PENDING_PAYMENT) return invoices;
+    return invoices.filter(isPendingPaymentInvoice);
+  }, [invoices, activeFilter]);
+
   const tabCounts = useMemo(() => {
-    const c: Record<string, number> = { all: invoices.length };
-    invoices.forEach((inv) => {
+    const c: Record<string, number> = { all: invoicesForView.length };
+    invoicesForView.forEach((inv) => {
       c[inv.status] = (c[inv.status] ?? 0) + 1;
     });
     return c;
-  }, [invoices]);
+  }, [invoicesForView]);
 
   const toTableRows = (list: Invoice[]) =>
     list.map((inv) => ({
@@ -57,7 +67,7 @@ export default function BillingPage() {
       createdAt: inv.createdAt,
     })) as Record<string, unknown>[];
 
-  const allTableData = useMemo(() => toTableRows(invoices), [invoices]);
+  const allTableData = useMemo(() => toTableRows(invoicesForView), [invoicesForView]);
 
   const kpis = useMemo(() => {
     const paidInvoices = invoices.filter((i) => i.status === "PAID");
@@ -166,6 +176,13 @@ export default function BillingPage() {
         description="View and manage invoices, payments, and billing history"
       />
 
+      {activeFilter === DASHBOARD_FILTER.PENDING_PAYMENT && (
+        <FilterBanner
+          message="⚠ Showing pending payments — awaiting collection"
+          onDismiss={() => setActiveFilter(null)}
+        />
+      )}
+
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <KPICard
           title="Total Revenue"
@@ -214,7 +231,7 @@ export default function BillingPage() {
                   data={
                     tab.value === "all"
                       ? allTableData
-                      : toTableRows(invoices.filter((inv) => inv.status === tab.value))
+                      : toTableRows(invoicesForView.filter((inv) => inv.status === tab.value))
                   }
                   columns={columns}
                   searchPlaceholder="Search by invoice number, customer, or vehicle..."

@@ -25,9 +25,19 @@ interface AddStaffInput {
   branchId: string;
 }
 
+export type UpdateStaffResult =
+  | { ok: true }
+  | { ok: false; error: "NOT_FOUND" | "DUPLICATE_EMAIL" };
+
 interface StaffStoreState {
   staff: User[];
   addStaff: (input: AddStaffInput) => void;
+  updateStaff: (
+    id: string,
+    updates: Partial<
+      Pick<User, "name" | "email" | "phone" | "role" | "branchId" | "isActive">
+    >
+  ) => UpdateStaffResult;
   updateAttendancePin: (staffId: string, pin: string) => UpdatePinResult;
   findByAttendancePin: (pin: string) => User | undefined;
   resetToSeed: () => void;
@@ -76,6 +86,38 @@ export const useStaffStore = create<StaffStoreState>()(
           attendancePin: allocateAttendancePin(() => get().staff),
         };
         set({ staff: [newMember, ...list] });
+      },
+
+      updateStaff: (id, updates) => {
+        const list = get().staff;
+        const current = list.find((s) => s.id === id);
+        if (!current) return { ok: false, error: "NOT_FOUND" };
+
+        const next: User = {
+          ...current,
+          ...updates,
+          name: updates.name !== undefined ? updates.name.trim() : current.name,
+          email: updates.email !== undefined ? updates.email.trim() : current.email,
+          phone: updates.phone !== undefined ? updates.phone.trim() : current.phone,
+          role: updates.role ?? current.role,
+          branchId: updates.branchId ?? current.branchId,
+          isActive: updates.isActive ?? current.isActive,
+        };
+
+        if (
+          list.some(
+            (s) =>
+              s.id !== id &&
+              s.email.toLowerCase() === next.email.toLowerCase()
+          )
+        ) {
+          return { ok: false, error: "DUPLICATE_EMAIL" };
+        }
+
+        set({
+          staff: list.map((s) => (s.id === id ? next : s)),
+        });
+        return { ok: true };
       },
 
       updateAttendancePin: (staffId, pin) => {

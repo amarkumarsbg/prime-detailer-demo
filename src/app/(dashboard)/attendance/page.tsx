@@ -19,6 +19,7 @@ import { useStaffStore } from "@/store/staff-store";
 import { useAuthStore } from "@/store/auth-store";
 import { AttendanceQrPanel } from "@/components/attendance/attendance-qr-panel";
 import { format } from "date-fns";
+import type { UserRole } from "@/types";
 import {
   Clock,
   UserCheck,
@@ -27,12 +28,26 @@ import {
   Calendar,
 } from "lucide-react";
 import { getShiftStatusDisplay } from "@/lib/attendance-display";
+import { canViewStaffAttendanceDashboard } from "@/lib/attendance-access";
+
+const ROLE_LABELS: Record<UserRole, string> = {
+  ADMIN: "Admin",
+  MANAGER: "Manager",
+  RECEPTIONIST: "Receptionist",
+  MECHANIC: "Mechanic",
+};
 
 function formatDuration(minutes?: number): string {
   if (minutes == null) return "—";
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;
   return `${h}h ${m}m`;
+}
+
+/** Local calendar day from yyyy-MM-dd (avoids UTC shift from `new Date(iso)`). */
+function formatDateOptionLabel(isoDate: string): string {
+  const [yy, mm, dd] = isoDate.split("-").map(Number);
+  return format(new Date(yy, mm - 1, dd), "EEE, MMM d, yyyy");
 }
 
 export default function AttendancePage() {
@@ -45,7 +60,7 @@ export default function AttendancePage() {
   const branchId = currentBranch?.id ?? user?.branchId ?? "br-001";
 
   useEffect(() => {
-    if (user && user.role !== "ADMIN" && user.role !== "MANAGER") {
+    if (user && !canViewStaffAttendanceDashboard(user.role)) {
       router.replace("/dashboard");
     }
   }, [user, router]);
@@ -128,14 +143,25 @@ export default function AttendancePage() {
     });
   }, [todayRecords, staffForBranch]);
 
+  const summaryPeriodLabel = useMemo(() => {
+    const [y, m, d] = selectedDate.split("-").map(Number);
+    const end = new Date(y, m - 1, d);
+    const start = new Date(y, m - 1, d);
+    start.setDate(start.getDate() - 6);
+    return `${format(start, "EEE, MMM d")} – ${format(end, "EEE, MMM d, yyyy")}`;
+  }, [selectedDate]);
+
   const staffSummary = useMemo(() => {
-    const startDate = new Date(selectedDate);
-    startDate.setDate(startDate.getDate() - 6);
-    const startStr = format(startDate, "yyyy-MM-dd");
+    const [y, m, d] = selectedDate.split("-").map(Number);
+    const end = new Date(y, m - 1, d);
+    const start = new Date(y, m - 1, d);
+    start.setDate(start.getDate() - 6);
+    const startStr = format(start, "yyyy-MM-dd");
+    const endStr = format(end, "yyyy-MM-dd");
     const periodRecords = attendanceRecords.filter(
       (r) =>
         r.branchId === branchId &&
-        r.date <= selectedDate &&
+        r.date <= endStr &&
         r.date >= startStr
     );
     return staffForBranch.map((s) => {
@@ -172,7 +198,7 @@ export default function AttendancePage() {
     return null;
   }
 
-  if (user.role !== "ADMIN" && user.role !== "MANAGER") {
+  if (!canViewStaffAttendanceDashboard(user.role)) {
     return (
       <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted-foreground">
         Redirecting…
@@ -185,7 +211,7 @@ export default function AttendancePage() {
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <PageHeader
           title="Staff Attendance"
-          description="Live view — QR + PIN punch, check-in/out, and hours"
+          description="Managers and admins only — QR + PIN punch, check-in/out, and hours"
         />
         <Badge variant="success" className="w-fit shrink-0">
           Live
@@ -280,7 +306,7 @@ export default function AttendancePage() {
                 <SelectContent>
                   {dateOptions.map((d) => (
                     <SelectItem key={d} value={d}>
-                      {format(new Date(d), "EEE, MMM d, yyyy")}
+                      {formatDateOptionLabel(d)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -345,59 +371,102 @@ export default function AttendancePage() {
         </TabsContent>
 
         <TabsContent value="summary" className="space-y-4 sm:space-y-6">
-          <Card>
-            <CardHeader className="pb-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <div>
+          <Card className="overflow-hidden">
+            <CardHeader className="pb-3 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 border-b border-border/80 bg-muted/20">
+              <div className="space-y-1 min-w-0">
                 <CardTitle className="text-base font-semibold">
                   Staff-wise Attendance Summary
                 </CardTitle>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Last 7 days from selected date
+                <p className="text-sm text-muted-foreground">
+                  Rolling 7 days ending on the selected date
+                </p>
+                <p className="text-xs font-medium text-foreground/90 tabular-nums">
+                  {summaryPeriodLabel}
                 </p>
               </div>
-              <Select value={selectedDate} onValueChange={setSelectedDate}>
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Select date" />
-                </SelectTrigger>
-                <SelectContent>
-                  {dateOptions.map((d) => (
-                    <SelectItem key={d} value={d}>
-                      {format(new Date(d), "EEE, MMM d, yyyy")}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {staffSummary.map((s) => (
-                  <Card key={s.id} className="hover:shadow-sm transition-shadow">
-                    <CardContent className="p-4">
-                      <p className="font-semibold text-sm">{s.name}</p>
-                      <p className="text-xs text-muted-foreground mb-3">{s.role}</p>
-                      <div className="flex flex-wrap gap-2 text-xs">
-                        <Badge variant="success" className="text-[10px]">
-                          P: {s.present}
-                        </Badge>
-                        <Badge variant="destructive" className="text-[10px]">
-                          A: {s.absent}
-                        </Badge>
-                        <Badge variant="warning" className="text-[10px]">
-                          L: {s.late}
-                        </Badge>
-                        {s.halfDay > 0 && (
-                          <Badge variant="info" className="text-[10px]">
-                            H: {s.halfDay}
-                          </Badge>
-                        )}
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-2">
-                        Avg: {s.avgHours}h
-                      </p>
-                    </CardContent>
-                  </Card>
-                ))}
+              <div className="flex flex-col gap-1.5 sm:items-end shrink-0">
+                <span className="text-xs text-muted-foreground">End date</span>
+                <Select value={selectedDate} onValueChange={setSelectedDate}>
+                  <SelectTrigger className="w-[200px]">
+                    <SelectValue placeholder="Select date" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {dateOptions.map((d) => (
+                      <SelectItem key={d} value={d}>
+                        {formatDateOptionLabel(d)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <table className="w-full caption-bottom border-collapse text-sm tabular-nums">
+                  <caption className="sr-only">
+                    Staff attendance counts for the rolling seven-day period ending on the selected date
+                  </caption>
+                  <thead>
+                    <tr className="border-b border-border bg-muted/50">
+                      <th
+                        scope="col"
+                        className="text-left py-3 px-4 font-semibold text-foreground min-w-[140px]"
+                      >
+                        Staff
+                      </th>
+                      <th
+                        scope="col"
+                        className="text-left py-3 px-3 font-semibold text-foreground hidden sm:table-cell w-[120px]"
+                      >
+                        Role
+                      </th>
+                      <th scope="col" className="text-right py-3 px-3 font-semibold w-16">
+                        P
+                      </th>
+                      <th scope="col" className="text-right py-3 px-3 font-semibold w-16">
+                        A
+                      </th>
+                      <th scope="col" className="text-right py-3 px-3 font-semibold w-16">
+                        L
+                      </th>
+                      <th scope="col" className="text-right py-3 px-3 font-semibold w-16">
+                        H
+                      </th>
+                      <th scope="col" className="text-right py-3 pr-4 pl-3 font-semibold w-[5.5rem]">
+                        Avg
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {staffSummary.map((s) => (
+                      <tr
+                        key={s.id}
+                        className="border-b border-border/70 odd:bg-muted/15 hover:bg-muted/35 transition-colors"
+                      >
+                        <td className="py-3 px-4 align-middle font-medium text-foreground">
+                          {s.name}
+                          <span className="sm:hidden block text-xs font-normal text-muted-foreground mt-0.5">
+                            {ROLE_LABELS[s.role]}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 align-middle text-muted-foreground hidden sm:table-cell">
+                          {ROLE_LABELS[s.role]}
+                        </td>
+                        <td className="py-3 px-3 text-right align-middle">{s.present}</td>
+                        <td className="py-3 px-3 text-right align-middle">{s.absent}</td>
+                        <td className="py-3 px-3 text-right align-middle">{s.late}</td>
+                        <td className="py-3 px-3 text-right align-middle">{s.halfDay}</td>
+                        <td className="py-3 pr-4 pl-3 text-right align-middle font-medium">
+                          {s.avgHours === "0" ? "—" : `${s.avgHours}h`}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-xs text-muted-foreground px-4 py-3 border-t border-border bg-muted/20">
+                P = Present · A = Absent · L = Late · H = Half day · Avg = mean hours when checked in (7-day window)
+              </p>
             </CardContent>
           </Card>
         </TabsContent>

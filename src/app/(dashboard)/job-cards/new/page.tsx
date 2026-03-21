@@ -21,7 +21,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { serviceCatalog, vehicles } from "@/lib/mock-data";
+import { serviceCatalog } from "@/lib/mock-data";
+import { useVehicleStore } from "@/store/vehicle-store";
 import { useJobCardStore } from "@/store/job-card-store";
 import { useStaffStore } from "@/store/staff-store";
 import { useHighEndServiceStore } from "@/store/high-end-service-store";
@@ -51,6 +52,7 @@ export default function NewJobCardPage() {
   const { addTransaction } = useWalletStore();
   const { referralRewardAmount, newCustomerDiscount } = useSettingsStore();
   const { getBrandNames, getModels, getModelSegment } = useVehicleCatalogStore();
+  const vehicles = useVehicleStore((s) => s.vehicles);
   const staff = useStaffStore((s) => s.staff);
   const mechanics = useMemo(
     () => staff.filter((s) => s.role === "MECHANIC"),
@@ -122,7 +124,7 @@ export default function NewJobCardPage() {
       setVehicleSegment(v.segment);
     }
 
-  }, [customerPhone, customerEmail, findByPhone, findByEmail, brandNames]);
+  }, [customerPhone, customerEmail, findByPhone, findByEmail, brandNames, vehicles]);
 
   useEffect(() => {
     const code = referralCode.trim();

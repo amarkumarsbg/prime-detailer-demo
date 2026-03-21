@@ -3,13 +3,27 @@
 import { Command } from "cmdk";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useMemo } from "react";
-import { vehicles, invoices } from "@/lib/mock-data";
+import { useAuthStore } from "@/store/auth-store";
+import type { UserRole } from "@/types";
+import { invoices } from "@/lib/mock-data";
 import { useCustomerStore } from "@/store/customer-store";
+import { useVehicleStore } from "@/store/vehicle-store";
 import { useJobCardStore } from "@/store/job-card-store";
 import { useStaffStore } from "@/store/staff-store";
 import {
-  Users, Car, ClipboardList, Receipt, UserCog, Wrench,
-  LayoutDashboard, Calendar, BarChart3, History, Package, Search,
+  Users,
+  Car,
+  ClipboardList,
+  Receipt,
+  UserCog,
+  Wrench,
+  LayoutDashboard,
+  Calendar,
+  BarChart3,
+  History,
+  Package,
+  Search,
+  QrCode,
 } from "lucide-react";
 
 interface CommandMenuProps {
@@ -17,7 +31,15 @@ interface CommandMenuProps {
   onOpenChange: (open: boolean) => void;
 }
 
-const NAV_PAGES = [
+type NavPageItem = {
+  name: string;
+  href: string;
+  icon: React.ElementType;
+  /** If set, only these roles see this shortcut (same idea as sidebar). */
+  roles?: UserRole[];
+};
+
+const NAV_PAGES: NavPageItem[] = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { name: "Job Cards", href: "/job-cards", icon: ClipboardList },
   { name: "Customers", href: "/customers", icon: Users },
@@ -27,14 +49,17 @@ const NAV_PAGES = [
   { name: "Inventory", href: "/inventory", icon: Package },
   { name: "Billing", href: "/billing", icon: Receipt },
   { name: "Appointments", href: "/appointments", icon: Calendar },
+  { name: "Attendance", href: "/attendance", icon: QrCode, roles: ["ADMIN", "MANAGER"] },
   { name: "Reports", href: "/reports", icon: BarChart3 },
   { name: "Activity Log", href: "/activity", icon: History },
 ];
 
 export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
   const router = useRouter();
+  const userRole = useAuthStore((s) => s.user?.role);
   const [search, setSearch] = useState("");
   const { customers } = useCustomerStore();
+  const vehicles = useVehicleStore((s) => s.vehicles);
   const { jobCards } = useJobCardStore();
   const staff = useStaffStore((s) => s.staff);
 
@@ -44,6 +69,16 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
   useEffect(() => {
     if (!open) setSearch("");
   }, [open]);
+
+  const visibleNavPages = useMemo(
+    () =>
+      NAV_PAGES.filter(
+        (p) =>
+          !p.roles ||
+          (userRole != null && p.roles.includes(userRole))
+      ),
+    [userRole]
+  );
 
   const navigate = (href: string) => {
     onOpenChange(false);
@@ -75,7 +110,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
             </Command.Empty>
 
             <Command.Group heading="Pages" className={groupClass}>
-              {NAV_PAGES.map((p) => (
+              {visibleNavPages.map((p) => (
                 <Command.Item
                   key={p.href}
                   value={`page ${p.name}`}

@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
-import { vehicles, customers } from "@/lib/mock-data";
+import { customers } from "@/lib/mock-data";
+import { useVehicleStore } from "@/store/vehicle-store";
 import { PageHeader } from "@/components/shared/page-header";
 import { DataTable } from "@/components/shared/data-table";
 import { Button } from "@/components/ui/button";
@@ -62,7 +63,8 @@ function getColorHex(colorName: string): string {
 
 export default function VehiclesPage() {
   const router = useRouter();
-  const [vehicleList, setVehicleList] = useState<Vehicle[]>(vehicles);
+  const vehicleList = useVehicleStore((s) => s.vehicles);
+  const setVehicles = useVehicleStore((s) => s.setVehicles);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
 
   const {
@@ -100,7 +102,7 @@ export default function VehiclesPage() {
       year: data.year,
       notes: data.notes || undefined,
     };
-    setVehicleList((prev) => [newVehicle, ...prev]);
+    setVehicles((prev) => [newVehicle, ...prev]);
     reset();
     setAddDialogOpen(false);
     toast.success("Vehicle added", { description: `${data.registrationNumber.toUpperCase()} has been registered.` });

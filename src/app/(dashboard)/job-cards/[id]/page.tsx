@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
-import { ArrowLeft, Check, FileText, User, Car, Camera, Upload, X, ImageIcon, Trash2, ChevronLeft, ChevronRight, GripVertical, MessageCircle, ArrowLeftRight, Clock, Lock } from "lucide-react";
+import { ArrowLeft, Check, FileText, User, Car, Camera, Upload, X, ImageIcon, Trash2, ChevronLeft, ChevronRight, GripVertical, MessageCircle, ArrowLeftRight, Clock, Lock, AlertTriangle } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { Breadcrumbs } from "@/components/shared/breadcrumbs";
 import { JobCardStatusBadge } from "@/components/shared/status-badge";
@@ -98,6 +98,15 @@ export default function JobCardDetailPage() {
   const [switchToMechanicId, setSwitchToMechanicId] = useState("");
   const [switchReason, setSwitchReason] = useState("");
   const [switchCustomReason, setSwitchCustomReason] = useState("");
+  const [qualityCheckDone, setQualityCheckDone] = useState(
+    () => jobCard?.qualityCheckCompleted ?? false
+  );
+
+  useEffect(() => {
+    if (jobCard) {
+      setQualityCheckDone(jobCard.qualityCheckCompleted ?? false);
+    }
+  }, [jobCard?.id, jobCard?.qualityCheckCompleted]);
 
   const SWITCH_REASONS = [
     "Mechanic on leave",
@@ -244,29 +253,62 @@ export default function JobCardDetailPage() {
 
   const photosToShow = displayPhotos.length > 0 ? displayPhotos : inspectionPhotos;
 
-  const BEFORE_STATUSES: JobCardStatus[] = ["RECEIVED", "INSPECTION", "AWAITING_SERVICE"];
-  const AFTER_STATUSES: JobCardStatus[] = ["QUALITY_CHECK", "READY", "DELIVERED"];
+  const hasBeforePhoto = useMemo(
+    () => photosToShow.some((p) => p.type === "BEFORE"),
+    [photosToShow]
+  );
+  const hasAfterPhoto = useMemo(
+    () => photosToShow.some((p) => p.type === "AFTER"),
+    [photosToShow]
+  );
 
-  const canUploadBefore = BEFORE_STATUSES.includes(currentStatus) || AFTER_STATUSES.includes(currentStatus);
-  const canUploadAfter = AFTER_STATUSES.includes(currentStatus);
-  const canCompare = canUploadAfter;
+  /** Before photos: only while job is before QC (inspection / in service). */
+  const canUploadBefore = ["RECEIVED", "INSPECTION", "AWAITING_SERVICE"].includes(currentStatus);
+  /** After photos: only after QC is marked complete, or once past QC. */
+  const canUploadAfter =
+    (currentStatus === "QUALITY_CHECK" && qualityCheckDone) ||
+    currentStatus === "READY" ||
+    currentStatus === "DELIVERED";
+  const canCompare = hasBeforePhoto && hasAfterPhoto;
 
   const [photoTab, setPhotoTab] = useState<"BEFORE" | "AFTER" | "COMPARE">(() => {
-    if (AFTER_STATUSES.includes(jobCard?.status ?? "RECEIVED")) return "AFTER";
+    if (jobCard?.status === "READY" || jobCard?.status === "DELIVERED") return "AFTER";
     return "BEFORE";
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    if (photoTab === "AFTER" && !canUploadAfter) setPhotoTab("BEFORE");
+  }, [photoTab, canUploadAfter]);
+
+  useEffect(() => {
+    if (photoTab === "COMPARE" && !canCompare) setPhotoTab("BEFORE");
+  }, [photoTab, canCompare]);
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0 || displayPhotos.length > 0) return;
+    if (photoTab === "COMPARE") return;
+    if (photoTab === "BEFORE" && !canUploadBefore) {
+      toast.error("Before photos can only be uploaded during inspection / in service");
+      return;
+    }
+    if (photoTab === "AFTER" && !canUploadAfter) {
+      toast.error("Mark quality check complete first, then upload After photos");
+      return;
+    }
 
     Array.from(files).forEach((file) => {
       const url = URL.createObjectURL(file);
       const name = file.name.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " ");
       setInspectionPhotos((prev) => [
         ...prev,
-        { id: `ph-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, url, type: photoTab === "COMPARE" ? "BEFORE" : photoTab, label: name },
+        {
+          id: `ph-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          url,
+          type: photoTab,
+          label: name,
+        },
       ]);
     });
 
@@ -335,6 +377,16 @@ export default function JobCardDetailPage() {
     );
   };
 
+  const handleQualityCheckChange = (checked: boolean) => {
+    setQualityCheckDone(checked);
+    if (jobCard) {
+      updateJobCard(jobCard.id, {
+        qualityCheckCompleted: checked,
+        updatedAt: new Date().toISOString(),
+      });
+    }
+  };
+
   const addNote = () => {
     if (newNote.trim()) {
       setNotes((prev) => prev + (prev ? "\n\n" : "") + newNote.trim());
@@ -347,6 +399,32 @@ export default function JobCardDetailPage() {
     const nextIndex = currentStatusIndex + 1;
     if (nextIndex < WORKFLOW_STATUSES.length) {
       const nextStatus = WORKFLOW_STATUSES[nextIndex];
+
+      if (currentStatus === "INSPECTION" && nextStatus === "AWAITING_SERVICE") {
+        if (!hasBeforePhoto) {
+          toast.error("Upload at least one Before photo before continuing");
+          return;
+        }
+      }
+
+      if (currentStatus === "AWAITING_SERVICE" && nextStatus === "QUALITY_CHECK") {
+        if (totalCount > 0 && completedCount !== totalCount) {
+          toast.error("Complete all service checklist items before Quality Check");
+          return;
+        }
+      }
+
+      if (currentStatus === "QUALITY_CHECK" && nextStatus === "READY") {
+        if (!qualityCheckDone) {
+          toast.error("Mark quality check as complete first");
+          return;
+        }
+        if (!hasAfterPhoto) {
+          toast.error("Upload at least one After photo before moving to Ready");
+          return;
+        }
+      }
+
       setCurrentStatus(nextStatus);
 
       if (nextStatus === "DELIVERED" && jobCard.highEndServiceIds && jobCard.highEndServiceIds.length > 0) {
@@ -415,61 +493,66 @@ export default function JobCardDetailPage() {
   }
 
   return (
-    <div className="space-y-4 sm:space-y-6">
+    <div className="space-y-4 sm:space-y-6 pb-8 md:pb-0">
       <Breadcrumbs items={[
         { label: "Job Cards", href: "/job-cards" },
         { label: jobCard.jobNumber },
       ]} />
 
-      {/* Workflow Progress Bar */}
+      {/* Workflow Progress Bar — scroll horizontally on narrow screens */}
       {currentStatus !== "CANCELLED" && (
         <Card>
-          <CardContent className="!pt-8 !pb-6 !px-6 sm:!px-10">
-            <div className="flex items-center justify-center w-full">
-              {WORKFLOW_STATUSES.map((status, index) => {
-                const isCompleted = index < currentStatusIndex;
-                const isCurrent = index === currentStatusIndex;
-                const isLast = index === WORKFLOW_STATUSES.length - 1;
+          <CardContent className="!pt-6 !pb-5 !px-4 sm:!pt-8 sm:!pb-6 sm:!px-10">
+            <p className="text-xs text-muted-foreground mb-3 sm:hidden">Swipe steps to see full workflow</p>
+            <div className="overflow-x-auto overflow-y-visible -mx-1 px-1 pb-2 sm:mx-0 sm:px-0 sm:pb-0 touch-pan-x [scrollbar-width:thin]">
+              <div className="flex items-center min-w-max sm:min-w-0 sm:w-full sm:justify-center gap-0">
+                {WORKFLOW_STATUSES.map((status, index) => {
+                  const isCompleted = index < currentStatusIndex;
+                  const isCurrent = index === currentStatusIndex;
+                  const isLast = index === WORKFLOW_STATUSES.length - 1;
 
-                return (
-                  <div key={status} className="flex items-center flex-1 last:flex-none">
-                    <div className="flex flex-col items-center">
-                      <div
-                        className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center border-2 transition-colors ${
-                          isCompleted
-                            ? "bg-primary border-primary text-primary-foreground"
-                            : isCurrent
-                            ? "border-primary bg-primary/10 text-primary"
-                            : "border-muted-foreground/30 bg-muted/50 text-muted-foreground"
-                        }`}
-                      >
-                        {isCompleted ? (
-                          <Check className="w-4 h-4 sm:w-5 sm:h-5" />
-                        ) : (
-                          <span className="text-xs font-medium">{index + 1}</span>
-                        )}
+                  return (
+                    <div key={status} className="flex items-center shrink-0">
+                      <div className="flex flex-col items-center w-[4.5rem] sm:w-24 px-0.5">
+                        <div
+                          className={`w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center border-2 transition-colors ${
+                            isCompleted
+                              ? "bg-primary border-primary text-primary-foreground"
+                              : isCurrent
+                              ? "border-primary bg-primary/10 text-primary"
+                              : "border-muted-foreground/30 bg-muted/50 text-muted-foreground"
+                          }`}
+                        >
+                          {isCompleted ? (
+                            <Check className="w-3.5 h-3.5 sm:w-5 sm:h-5" />
+                          ) : (
+                            <span className="text-[11px] sm:text-xs font-medium">{index + 1}</span>
+                          )}
+                        </div>
+                        <span
+                          className={`text-[10px] sm:text-xs mt-1.5 text-center leading-snug max-w-[4.5rem] sm:max-w-none ${
+                            isCurrent ? "font-semibold text-foreground" : "text-muted-foreground"
+                          }`}
+                        >
+                          {WORKFLOW_LABELS[status]}
+                        </span>
                       </div>
-                      <span
-                        className={`text-[11px] sm:text-xs mt-1.5 text-center w-16 sm:w-20 ${
-                          isCurrent ? "font-semibold text-foreground" : "text-muted-foreground"
-                        }`}
-                      >
-                        {WORKFLOW_LABELS[status]}
-                      </span>
+                      {!isLast && (
+                        <div
+                          className={`h-0.5 w-6 sm:flex-1 sm:min-w-[0.5rem] sm:max-w-20 shrink-0 ${
+                            isCompleted ? "bg-primary" : "bg-muted"
+                          }`}
+                          aria-hidden
+                        />
+                      )}
                     </div>
-                    {!isLast && (
-                      <div
-                        className={`flex-1 h-0.5 mx-1 sm:mx-2 ${
-                          isCompleted ? "bg-primary" : "bg-muted"
-                        }`}
-                      />
-                    )}
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
-            <div className="flex justify-start gap-3 mt-5">
+            <div className="flex flex-col sm:flex-row sm:justify-start gap-2 sm:gap-3 mt-5">
               <Button
+                className="w-full sm:w-auto"
                 onClick={handleUpdateStatus}
                 disabled={
                   currentStatus === "DELIVERED" ||
@@ -479,6 +562,7 @@ export default function JobCardDetailPage() {
                 Update Status
               </Button>
               <Button
+                className="w-full sm:w-auto"
                 variant="destructive"
                 onClick={handleCancel}
                 disabled={currentStatus === "DELIVERED"}
@@ -512,7 +596,7 @@ export default function JobCardDetailPage() {
                 </div>
               </div>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 gap-x-6 gap-y-4 text-sm lg:max-w-2xl lg:shrink-0">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-4 text-sm lg:max-w-2xl lg:shrink-0">
               <div>
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Created</p>
                 <p className="font-semibold mt-1">{formatDate(jobCard.createdAt)}</p>
@@ -627,6 +711,32 @@ export default function JobCardDetailPage() {
         </CardContent>
       </Card>
 
+      {currentStatus === "QUALITY_CHECK" && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Quality Check</CardTitle>
+            <p className="text-sm text-muted-foreground mt-1">
+              Mark QC complete to unlock After photos. You need at least one After photo before moving to Ready.
+            </p>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-start gap-3 p-3 rounded-lg border bg-muted/30">
+              <Checkbox
+                id="qc-complete"
+                checked={qualityCheckDone}
+                onCheckedChange={(v) => handleQualityCheckChange(v === true)}
+              />
+              <label htmlFor="qc-complete" className="text-sm leading-tight cursor-pointer select-none">
+                <span className="font-medium">Quality check completed</span>
+                <p className="text-muted-foreground mt-1 text-xs">
+                  Confirm the work meets standards. After photos stay locked until this is checked.
+                </p>
+              </label>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Inspection Photos */}
       <Card>
         <CardHeader>
@@ -638,38 +748,37 @@ export default function JobCardDetailPage() {
             <div className="flex items-center gap-2">
               <div className="flex rounded-lg border border-border overflow-hidden">
                 <button
-                  onClick={() => canUploadBefore && setPhotoTab("BEFORE")}
-                  className={`px-3 py-1 text-xs font-medium transition-colors flex items-center gap-1 ${
-                    photoTab === "BEFORE"
-                      ? "bg-primary text-primary-foreground"
-                      : canUploadBefore
-                      ? "hover:bg-muted"
-                      : "opacity-40 cursor-not-allowed"
+                  type="button"
+                  onClick={() => setPhotoTab("BEFORE")}
+                  className={`px-3 py-1 text-xs font-medium transition-colors flex items-center gap-1 hover:bg-muted ${
+                    photoTab === "BEFORE" ? "bg-primary text-primary-foreground hover:bg-primary!" : ""
                   }`}
                 >
                   Before
                 </button>
                 <button
-                  onClick={() => canUploadAfter && setPhotoTab("AFTER")}
+                  type="button"
+                  onClick={() => setPhotoTab("AFTER")}
                   className={`px-3 py-1 text-xs font-medium transition-colors flex items-center gap-1 ${
                     photoTab === "AFTER"
                       ? "bg-primary text-primary-foreground"
                       : canUploadAfter
                       ? "hover:bg-muted"
-                      : "opacity-40 cursor-not-allowed"
+                      : "opacity-70"
                   }`}
                 >
                   {!canUploadAfter && <Lock className="w-2.5 h-2.5" />}
                   After
                 </button>
                 <button
-                  onClick={() => canCompare && setPhotoTab("COMPARE")}
+                  type="button"
+                  onClick={() => setPhotoTab("COMPARE")}
                   className={`px-3 py-1 text-xs font-medium transition-colors flex items-center gap-1 ${
                     photoTab === "COMPARE"
                       ? "bg-primary text-primary-foreground"
                       : canCompare
                       ? "hover:bg-muted"
-                      : "opacity-40 cursor-not-allowed"
+                      : "opacity-70"
                   }`}
                 >
                   {!canCompare && <Lock className="w-2.5 h-2.5" />}
@@ -679,23 +788,35 @@ export default function JobCardDetailPage() {
             </div>
           </div>
           {/* Status hint */}
-          <div className="mt-2">
-            {BEFORE_STATUSES.includes(currentStatus) && !AFTER_STATUSES.includes(currentStatus) && (
+          <div className="mt-2 space-y-1">
+            {["RECEIVED", "INSPECTION", "AWAITING_SERVICE"].includes(currentStatus) && (
               <p className="text-xs text-blue-600 dark:text-blue-400 flex items-center gap-1.5">
-                <Camera className="w-3 h-3" />
-                Upload &quot;Before&quot; photos now during inspection. &quot;After&quot; photos will unlock after Quality Check.
+                <Camera className="w-3 h-3 shrink-0" />
+                Upload at least one &quot;Before&quot; photo before leaving Inspection. &quot;After&quot; photos unlock after QC is completed.
               </p>
             )}
-            {currentStatus === "QUALITY_CHECK" && (
+            {currentStatus === "AWAITING_SERVICE" && totalCount > 0 && completedCount < totalCount && (
+              <p className="text-xs text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
+                <AlertTriangle className="w-3 h-3 shrink-0" />
+                Complete the service checklist before moving to Quality Check.
+              </p>
+            )}
+            {currentStatus === "QUALITY_CHECK" && !qualityCheckDone && (
+              <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                <Lock className="w-3 h-3 shrink-0" />
+                Complete the Quality Check above to unlock &quot;After&quot; photos.
+              </p>
+            )}
+            {currentStatus === "QUALITY_CHECK" && qualityCheckDone && (
               <p className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1.5">
-                <Camera className="w-3 h-3" />
-                Quality check done — you can now upload &quot;After&quot; photos.
+                <Check className="w-3 h-3 shrink-0" />
+                Quality check done — you can now upload &quot;After&quot; photos. Upload at least one before moving to Ready.
               </p>
             )}
             {(currentStatus === "READY" || currentStatus === "DELIVERED") && (
               <p className="text-xs text-muted-foreground flex items-center gap-1.5">
-                <Check className="w-3 h-3" />
-                Both before &amp; after photos are available. Use "Compare" to view side by side.
+                <Check className="w-3 h-3 shrink-0" />
+                Both before &amp; after photos are available. Use Compare to view side by side.
               </p>
             )}
           </div>
@@ -706,7 +827,11 @@ export default function JobCardDetailPage() {
             <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
               <Lock className="w-10 h-10 mb-3 opacity-40" />
               <p className="text-sm font-medium">After photos are locked</p>
-              <p className="text-xs mt-1">Move status past &quot;Awaiting Service&quot; to &quot;Quality Check&quot; to unlock after photos</p>
+              <p className="text-xs mt-1 text-center max-w-sm px-2">
+                {currentStatus === "QUALITY_CHECK"
+                  ? "Mark Quality check completed above first. After photos unlock once QC is done."
+                  : "Move past In Service to Quality Check, then complete QC to upload After photos."}
+              </p>
             </div>
           ) : photoTab === "COMPARE" && !canCompare ? (
             <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
@@ -749,15 +874,20 @@ export default function JobCardDetailPage() {
                     </div>
                   </div>
                 ))}
-                {displayPhotos.length === 0 && (
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-border min-h-[220px] hover:border-primary/50 hover:bg-primary/5 transition-colors text-muted-foreground hover:text-primary"
-                  >
-                    <Upload className="w-7 h-7 mb-2" />
-                    <span className="text-sm font-medium">Upload {photoTab === "BEFORE" ? "Before" : "After"} Photo</span>
-                  </button>
-                )}
+                {displayPhotos.length === 0 &&
+                  ((photoTab === "BEFORE" && canUploadBefore) ||
+                    (photoTab === "AFTER" && canUploadAfter)) && (
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-border min-h-[220px] hover:border-primary/50 hover:bg-primary/5 transition-colors text-muted-foreground hover:text-primary"
+                    >
+                      <Upload className="w-7 h-7 mb-2" />
+                      <span className="text-sm font-medium">
+                        Upload {photoTab === "BEFORE" ? "Before" : "After"} Photo
+                      </span>
+                    </button>
+                  )}
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -767,12 +897,27 @@ export default function JobCardDetailPage() {
                   onChange={handleFileSelect}
                 />
               </div>
-              {filteredPhotos.length === 0 && (
-                <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
-                  <ImageIcon className="w-10 h-10 mb-2 opacity-40" />
-                  <p className="text-sm">No {photoTab.toLowerCase()} photos yet</p>
-                </div>
-              )}
+              {filteredPhotos.length === 0 &&
+                !(
+                  displayPhotos.length === 0 &&
+                  ((photoTab === "BEFORE" && canUploadBefore) ||
+                    (photoTab === "AFTER" && canUploadAfter))
+                ) && (
+                  <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
+                    <ImageIcon className="w-10 h-10 mb-2 opacity-40" />
+                    <p className="text-sm">No {photoTab.toLowerCase()} photos yet</p>
+                    {photoTab === "BEFORE" && !canUploadBefore && (
+                      <p className="text-xs mt-2 text-center max-w-sm">
+                        Before uploads are only allowed during inspection / in service.
+                      </p>
+                    )}
+                    {photoTab === "AFTER" && !canUploadAfter && (
+                      <p className="text-xs mt-2 text-center max-w-sm">
+                        Complete Quality Check first to add After photos.
+                      </p>
+                    )}
+                  </div>
+                )}
             </>
           )}
 

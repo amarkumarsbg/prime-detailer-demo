@@ -3,10 +3,26 @@
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { ArrowLeft, Car, Pencil, Plus, Star, MessageSquare, Wallet, Copy, Share2, AlertTriangle } from "lucide-react";
+import { useForm } from "react-hook-form";
+import { ArrowLeft, Car, ChevronRight, Pencil, Plus, Star, MessageSquare, Wallet, Copy, Share2, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Breadcrumbs } from "@/components/shared/breadcrumbs";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,20 +31,68 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { JobCardStatusBadge, InvoiceStatusBadge } from "@/components/shared/status-badge";
-import {
-  vehicles,
-  jobCards,
-  invoices,
-} from "@/lib/mock-data";
+import { jobCards, invoices } from "@/lib/mock-data";
 import { useCustomerStore } from "@/store/customer-store";
+import { useVehicleStore } from "@/store/vehicle-store";
 import { useWalletStore } from "@/store/wallet-store";
-import { formatCurrency, formatDate, getInitials } from "@/lib/utils";
-import type { Customer, Vehicle, JobCard, Invoice, WalletTransaction } from "@/types";
+import { formatCurrency, formatDate, getInitials, cn } from "@/lib/utils";
+import { getTransferTagForCustomer } from "@/lib/ownership-transfers";
+import type { Customer, Vehicle, JobCard, Invoice, WalletTransaction, FuelType, VehicleSegment } from "@/types";
+
+const fuelTypes: FuelType[] = ["PETROL", "DIESEL", "CNG", "ELECTRIC", "HYBRID"];
+const vehicleSegments: VehicleSegment[] = ["HATCHBACK", "SEDAN", "SUV", "LUXURY", "MUV", "COMPACT_SUV"];
+
+function vehicleColorHex(colorName: string): string {
+  const lower = colorName.toLowerCase();
+  if (lower.includes("white") || lower.includes("arctic") || lower.includes("polar")) return "#f8fafc";
+  if (lower.includes("black") || lower.includes("midnight") || lower.includes("oberon") || lower.includes("abyss")) return "#1e293b";
+  if (lower.includes("grey") || lower.includes("gray") || lower.includes("silver") || lower.includes("steel")) return "#64748b";
+  if (lower.includes("red") || lower.includes("fiery") || lower.includes("radiant")) return "#dc2626";
+  if (lower.includes("blue") || lower.includes("nexa") || lower.includes("teal")) return "#2563eb";
+  if (lower.includes("orange")) return "#ea580c";
+  if (lower.includes("beige") || lower.includes("rocky")) return "#d4a574";
+  if (lower.includes("green")) return "#16a34a";
+  return "#6366f1";
+}
+
+interface CustomerAddVehicleFormData {
+  registrationNumber: string;
+  make: string;
+  model: string;
+  variant?: string;
+  fuelType: FuelType;
+  segment: VehicleSegment;
+  color: string;
+  year: number;
+  notes?: string;
+}
 
 export default function CustomerDetailPage() {
   const params = useParams();
   const router = useRouter();
   const id = params.id as string;
+
+  const vehicleList = useVehicleStore((s) => s.vehicles);
+  const setVehicles = useVehicleStore((s) => s.setVehicles);
+  const [addVehicleOpen, setAddVehicleOpen] = useState(false);
+
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+    setValue,
+    watch,
+    reset,
+  } = useForm<CustomerAddVehicleFormData>({
+    defaultValues: {
+      fuelType: "PETROL",
+      segment: "HATCHBACK",
+      year: new Date().getFullYear(),
+    },
+  });
+
+  const watchFuelType = watch("fuelType");
+  const watchSegment = watch("segment");
 
   const { customers: allCustomers, updateCustomer } = useCustomerStore();
   const customer = useMemo(() => {
@@ -36,8 +100,8 @@ export default function CustomerDetailPage() {
   }, [id, allCustomers]);
 
   const customerVehicles = useMemo(() => {
-    return vehicles.filter((v) => v.customerId === id);
-  }, [id]);
+    return vehicleList.filter((v) => v.customerId === id);
+  }, [id, vehicleList]);
 
   const customerJobCards = useMemo(() => {
     return jobCards.filter((jc) => jc.customerId === id);
@@ -113,6 +177,48 @@ export default function CustomerDetailPage() {
       window.open(`https://wa.me/?text=${text}`, "_blank");
       toast.success("Opening WhatsApp to share");
     }
+  };
+
+  const openAddVehicle = () => {
+    reset({
+      fuelType: "PETROL",
+      segment: "HATCHBACK",
+      year: new Date().getFullYear(),
+      registrationNumber: "",
+      make: "",
+      model: "",
+      variant: "",
+      color: "",
+      notes: "",
+    });
+    setAddVehicleOpen(true);
+  };
+
+  const onAddVehicle = (data: CustomerAddVehicleFormData) => {
+    const c = allCustomers.find((cust) => cust.id === id);
+    if (!c) return;
+    const newVehicle: Vehicle = {
+      id: `veh-${Date.now()}`,
+      customerId: id,
+      customerName: c.name,
+      registrationNumber: data.registrationNumber.toUpperCase(),
+      make: data.make,
+      model: data.model,
+      variant: data.variant || undefined,
+      fuelType: data.fuelType,
+      segment: data.segment,
+      color: data.color,
+      year: data.year,
+      notes: data.notes || undefined,
+    };
+    setVehicles((prev) => [newVehicle, ...prev]);
+    reset({
+      fuelType: "PETROL",
+      segment: "HATCHBACK",
+      year: new Date().getFullYear(),
+    });
+    setAddVehicleOpen(false);
+    toast.success("Vehicle added", { description: `${data.registrationNumber.toUpperCase()} has been registered.` });
   };
 
   if (!customer) {
@@ -313,7 +419,7 @@ export default function CustomerDetailPage() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="text-base">Vehicles</CardTitle>
-              <Button variant="outline" size="sm" disabled>
+              <Button variant="outline" size="sm" type="button" onClick={openAddVehicle}>
                 <Plus className="w-4 h-4 mr-2" />
                 Add Vehicle
               </Button>
@@ -325,39 +431,205 @@ export default function CustomerDetailPage() {
                 </p>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {customerVehicles.map((vehicle: Vehicle) => (
-                    <Link
-                      key={vehicle.id}
-                      href={`/vehicles/${vehicle.id}`}
-                      className="block"
-                    >
-                      <Card className="hover:bg-muted/50 transition-colors border-border cursor-pointer">
-                        <CardContent className="p-4">
-                          <div className="flex items-start gap-3">
-                            <div className="rounded-lg bg-muted p-2">
-                              <Car className="w-5 h-5 text-muted-foreground" />
+                  {customerVehicles.map((vehicle: Vehicle) => {
+                    const transferTag = getTransferTagForCustomer(vehicle, id);
+                    return (
+                      <Link
+                        key={vehicle.id}
+                        href={`/vehicles/${vehicle.id}`}
+                        className="group block rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                      >
+                        <Card className="h-full border-border transition-all hover:border-primary/35 hover:bg-muted/40 hover:shadow-sm">
+                          <CardContent className="p-4 sm:p-5">
+                            <div className="flex gap-4">
+                              <div
+                                className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/15"
+                                aria-hidden
+                              >
+                                <Car className="h-6 w-6" strokeWidth={1.75} />
+                              </div>
+                              <div className="min-w-0 flex-1 space-y-2">
+                                <p className="font-mono text-base font-semibold leading-tight tracking-tight text-foreground">
+                                  {vehicle.registrationNumber}
+                                </p>
+                                <p className="text-sm font-medium leading-snug text-foreground">
+                                  {vehicle.make} {vehicle.model}
+                                  {vehicle.variant ? (
+                                    <span className="font-normal text-muted-foreground">
+                                      {" "}
+                                      · {vehicle.variant}
+                                    </span>
+                                  ) : null}
+                                </p>
+                                <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                                  <Badge variant="secondary" className="font-medium">
+                                    {vehicle.fuelType}
+                                  </Badge>
+                                  {vehicle.segment ? (
+                                    <Badge variant="outline" className="font-normal">
+                                      {vehicle.segment.replace(/_/g, " ")}
+                                    </Badge>
+                                  ) : null}
+                                  <span className="text-xs tabular-nums text-muted-foreground">{vehicle.year}</span>
+                                  <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                                    <span
+                                      className="size-3 shrink-0 rounded-full border border-border shadow-inner"
+                                      style={{ backgroundColor: vehicleColorHex(vehicle.color) }}
+                                      title={vehicle.color}
+                                    />
+                                    <span className="min-w-0 truncate">{vehicle.color}</span>
+                                  </span>
+                                </div>
+                                {transferTag ? (
+                                  <p
+                                    className="mt-2 inline-flex max-w-full flex-wrap items-center gap-x-1 rounded-full border px-2.5 py-1 text-[12px] leading-snug"
+                                    style={{
+                                      backgroundColor: "#FFFBEB",
+                                      borderColor: "#FCD34D",
+                                      color: "#92400E",
+                                    }}
+                                  >
+                                    <span>
+                                      Transferred from {transferTag.fromCustomerName} · {transferTag.formattedDate}
+                                    </span>
+                                  </p>
+                                ) : null}
+                              </div>
+                              <ChevronRight
+                                className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground/40 transition-transform group-hover:translate-x-0.5 group-hover:text-muted-foreground/80"
+                                aria-hidden
+                              />
                             </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="font-mono font-semibold text-sm">
-                                {vehicle.registrationNumber}
-                              </p>
-                              <p className="text-sm font-medium mt-1">
-                                {vehicle.make} {vehicle.model}
-                              </p>
-                              <p className="text-xs text-muted-foreground mt-1">
-                                {vehicle.fuelType} &middot; {vehicle.year} &middot;{" "}
-                                {vehicle.color}
-                              </p>
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    </Link>
-                  ))}
+                          </CardContent>
+                        </Card>
+                      </Link>
+                    );
+                  })}
                 </div>
               )}
             </CardContent>
           </Card>
+
+          <Dialog open={addVehicleOpen} onOpenChange={setAddVehicleOpen}>
+            <DialogContent className="sm:max-w-[500px]">
+              <DialogHeader>
+                <DialogTitle>Add Vehicle</DialogTitle>
+              </DialogHeader>
+              <form onSubmit={handleSubmit(onAddVehicle)} className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="cust-registrationNumber">Registration Number</Label>
+                    <Input
+                      id="cust-registrationNumber"
+                      placeholder="KA-01-AB-1234"
+                      {...register("registrationNumber", { required: "Required" })}
+                    />
+                    {errors.registrationNumber && (
+                      <p className="text-sm text-destructive">{errors.registrationNumber.message}</p>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="cust-year">Year</Label>
+                    <Input
+                      id="cust-year"
+                      type="number"
+                      placeholder="2024"
+                      {...register("year", { valueAsNumber: true, required: "Required" })}
+                    />
+                    {errors.year && (
+                      <p className="text-sm text-destructive">{errors.year.message}</p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="cust-make">Make</Label>
+                    <Input id="cust-make" placeholder="Maruti" {...register("make", { required: "Required" })} />
+                    {errors.make && (
+                      <p className="text-sm text-destructive">{errors.make.message}</p>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="cust-model">Model</Label>
+                    <Input id="cust-model" placeholder="Swift" {...register("model", { required: "Required" })} />
+                    {errors.model && (
+                      <p className="text-sm text-destructive">{errors.model.message}</p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="cust-variant">Variant (optional)</Label>
+                  <Input id="cust-variant" placeholder="VXI" {...register("variant")} />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Fuel Type</Label>
+                    <Select
+                      value={watchFuelType}
+                      onValueChange={(v) => setValue("fuelType", v as FuelType)}
+                    >
+                      <SelectTrigger className={cn(errors.fuelType && "border-destructive")}>
+                        <SelectValue placeholder="Select fuel type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {fuelTypes.map((ft) => (
+                          <SelectItem key={ft} value={ft}>
+                            {ft}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {errors.fuelType && (
+                      <p className="text-sm text-destructive">{errors.fuelType.message}</p>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Segment</Label>
+                    <Select
+                      value={watchSegment}
+                      onValueChange={(v) => setValue("segment", v as VehicleSegment)}
+                    >
+                      <SelectTrigger className={cn(errors.segment && "border-destructive")}>
+                        <SelectValue placeholder="Select segment" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {vehicleSegments.map((seg) => (
+                          <SelectItem key={seg} value={seg}>
+                            {seg.replace(/_/g, " ")}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {errors.segment && (
+                      <p className="text-sm text-destructive">{errors.segment.message}</p>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="cust-color">Color</Label>
+                    <Input id="cust-color" placeholder="Pearl Arctic White" {...register("color", { required: "Required" })} />
+                    {errors.color && (
+                      <p className="text-sm text-destructive">{errors.color.message}</p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="cust-notes">Notes (optional)</Label>
+                  <Textarea id="cust-notes" placeholder="Additional notes..." {...register("notes")} />
+                </div>
+
+                <DialogFooter>
+                  <Button type="button" variant="outline" onClick={() => setAddVehicleOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button type="submit">Add Vehicle</Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
         </TabsContent>
 
         <TabsContent value="wallet" className="space-y-4">

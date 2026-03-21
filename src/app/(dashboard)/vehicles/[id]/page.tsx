@@ -3,7 +3,8 @@
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { vehicles, jobCards, serviceReminders, customers } from "@/lib/mock-data";
+import { jobCards, serviceReminders, customers } from "@/lib/mock-data";
+import { useVehicleStore } from "@/store/vehicle-store";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -25,7 +26,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { JobCardStatusBadge } from "@/components/shared/status-badge";
-import { formatDate } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
+import { buildOwnershipTimeline } from "@/lib/ownership-transfers";
+import type { OwnershipTimelineItem } from "@/lib/ownership-transfers";
 import { toast } from "sonner";
 import { ArrowLeft, Bell, AlertTriangle, Clock, Calendar, Wrench, Droplets, Disc3, Snowflake, Battery, Shield, FileCheck, UserPlus } from "lucide-react";
 import { Breadcrumbs } from "@/components/shared/breadcrumbs";
@@ -53,7 +56,8 @@ export default function VehicleDetailPage() {
   const params = useParams();
   const router = useRouter();
   const vehicleId = params.id as string;
-  const [vehicleList, setVehicleList] = useState<Vehicle[]>(() => vehicles);
+  const vehicleList = useVehicleStore((s) => s.vehicles);
+  const setVehicleList = useVehicleStore((s) => s.setVehicles);
 
   const vehicle = useMemo(
     () => vehicleList.find((v) => v.id === vehicleId) ?? null,
@@ -190,6 +194,75 @@ export default function VehicleDetailPage() {
   );
 }
 
+function OwnershipTimeline({ items }: { items: OwnershipTimelineItem[] }) {
+  return (
+    <div className="space-y-0">
+      {items.map((item, index) => (
+        <div key={index} className="relative flex gap-3">
+          <div className="flex w-6 shrink-0 flex-col items-center">
+            {item.kind === "owner" ? (
+              <div
+                className={cn(
+                  "mt-1.5 size-2.5 shrink-0 rounded-full border-2 z-10 bg-background",
+                  item.isCurrent
+                    ? "border-blue-600 bg-blue-600"
+                    : "border-muted-foreground/40"
+                )}
+              />
+            ) : (
+              <div className="mt-2.5 w-6 shrink-0" aria-hidden />
+            )}
+            {index < items.length - 1 && (
+              <div
+                className="min-h-11 w-px flex-1 border-l-2 border-dashed border-muted-foreground/25"
+                aria-hidden
+              />
+            )}
+          </div>
+          <div className={cn("min-w-0 flex-1", index < items.length - 1 && "pb-6")}>
+            {item.kind === "owner" ? (
+              <div className="space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Link
+                    href={`/customers/${item.customerId}`}
+                    className={cn(
+                      "font-semibold",
+                      item.isCurrent ? "text-[#1D4ED8]" : "text-foreground"
+                    )}
+                  >
+                    {item.name}
+                  </Link>
+                  {item.isCurrent && (
+                    <Badge
+                      variant="outline"
+                      className="border-[#BFDBFE] bg-[#DBEAFE] text-[#1E40AF] hover:bg-[#DBEAFE]"
+                    >
+                      Current
+                    </Badge>
+                  )}
+                </div>
+                <p className="text-sm text-muted-foreground">{item.detailLine}</p>
+              </div>
+            ) : (
+              <div
+                className="rounded-md border px-3 py-2 text-[13px] leading-snug"
+                style={{
+                  backgroundColor: "#EFF6FF",
+                  borderColor: "#BFDBFE",
+                  color: "#1E40AF",
+                }}
+              >
+                Transferred on {formatDate(item.transferredOn)} · Reason:{" "}
+                {item.reason?.trim() ? item.reason : "Not specified"}
+              </div>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function VehicleOwnershipSection({
   vehicle,
   vehicleId,
@@ -229,6 +302,7 @@ function VehicleOwnershipSection({
         customerId: currentVehicle.customerId,
         customerName: currentVehicle.customerName,
         transferDate: new Date().toISOString().split("T")[0],
+        reason: transferReason.trim() || undefined,
       },
     ];
 
@@ -250,38 +324,30 @@ function VehicleOwnershipSection({
     toast.success("Ownership transferred successfully");
   };
 
+  const timelineItems = useMemo(
+    () => buildOwnershipTimeline(currentVehicle, customers),
+    [currentVehicle]
+  );
+
   return (
     <div>
-      <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-        <UserPlus className="w-5 h-5" />
-        Ownership Transfer
-      </h2>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
+        <h2 className="text-lg font-semibold flex items-center gap-2">
+          <UserPlus className="w-5 h-5" />
+          Ownership Transfer
+        </h2>
+        <Button onClick={() => setTransferDialogOpen(true)} className="shrink-0 w-full sm:w-auto">
+          <UserPlus className="w-4 h-4 mr-2" />
+          Transfer Ownership
+        </Button>
+      </div>
       <Card>
-        <CardContent className="p-4">
-          {currentVehicle.previousOwners && currentVehicle.previousOwners.length > 0 ? (
-            <div className="space-y-3">
-              <p className="text-sm text-muted-foreground">Previous owners:</p>
-              <ul className="space-y-2">
-                {currentVehicle.previousOwners.map((po, idx) => (
-                  <li key={idx} className="flex items-center justify-between text-sm">
-                    <Link
-                      href={`/customers/${po.customerId}`}
-                      className="font-medium text-primary hover:underline"
-                    >
-                      {po.customerName}
-                    </Link>
-                    <span className="text-muted-foreground">{formatDate(po.transferDate)}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
+        <CardContent className="p-4 sm:p-5">
+          {timelineItems && timelineItems.length > 0 ? (
+            <OwnershipTimeline items={timelineItems} />
           ) : (
-            <p className="text-sm text-muted-foreground mb-3">No previous ownership transfers.</p>
+            <p className="text-sm text-muted-foreground">No previous ownership transfers.</p>
           )}
-          <Button onClick={() => setTransferDialogOpen(true)} className="mt-2">
-            <UserPlus className="w-4 h-4 mr-2" />
-            Transfer Ownership
-          </Button>
         </CardContent>
       </Card>
 

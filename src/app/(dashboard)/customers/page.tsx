@@ -23,8 +23,11 @@ import {
   DialogFooter,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { vehicles } from "@/lib/mock-data";
 import { useCustomerStore } from "@/store/customer-store";
+import { useVehicleStore } from "@/store/vehicle-store";
+import { useDashboardFilterStore, DASHBOARD_FILTER } from "@/store/dashboard-filter-store";
+import { isInactiveCustomer } from "@/lib/dashboard-filters";
+import { FilterBanner } from "@/components/shared/filter-banner";
 import { formatDate, formatCurrency, getInitials } from "@/lib/utils";
 import type { Customer } from "@/types";
 
@@ -48,10 +51,17 @@ function generateReferralCode(): string {
 export default function CustomersPage() {
   const router = useRouter();
   const { customers, addCustomer: addCustomerToStore } = useCustomerStore();
+  const vehicles = useVehicleStore((s) => s.vehicles);
+  const activeFilter = useDashboardFilterStore((s) => s.activeFilter);
+  const setActiveFilter = useDashboardFilterStore((s) => s.setActiveFilter);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
 
   const tableData = useMemo(() => {
-    return customers.map((c) => {
+    const source =
+      activeFilter === DASHBOARD_FILTER.INACTIVE
+        ? customers.filter(isInactiveCustomer)
+        : customers;
+    return source.map((c) => {
       const vehiclesCount = vehicles.filter((v) => v.customerId === c.id).length;
       return {
         id: c.id,
@@ -67,7 +77,7 @@ export default function CustomersPage() {
         memberSince: c.createdAt,
       };
     }) as Record<string, unknown>[];
-  }, [customers]);
+  }, [customers, vehicles, activeFilter]);
 
   const columns = [
     {
@@ -253,6 +263,13 @@ export default function CustomersPage() {
           </Dialog>
         }
       />
+
+      {activeFilter === DASHBOARD_FILTER.INACTIVE && (
+        <FilterBanner
+          message="⚠ Showing inactive customers — no visit in 90+ days"
+          onDismiss={() => setActiveFilter(null)}
+        />
+      )}
 
       <DataTable
         data={tableData}

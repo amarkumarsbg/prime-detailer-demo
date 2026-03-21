@@ -84,7 +84,13 @@ export interface Vehicle {
   color: string;
   year: number;
   notes?: string;
-  previousOwners?: { customerId: string; customerName: string; transferDate: string }[];
+  /** Outgoing owners in chronological order (matches ownership_transfers from_customer chain). */
+  previousOwners?: {
+    customerId: string;
+    customerName: string;
+    transferDate: string;
+    reason?: string;
+  }[];
 }
 
 export interface SegmentPricing {
@@ -173,6 +179,8 @@ export interface JobCard {
   termsAndConditions?: string;
   notes?: string;
   inspectionPhotos?: InspectionPhoto[];
+  /** Set when QC checklist is marked complete on the job card (unlocks After photos). */
+  qualityCheckCompleted?: boolean;
   mechanicSwitchLog?: MechanicSwitchLog[];
   quotationId?: string;
   highEndServiceIds?: string[];

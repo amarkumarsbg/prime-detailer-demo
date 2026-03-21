@@ -10,6 +10,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useJobCardStore } from "@/store/job-card-store";
+import { useDashboardFilterStore, DASHBOARD_FILTER } from "@/store/dashboard-filter-store";
+import { isOverdueJobCard } from "@/lib/dashboard-filters";
+import { FilterBanner } from "@/components/shared/filter-banner";
 import { formatDate } from "@/lib/utils";
 import type { JobCard, JobCardStatus } from "@/types";
 import { Plus, LayoutGrid, List } from "lucide-react";
@@ -58,25 +61,32 @@ const KANBAN_COLORS: Record<JobCardStatus, string> = {
 export default function JobCardsPage() {
   const router = useRouter();
   const { jobCards } = useJobCardStore();
+  const activeFilter = useDashboardFilterStore((s) => s.activeFilter);
+  const setActiveFilter = useDashboardFilterStore((s) => s.setActiveFilter);
   const [activeTab, setActiveTab] = useState<string>("ALL");
   const [viewMode, setViewMode] = useState<"list" | "kanban">("list");
 
+  const jobCardsForView = useMemo(() => {
+    if (activeFilter !== DASHBOARD_FILTER.OVERDUE) return jobCards;
+    return jobCards.filter(isOverdueJobCard);
+  }, [jobCards, activeFilter]);
+
   const counts = useMemo(() => {
-    const c: Record<string, number> = { ALL: jobCards.length };
-    jobCards.forEach((jc) => {
+    const c: Record<string, number> = { ALL: jobCardsForView.length };
+    jobCardsForView.forEach((jc) => {
       c[jc.status] = (c[jc.status] ?? 0) + 1;
     });
     return c;
-  }, [jobCards]);
+  }, [jobCardsForView]);
 
   const kanbanData = useMemo(() => {
     const map: Record<string, JobCard[]> = {};
     KANBAN_COLUMNS.forEach((s) => { map[s] = []; });
-    jobCards.forEach((jc) => {
+    jobCardsForView.forEach((jc) => {
       if (jc.status !== "CANCELLED" && map[jc.status]) map[jc.status].push(jc);
     });
     return map;
-  }, [jobCards]);
+  }, [jobCardsForView]);
 
   const columns = [
     {
@@ -166,6 +176,13 @@ export default function JobCardsPage() {
         }
       />
 
+      {activeFilter === DASHBOARD_FILTER.OVERDUE && (
+        <FilterBanner
+          message="⚠ Showing overdue job cards — delivery date has passed"
+          onDismiss={() => setActiveFilter(null)}
+        />
+      )}
+
       {viewMode === "list" ? (
         <Card className="border-border/80 shadow-sm overflow-hidden">
           <CardHeader className="space-y-1 border-b border-border/80 bg-muted/20 pb-4">
@@ -189,8 +206,8 @@ export default function JobCardsPage() {
                   <DataTable<JobCard>
                     data={
                       status === "ALL"
-                        ? jobCards
-                        : jobCards.filter((jc) => jc.status === status)
+                        ? jobCardsForView
+                        : jobCardsForView.filter((jc) => jc.status === status)
                     }
                     columns={columns}
                     searchPlaceholder="Search by job number, customer, mobile, or vehicle..."

@@ -44,6 +44,9 @@ import type { Part, PartCategory } from "@/types";
 import { toast } from "sonner";
 import { useInventoryStore, parseLitresInput } from "@/store/inventory-store";
 import { carsPossibleForPartAndService } from "@/lib/inventory/consumption";
+import { useDashboardFilterStore, DASHBOARD_FILTER } from "@/store/dashboard-filter-store";
+import { isLowStockPart } from "@/lib/dashboard-filters";
+import { FilterBanner } from "@/components/shared/filter-banner";
 
 const allCategories: PartCategory[] = [
   "Engine",
@@ -63,8 +66,27 @@ const normalWashService = serviceCatalog.find((s) => s.id === "svc-016");
 const advancedWashService = serviceCatalog.find((s) => s.id === "svc-017");
 const premiumWashService = serviceCatalog.find((s) => s.id === "svc-021");
 
+type StockTableFilter = "all" | "low" | "out";
+
 export default function InventoryPage() {
+  const activeFilter = useDashboardFilterStore((s) => s.activeFilter);
+  const setActiveFilter = useDashboardFilterStore((s) => s.setActiveFilter);
   const parts = useInventoryStore((s) => s.parts);
+
+  const [stockTableFilter, setStockTableFilter] = useState<StockTableFilter>("all");
+
+  const partsForTable = useMemo(() => {
+    let list = parts;
+    if (activeFilter === DASHBOARD_FILTER.LOW_STOCK) {
+      list = list.filter(isLowStockPart);
+    }
+    if (stockTableFilter === "low") {
+      list = list.filter((p) => getStockStatus(p).label === "Low Stock");
+    } else if (stockTableFilter === "out") {
+      list = list.filter((p) => getStockStatus(p).label === "Out of Stock");
+    }
+    return list;
+  }, [parts, activeFilter, stockTableFilter]);
   const stockMovements = useInventoryStore((s) => s.stockMovements);
   const productPurchases = useInventoryStore((s) => s.productPurchases);
   const addPurchase = useInventoryStore((s) => s.addPurchase);
@@ -463,6 +485,13 @@ export default function InventoryPage() {
         }
       />
 
+      {activeFilter === DASHBOARD_FILTER.LOW_STOCK && (
+        <FilterBanner
+          message="⚠ Showing low stock items — below reorder threshold"
+          onDismiss={() => setActiveFilter(null)}
+        />
+      )}
+
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <Card>
           <CardContent className="p-5! flex items-center gap-4">
@@ -516,9 +545,27 @@ export default function InventoryPage() {
           <TabsTrigger value="movements">Recent Movements</TabsTrigger>
           <TabsTrigger value="purchases">Purchases</TabsTrigger>
         </TabsList>
-        <TabsContent value="parts" className="mt-4">
+        <TabsContent value="parts" className="mt-4 space-y-4">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <Label htmlFor="inventory-stock-filter" className="text-muted-foreground shrink-0">
+              Stock status
+            </Label>
+            <Select
+              value={stockTableFilter}
+              onValueChange={(v) => setStockTableFilter(v as StockTableFilter)}
+            >
+              <SelectTrigger id="inventory-stock-filter" className="w-full sm:w-[220px]">
+                <SelectValue placeholder="All parts" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All parts</SelectItem>
+                <SelectItem value="low">Low stock</SelectItem>
+                <SelectItem value="out">Out of stock</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
           <DataTable
-            data={parts}
+            data={partsForTable}
             columns={columns}
             searchPlaceholder="Search parts..."
             searchKeys={["name", "sku", "category", "supplier"]}

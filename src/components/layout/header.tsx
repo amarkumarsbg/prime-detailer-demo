@@ -1,6 +1,7 @@
 "use client";
 
 import { useAuthStore } from "@/store/auth-store";
+import { useSettingsStore } from "@/store/settings-store";
 import { useSidebarStore } from "@/store/sidebar-store";
 import { useNotificationStore } from "@/store/notification-store";
 import { useCustomerStore } from "@/store/customer-store";
@@ -18,12 +19,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { NotificationPanel } from "./notification-panel";
-import { Bell, LogOut, Moon, Sun, User, Building2, Menu, Search, Users, ClipboardList, X } from "lucide-react";
+import { Bell, LogOut, Moon, Sun, User, Menu, Search, Users, ClipboardList, X, Wrench } from "lucide-react";
 import { useState, useEffect, useRef, useMemo } from "react";
 import Link from "next/link";
 
 export function Header() {
   const { user, currentBranch, logout } = useAuthStore();
+  const businessName = useSettingsStore((s) => s.businessName);
   const toggleMobileOpen = useSidebarStore((s) => s.toggleMobileOpen);
   const unreadCount = useNotificationStore((s) => s.unreadCount);
   const router = useRouter();
@@ -111,22 +113,32 @@ export function Header() {
   const count = unreadCount();
 
   return (
-    <header className="shrink-0 z-30 h-16 border-b border-sidebar-border bg-background flex items-center justify-between px-4 md:px-6">
-      <div className="flex items-center gap-3">
-        <button
-          onClick={toggleMobileOpen}
-          className="flex items-center justify-center w-9 h-9 rounded-lg hover:bg-accent transition-colors md:hidden"
-        >
-          <Menu className="w-5 h-5" />
-        </button>
-        <div className="hidden sm:flex items-center gap-2 text-sm text-muted-foreground">
-          <Building2 className="w-4 h-4" />
-          <span className="font-medium text-foreground truncate max-w-[200px]">{currentBranch?.name}</span>
+    <header className="shrink-0 z-30 h-16 border-b border-sidebar-border bg-background flex items-center gap-2 sm:gap-3 px-3 sm:px-4 md:px-6">
+      {/* Company logo — left */}
+      <Link
+        href="/dashboard"
+        className="flex items-center gap-2 shrink-0 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-primary shrink-0">
+          <Wrench className="w-5 h-5 text-primary-foreground" />
         </div>
+        <div className="hidden min-[400px]:flex flex-col leading-tight min-w-0">
+          <span className="text-sm font-bold text-foreground truncate max-w-[120px] sm:max-w-[180px] md:max-w-[220px]">
+            {businessName}
+          </span>
+          <span className="text-[10px] text-muted-foreground hidden sm:block truncate">Service Management</span>
+        </div>
+      </Link>
+
+      {/* Branch — desktop / tablet only */}
+      <div className="hidden lg:flex items-center gap-2 text-sm text-muted-foreground shrink-0 max-w-[200px]">
+        <span className="text-muted-foreground/50">|</span>
+        <span className="font-medium text-foreground truncate">{currentBranch?.name}</span>
       </div>
 
-      <div className="flex items-center gap-1 sm:gap-2">
-        <div className="relative" ref={searchRef}>
+      {/* Search — center, flexible */}
+      <div className="flex-1 flex justify-center min-w-0">
+        <div className="relative w-full max-w-md" ref={searchRef}>
           <div className="flex items-center gap-1.5 h-9 px-3 rounded-lg border border-border bg-muted/50 text-sm transition-colors focus-within:ring-1 focus-within:ring-primary focus-within:border-primary">
             <Search className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
             <input
@@ -199,7 +211,10 @@ export function Header() {
             </div>
           )}
         </div>
+      </div>
 
+      {/* Actions — right */}
+      <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
         {mounted && (
           <button
             onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
@@ -242,36 +257,48 @@ export function Header() {
           )}
         </div>
 
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button className="flex items-center gap-2 sm:gap-3 rounded-lg px-2 py-1.5 hover:bg-accent transition-colors ml-1">
-              <Avatar className="w-8 h-8">
-                <AvatarFallback className="bg-primary text-primary-foreground text-xs font-semibold">
-                  {getInitials(user.name)}
-                </AvatarFallback>
-              </Avatar>
-              <div className="text-left hidden sm:block">
-                <p className="text-sm font-medium leading-tight">{user.name}</p>
-                <p className="text-[11px] text-muted-foreground">{user.role}</p>
-              </div>
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-52">
-            <DropdownMenuLabel>My Account</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem asChild>
-              <Link href="/profile">
-                <User className="w-4 h-4 mr-2" />
-                Profile
-              </Link>
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={handleLogout} className="text-destructive focus:text-destructive">
-              <LogOut className="w-4 h-4 mr-2" />
-              Sign out
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <div className="hidden md:block">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="flex items-center gap-2 sm:gap-3 rounded-lg px-2 py-1.5 hover:bg-accent transition-colors ml-1">
+                <Avatar className="w-8 h-8">
+                  <AvatarFallback className="bg-primary text-primary-foreground text-xs font-semibold">
+                    {getInitials(user.name)}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="text-left hidden sm:block">
+                  <p className="text-sm font-medium leading-tight">{user.name}</p>
+                  <p className="text-[11px] text-muted-foreground">{user.role}</p>
+                </div>
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuLabel>My Account</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem asChild>
+                <Link href="/profile">
+                  <User className="w-4 h-4 mr-2" />
+                  Profile
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleLogout} className="text-destructive focus:text-destructive">
+                <LogOut className="w-4 h-4 mr-2" />
+                Sign out
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+
+        {/* Mobile menu — opens sidebar (right side of header) */}
+        <button
+          type="button"
+          onClick={toggleMobileOpen}
+          className="flex items-center justify-center w-9 h-9 rounded-lg hover:bg-accent transition-colors md:hidden"
+          aria-label="Open menu"
+        >
+          <Menu className="w-5 h-5" />
+        </button>
       </div>
     </header>
   );

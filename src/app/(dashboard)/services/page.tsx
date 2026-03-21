@@ -15,6 +15,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -46,6 +47,8 @@ import {
   Package,
   LayoutGrid,
   Table2,
+  Pencil,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -60,16 +63,72 @@ const SEGMENT_LABELS: Record<keyof SegmentPricing, string> = {
 
 const SEGMENT_KEYS = Object.keys(SEGMENT_LABELS) as (keyof SegmentPricing)[];
 
-const categories = Array.from(new Set(serviceCatalog.map((s) => s.category)));
+type EditFormState = {
+  name: string;
+  description: string;
+  category: string;
+  defaultPrice: string;
+  segmentPricing: Record<keyof SegmentPricing, string>;
+  isHighEnd: boolean;
+  isActive: boolean;
+  incentivePercent: string;
+};
+
+function serviceToForm(s: ServiceCatalogItem): EditFormState {
+  return {
+    name: s.name,
+    description: s.description,
+    category: s.category,
+    defaultPrice: String(s.defaultPrice),
+    segmentPricing: SEGMENT_KEYS.reduce(
+      (acc, k) => ({ ...acc, [k]: String(s.segmentPricing[k]) }),
+      {} as Record<keyof SegmentPricing, string>
+    ),
+    isHighEnd: s.isHighEnd,
+    isActive: s.isActive,
+    incentivePercent: String(s.incentivePercent),
+  };
+}
+
+function formToService(base: ServiceCatalogItem, form: EditFormState): ServiceCatalogItem {
+  const segmentPricing = SEGMENT_KEYS.reduce(
+    (acc, k) => ({
+      ...acc,
+      [k]: Math.max(0, parseFloat(form.segmentPricing[k]) || 0),
+    }),
+    {} as SegmentPricing
+  );
+  return {
+    ...base,
+    name: form.name.trim(),
+    description: form.description.trim(),
+    category: form.category.trim(),
+    defaultPrice: Math.max(0, parseFloat(form.defaultPrice) || 0),
+    segmentPricing,
+    isHighEnd: form.isHighEnd,
+    isActive: form.isActive,
+    incentivePercent: Math.min(100, Math.max(0, parseFloat(form.incentivePercent) || 0)),
+  };
+}
 
 export default function ServicesPage() {
+  const [catalog, setCatalog] = useState<ServiceCatalogItem[]>(() => [...serviceCatalog]);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<ServiceCatalogItem | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState<EditFormState | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ServiceCatalogItem | null>(null);
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
+  const categories = useMemo(
+    () => Array.from(new Set(catalog.map((s) => s.category))).sort(),
+    [catalog]
+  );
+
   const filtered = useMemo(() => {
-    let result = serviceCatalog;
+    let result = catalog;
     if (categoryFilter !== "all") {
       result = result.filter((s) => s.category === categoryFilter);
     }
@@ -83,12 +142,35 @@ export default function ServicesPage() {
       );
     }
     return result;
-  }, [search, categoryFilter]);
+  }, [catalog, search, categoryFilter]);
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     toast.success("Service added successfully");
     setDialogOpen(false);
+  };
+
+  const handleSaveEdit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editTarget || !editForm) return;
+    if (!editForm.name.trim()) {
+      toast.error("Service name is required");
+      return;
+    }
+    const updated = formToService(editTarget, editForm);
+    setCatalog((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
+    setEditOpen(false);
+    setEditTarget(null);
+    setEditForm(null);
+    toast.success("Service updated");
+  };
+
+  const handleConfirmDelete = () => {
+    if (!deleteTarget) return;
+    setCatalog((prev) => prev.filter((s) => s.id !== deleteTarget.id));
+    setExpandedId((id) => (id === deleteTarget.id ? null : id));
+    toast.success(`“${deleteTarget.name}” removed from catalog`);
+    setDeleteTarget(null);
   };
 
   return (
@@ -270,6 +352,12 @@ export default function ServicesPage() {
                       id === service.id ? null : service.id
                     )
                   }
+                  onEdit={() => {
+                    setEditTarget(service);
+                    setEditForm(serviceToForm(service));
+                    setEditOpen(true);
+                  }}
+                  onDelete={() => setDeleteTarget(service)}
                 />
               ))}
             </div>
@@ -285,6 +373,203 @@ export default function ServicesPage() {
             No services found matching your criteria.
           </div>
         )}
+
+        <Dialog
+          open={editOpen}
+          onOpenChange={(o) => {
+            setEditOpen(o);
+            if (!o) {
+              setEditTarget(null);
+              setEditForm(null);
+            }
+          }}
+        >
+          <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Edit Service</DialogTitle>
+              <DialogDescription>
+                Update details for {editTarget?.name ?? "this service"}.
+              </DialogDescription>
+            </DialogHeader>
+            {editForm && editTarget && (
+              <form onSubmit={handleSaveEdit} className="space-y-4 mt-2">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-svc-name">Service Name</Label>
+                  <Input
+                    id="edit-svc-name"
+                    value={editForm.name}
+                    onChange={(e) => setEditForm((f) => (f ? { ...f, name: e.target.value } : f))}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-svc-desc">Description</Label>
+                  <Input
+                    id="edit-svc-desc"
+                    value={editForm.description}
+                    onChange={(e) =>
+                      setEditForm((f) => (f ? { ...f, description: e.target.value } : f))
+                    }
+                    required
+                  />
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-svc-category">Category</Label>
+                    <Select
+                      value={editForm.category}
+                      onValueChange={(v) =>
+                        setEditForm((f) => (f ? { ...f, category: v } : f))
+                      }
+                    >
+                      <SelectTrigger id="edit-svc-category">
+                        <SelectValue placeholder="Select category" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {categories.map((c) => (
+                          <SelectItem key={c} value={c}>
+                            {c}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-svc-price">Base Price (₹)</Label>
+                    <Input
+                      id="edit-svc-price"
+                      type="number"
+                      min={0}
+                      value={editForm.defaultPrice}
+                      onChange={(e) =>
+                        setEditForm((f) => (f ? { ...f, defaultPrice: e.target.value } : f))
+                      }
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Segment Pricing (₹)</Label>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-3 rounded-lg bg-muted/50">
+                    {SEGMENT_KEYS.map((seg) => (
+                      <div key={seg} className="space-y-1">
+                        <Label
+                          htmlFor={`edit-seg-${seg}`}
+                          className="text-xs text-muted-foreground"
+                        >
+                          {SEGMENT_LABELS[seg]}
+                        </Label>
+                        <Input
+                          id={`edit-seg-${seg}`}
+                          type="number"
+                          min={0}
+                          value={editForm.segmentPricing[seg]}
+                          onChange={(e) =>
+                            setEditForm((f) =>
+                              f
+                                ? {
+                                    ...f,
+                                    segmentPricing: {
+                                      ...f.segmentPricing,
+                                      [seg]: e.target.value,
+                                    },
+                                  }
+                                : f
+                            )
+                          }
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-4">
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="edit-svc-high-end"
+                      checked={editForm.isHighEnd}
+                      onCheckedChange={(c) =>
+                        setEditForm((f) => (f ? { ...f, isHighEnd: c === true } : f))
+                      }
+                    />
+                    <Label htmlFor="edit-svc-high-end" className="text-sm font-medium cursor-pointer">
+                      High-end service
+                    </Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="edit-svc-active"
+                      checked={editForm.isActive}
+                      onCheckedChange={(c) =>
+                        setEditForm((f) => (f ? { ...f, isActive: c === true } : f))
+                      }
+                    />
+                    <Label htmlFor="edit-svc-active" className="text-sm font-medium cursor-pointer">
+                      Active
+                    </Label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="edit-svc-incentive" className="text-sm">
+                      Incentive %
+                    </Label>
+                    <Input
+                      id="edit-svc-incentive"
+                      type="number"
+                      min={0}
+                      max={100}
+                      step={0.5}
+                      className="w-20"
+                      value={editForm.incentivePercent}
+                      onChange={(e) =>
+                        setEditForm((f) => (f ? { ...f, incentivePercent: e.target.value } : f))
+                      }
+                    />
+                  </div>
+                </div>
+
+                <DialogFooter className="gap-2 sm:gap-0">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setEditOpen(false);
+                      setEditTarget(null);
+                      setEditForm(null);
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button type="submit">Save changes</Button>
+                </DialogFooter>
+              </form>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Delete service?</DialogTitle>
+              <DialogDescription>
+                {deleteTarget ? (
+                  <>
+                    This removes <span className="font-medium text-foreground">{deleteTarget.name}</span>{" "}
+                    from the catalog for this session. Job cards that already reference it are unchanged.
+                  </>
+                ) : null}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="gap-2 sm:gap-0">
+              <Button type="button" variant="outline" onClick={() => setDeleteTarget(null)}>
+                Cancel
+              </Button>
+              <Button type="button" variant="destructive" onClick={handleConfirmDelete}>
+                Delete
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </TooltipProvider>
   );
@@ -294,22 +579,26 @@ function ServiceCard({
   service,
   isExpanded,
   onToggleExpand,
+  onEdit,
+  onDelete,
 }: {
   service: ServiceCatalogItem;
   isExpanded: boolean;
   onToggleExpand: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
 }) {
   return (
     <Card className="hover:shadow-md transition-shadow overflow-hidden">
-      <CardContent className="p-5">
+      <CardContent className="p-5 sm:p-6">
         <div className="flex items-start justify-between gap-3 mb-3">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-primary/10">
+          <div className="flex items-start gap-3 min-w-0">
+            <div className="flex items-center justify-center w-10 h-10 shrink-0 rounded-lg bg-primary/10 mt-0.5">
               <Wrench className="w-5 h-5 text-primary" />
             </div>
-            <div className="min-w-0">
+            <div className="min-w-0 space-y-1">
               <div className="flex items-center gap-2 flex-wrap">
-                <h3 className="font-semibold text-sm">{service.name}</h3>
+                <h3 className="font-semibold text-sm leading-snug">{service.name}</h3>
                 {service.isHighEnd && (
                   <Badge
                     variant="secondary"
@@ -320,10 +609,48 @@ function ServiceCard({
                   </Badge>
                 )}
               </div>
-              <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">
+              <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
                 {service.description}
               </p>
             </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-0.5 self-start pt-0.5">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onEdit();
+                  }}
+                  aria-label="Edit service"
+                >
+                  <Pencil className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Edit service</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDelete();
+                  }}
+                  aria-label="Delete service"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Delete service</TooltipContent>
+            </Tooltip>
           </div>
         </div>
 

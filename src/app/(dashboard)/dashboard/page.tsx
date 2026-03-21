@@ -29,7 +29,9 @@ import {
   AlertCircle,
 } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMemo } from "react";
+import { useDashboardFilterStore, DASHBOARD_FILTER } from "@/store/dashboard-filter-store";
 import {
   ResponsiveContainer,
   LineChart,
@@ -44,6 +46,8 @@ import {
 } from "recharts";
 
 export default function DashboardPage() {
+  const router = useRouter();
+  const setActiveFilter = useDashboardFilterStore((s) => s.setActiveFilter);
   const { jobCards } = useJobCardStore();
   const parts = useInventoryStore((s) => s.parts);
   const stats = dashboardStats;
@@ -74,7 +78,7 @@ export default function DashboardPage() {
     }
 
     if (stats.inactiveCustomers > 0) {
-      items.push({ id: "inactive", icon: UserX, label: "Inactive customers", count: stats.inactiveCustomers, href: "/follow-ups", color: "text-slate-700 dark:text-slate-400", bgColor: "bg-slate-100 dark:bg-slate-900/30" });
+      items.push({ id: "inactive", icon: UserX, label: "Inactive customers", count: stats.inactiveCustomers, href: "/customers", color: "text-slate-700 dark:text-slate-400", bgColor: "bg-slate-100 dark:bg-slate-900/30" });
     }
 
     return items;
@@ -99,15 +103,31 @@ export default function DashboardPage() {
 
       {alerts.length > 0 && (
         <div className="flex flex-wrap gap-2">
-          {alerts.map((alert) => (
-            <Link key={alert.id} href={alert.href}>
-              <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border border-border ${alert.bgColor} hover:shadow-sm transition-all`}>
+          {alerts.map((alert) => {
+            const filterMap: Record<string, string> = {
+              overdue: DASHBOARD_FILTER.OVERDUE,
+              stock: DASHBOARD_FILTER.LOW_STOCK,
+              payments: DASHBOARD_FILTER.PENDING_PAYMENT,
+              reminders: DASHBOARD_FILTER.DUE_SOON,
+              inactive: DASHBOARD_FILTER.INACTIVE,
+            };
+            const filter = filterMap[alert.id];
+            return (
+              <button
+                key={alert.id}
+                type="button"
+                onClick={() => {
+                  if (filter) setActiveFilter(filter);
+                  router.push(alert.href);
+                }}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg border border-border ${alert.bgColor} hover:shadow-sm transition-all text-left cursor-pointer`}
+              >
                 <alert.icon className={`w-4 h-4 ${alert.color}`} />
                 <span className={`text-sm font-semibold ${alert.color}`}>{alert.count}</span>
                 <span className="text-xs text-muted-foreground">{alert.label}</span>
-              </div>
-            </Link>
-          ))}
+              </button>
+            );
+          })}
         </div>
       )}
 
@@ -179,7 +199,100 @@ export default function DashboardPage() {
         />
       </div>
 
-      {/* Charts */}
+      {/* Today's Activity */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader className="pb-3 flex flex-row items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Clock className="w-4 h-4 text-muted-foreground" />
+              <CardTitle className="text-base font-semibold">Today&apos;s Bookings</CardTitle>
+            </div>
+            <Link href="/job-cards">
+              <Button variant="ghost" size="sm">
+                View all <ArrowRight className="w-3 h-3 ml-1" />
+              </Button>
+            </Link>
+          </CardHeader>
+          <CardContent className="pt-0">
+            {stats.todaysBookings.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-8">No bookings today</p>
+            ) : (
+              <div className="max-h-[min(260px,45vh)] overflow-y-auto overscroll-contain space-y-3 pr-1 -mr-0.5 [scrollbar-gutter:stable]">
+                {stats.todaysBookings.map((jc) => (
+                  <Link
+                    key={jc.id}
+                    href={`/job-cards/${jc.id}`}
+                    className="flex items-center justify-between p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors shrink-0"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-xs text-muted-foreground">{jc.jobNumber}</span>
+                        <JobCardStatusBadge status={jc.status} />
+                      </div>
+                      <p className="text-sm font-medium mt-1 truncate">{jc.customerName}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {jc.vehicleRegNumber} &middot; {jc.vehicleMakeModel}
+                      </p>
+                    </div>
+                    <div className="text-right ml-4">
+                      <p className="text-xs text-muted-foreground">
+                        {jc.mechanicName || "Unassigned"}
+                      </p>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-3 flex flex-row items-center justify-between">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+              <CardTitle className="text-base font-semibold">Ready for Delivery</CardTitle>
+            </div>
+            <Link href="/job-cards">
+              <Button variant="ghost" size="sm">
+                View all <ArrowRight className="w-3 h-3 ml-1" />
+              </Button>
+            </Link>
+          </CardHeader>
+          <CardContent className="pt-0">
+            {stats.readyForDelivery.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-8">
+                No vehicles ready for delivery
+              </p>
+            ) : (
+              <div className="max-h-[min(260px,45vh)] overflow-y-auto overscroll-contain space-y-3 pr-1 -mr-0.5 [scrollbar-gutter:stable]">
+                {stats.readyForDelivery.map((jc) => (
+                  <Link
+                    key={jc.id}
+                    href={`/job-cards/${jc.id}`}
+                    className="flex items-center justify-between p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors shrink-0"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-xs text-muted-foreground">{jc.jobNumber}</span>
+                        <JobCardStatusBadge status={jc.status} />
+                      </div>
+                      <p className="text-sm font-medium mt-1 truncate">{jc.customerName}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {jc.vehicleRegNumber} &middot; {jc.vehicleMakeModel}
+                      </p>
+                    </div>
+                    <div className="text-right ml-4">
+                      <p className="text-xs text-muted-foreground">{jc.customerPhone}</p>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Charts — monthly trends & service mix */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card className="lg:col-span-2">
           <CardHeader className="pb-2">
@@ -246,95 +359,6 @@ export default function DashboardPage() {
                 </BarChart>
               </ResponsiveContainer>
             </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Today's Activity */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card>
-          <CardHeader className="pb-3 flex flex-row items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Clock className="w-4 h-4 text-muted-foreground" />
-              <CardTitle className="text-base font-semibold">Today&apos;s Bookings</CardTitle>
-            </div>
-            <Link href="/job-cards">
-              <Button variant="ghost" size="sm">
-                View all <ArrowRight className="w-3 h-3 ml-1" />
-              </Button>
-            </Link>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {stats.todaysBookings.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-8">No bookings today</p>
-            ) : (
-              stats.todaysBookings.map((jc) => (
-                <Link
-                  key={jc.id}
-                  href={`/job-cards/${jc.id}`}
-                  className="flex items-center justify-between p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors"
-                >
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs text-muted-foreground">{jc.jobNumber}</span>
-                      <JobCardStatusBadge status={jc.status} />
-                    </div>
-                    <p className="text-sm font-medium mt-1 truncate">{jc.customerName}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {jc.vehicleRegNumber} &middot; {jc.vehicleMakeModel}
-                    </p>
-                  </div>
-                  <div className="text-right ml-4">
-                    <p className="text-xs text-muted-foreground">
-                      {jc.mechanicName || "Unassigned"}
-                    </p>
-                  </div>
-                </Link>
-              ))
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-3 flex flex-row items-center justify-between">
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-              <CardTitle className="text-base font-semibold">Ready for Delivery</CardTitle>
-            </div>
-            <Link href="/job-cards">
-              <Button variant="ghost" size="sm">
-                View all <ArrowRight className="w-3 h-3 ml-1" />
-              </Button>
-            </Link>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {stats.readyForDelivery.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-8">
-                No vehicles ready for delivery
-              </p>
-            ) : (
-              stats.readyForDelivery.map((jc) => (
-                <Link
-                  key={jc.id}
-                  href={`/job-cards/${jc.id}`}
-                  className="flex items-center justify-between p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors"
-                >
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs text-muted-foreground">{jc.jobNumber}</span>
-                      <JobCardStatusBadge status={jc.status} />
-                    </div>
-                    <p className="text-sm font-medium mt-1 truncate">{jc.customerName}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {jc.vehicleRegNumber} &middot; {jc.vehicleMakeModel}
-                    </p>
-                  </div>
-                  <div className="text-right ml-4">
-                    <p className="text-xs text-muted-foreground">{jc.customerPhone}</p>
-                  </div>
-                </Link>
-              ))
-            )}
           </CardContent>
         </Card>
       </div>

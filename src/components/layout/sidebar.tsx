@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useSidebarStore } from "@/store/sidebar-store";
 import { useAuthStore } from "@/store/auth-store";
@@ -27,6 +27,8 @@ import {
   FileText,
   PhoneCall,
   QrCode,
+  User,
+  LogOut,
 } from "lucide-react";
 
 type NavItem = {
@@ -135,6 +137,38 @@ function SidebarContent({
   );
 }
 
+function SidebarFooter({ onNavClick }: { onNavClick?: () => void }) {
+  const router = useRouter();
+  const logout = useAuthStore((s) => s.logout);
+
+  const handleLogout = () => {
+    logout();
+    onNavClick?.();
+    router.push("/login");
+  };
+
+  return (
+    <div className="shrink-0 border-t border-sidebar-border p-2 space-y-1 bg-sidebar">
+      <Link
+        href="/profile"
+        onClick={onNavClick}
+        className="flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13px] font-medium transition-colors text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+      >
+        <User className="w-4 h-4 shrink-0" />
+        <span>Profile</span>
+      </Link>
+      <button
+        type="button"
+        onClick={handleLogout}
+        className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors text-destructive hover:bg-destructive/10"
+      >
+        <LogOut className="w-4 h-4 shrink-0" />
+        <span>Log out</span>
+      </button>
+    </div>
+  );
+}
+
 export function Sidebar() {
   const { mobileOpen, setMobileOpen } = useSidebarStore();
   const businessName = useSettingsStore((s) => s.businessName);
@@ -155,6 +189,7 @@ export function Sidebar() {
 
         <div className="flex-1 flex flex-col border-r border-sidebar-border bg-sidebar overflow-hidden min-h-0">
           <SidebarContent navOverflow="hidden" />
+          <SidebarFooter />
         </div>
       </aside>
 
@@ -191,7 +226,10 @@ export function Sidebar() {
           </button>
         </div>
 
-        <SidebarContent onNavClick={() => setMobileOpen(false)} navOverflow="auto" />
+        <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+          <SidebarContent onNavClick={() => setMobileOpen(false)} navOverflow="auto" />
+        </div>
+        <SidebarFooter onNavClick={() => setMobileOpen(false)} />
       </aside>
     </>
   );

@@ -8,6 +8,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useReminderStore } from "@/store/reminder-store";
+import { useDashboardFilterStore, DASHBOARD_FILTER } from "@/store/dashboard-filter-store";
+import { isDueSoonReminder } from "@/lib/dashboard-filters";
+import { FilterBanner } from "@/components/shared/filter-banner";
 import { formatDate } from "@/lib/utils";
 import type { ServiceReminder, ReminderStatus, ReminderType } from "@/types";
 import {
@@ -94,6 +97,8 @@ function DueBadge({ dueDate }: { dueDate: string }) {
 
 export default function RemindersPage() {
   const { reminders: storeReminders } = useReminderStore();
+  const activeFilter = useDashboardFilterStore((s) => s.activeFilter);
+  const setActiveFilter = useDashboardFilterStore((s) => s.setActiveFilter);
   const [reminders, setReminders] = useState(storeReminders);
   const [activeTab, setActiveTab] = useState("all");
 
@@ -106,10 +111,15 @@ export default function RemindersPage() {
   }), [reminders]);
 
   const filtered = useMemo(() => {
-    if (activeTab === "all") return reminders.filter((r) => r.status !== "COMPLETED" && r.status !== "DISMISSED");
-    if (activeTab === "completed") return reminders.filter((r) => r.status === "COMPLETED");
-    return reminders.filter((r) => r.status === activeTab.toUpperCase());
-  }, [reminders, activeTab]);
+    let list: ServiceReminder[];
+    if (activeTab === "all") list = reminders.filter((r) => r.status !== "COMPLETED" && r.status !== "DISMISSED");
+    else if (activeTab === "completed") list = reminders.filter((r) => r.status === "COMPLETED");
+    else list = reminders.filter((r) => r.status === activeTab.toUpperCase());
+    if (activeFilter === DASHBOARD_FILTER.DUE_SOON) {
+      list = list.filter(isDueSoonReminder);
+    }
+    return list;
+  }, [reminders, activeTab, activeFilter]);
 
   const handleMarkComplete = (id: string) => {
     setReminders((prev) => prev.map((r) => r.id === id ? { ...r, status: "COMPLETED" as ReminderStatus } : r));
@@ -130,6 +140,13 @@ export default function RemindersPage() {
   return (
     <div className="space-y-4 sm:space-y-6">
       <PageHeader title="Service Reminders" />
+
+      {activeFilter === DASHBOARD_FILTER.DUE_SOON && (
+        <FilterBanner
+          message="⚠ Showing due service reminders"
+          onDismiss={() => setActiveFilter(null)}
+        />
+      )}
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Card className="border-red-200 dark:border-red-900">

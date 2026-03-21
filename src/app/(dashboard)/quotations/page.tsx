@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import Link from "next/link";
 import { format } from "date-fns";
 import { toast } from "sonner";
@@ -36,12 +36,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  quotations,
-  customers,
-  vehicles,
-  serviceCatalog,
-} from "@/lib/mock-data";
+import { quotations, serviceCatalog } from "@/lib/mock-data";
+import { useVehicleStore } from "@/store/vehicle-store";
+import { useCustomerStore } from "@/store/customer-store";
 import { formatCurrency } from "@/lib/utils";
 import type { Quotation, QuotationStatus, VehicleSegment } from "@/types";
 import {
@@ -77,6 +74,15 @@ const TAB_LABELS: Record<QuotationStatus | "ALL", string> = {
 
 const TAX_RATE = 0.18;
 
+const SEGMENT_OPTIONS: { value: VehicleSegment; label: string }[] = [
+  { value: "HATCHBACK", label: "Hatchback" },
+  { value: "SEDAN", label: "Sedan" },
+  { value: "SUV", label: "SUV" },
+  { value: "COMPACT_SUV", label: "Compact SUV" },
+  { value: "MUV", label: "MUV" },
+  { value: "LUXURY", label: "Luxury" },
+];
+
 function getServicePrice(serviceId: string, segment: VehicleSegment): number {
   const svc = serviceCatalog.find((s) => s.id === serviceId);
   if (!svc) return 0;
@@ -85,6 +91,10 @@ function getServicePrice(serviceId: string, segment: VehicleSegment): number {
 }
 
 export default function QuotationsPage() {
+  const vehicles = useVehicleStore((s) => s.vehicles);
+  const setVehicles = useVehicleStore((s) => s.setVehicles);
+  const customers = useCustomerStore((s) => s.customers);
+  const addCustomer = useCustomerStore((s) => s.addCustomer);
   const [activeTab, setActiveTab] = useState<string>("ALL");
   const [newDialogOpen, setNewDialogOpen] = useState(false);
   const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
@@ -92,23 +102,42 @@ export default function QuotationsPage() {
   const [quotationList, setQuotationList] = useState<Quotation[]>(quotations);
 
   // New quotation form state
+  const [customerMode, setCustomerMode] = useState<"existing" | "new">("existing");
   const [formCustomerId, setFormCustomerId] = useState<string>("");
   const [formVehicleId, setFormVehicleId] = useState<string>("");
+  const [formSegment, setFormSegment] = useState<VehicleSegment>("HATCHBACK");
+  const [newCustomerName, setNewCustomerName] = useState("");
+  const [newCustomerPhone, setNewCustomerPhone] = useState("");
+  const [newCustomerEmail, setNewCustomerEmail] = useState("");
+  const [newVehicleReg, setNewVehicleReg] = useState("");
+  const [newVehicleMake, setNewVehicleMake] = useState("");
+  const [newVehicleModel, setNewVehicleModel] = useState("");
   const [formServiceIds, setFormServiceIds] = useState<Set<string>>(new Set());
   const [formTerms, setFormTerms] = useState("");
 
   const customerVehicles = useMemo(() => {
     if (!formCustomerId) return [];
     return vehicles.filter((v) => v.customerId === formCustomerId);
-  }, [formCustomerId]);
+  }, [formCustomerId, vehicles]);
 
   const selectedVehicle = useMemo(() => {
     if (!formVehicleId) return null;
     return vehicles.find((v) => v.id === formVehicleId);
-  }, [formVehicleId]);
+  }, [formVehicleId, vehicles]);
+
+  useEffect(() => {
+    if (customerMode === "existing" && selectedVehicle) {
+      setFormSegment(selectedVehicle.segment);
+    }
+  }, [customerMode, selectedVehicle?.id, selectedVehicle?.segment]);
+
+  const effectiveSegment = useMemo((): VehicleSegment => {
+    if (customerMode === "existing" && selectedVehicle) return selectedVehicle.segment;
+    return formSegment;
+  }, [customerMode, selectedVehicle, formSegment]);
 
   const formCalculations = useMemo(() => {
-    const segment = selectedVehicle?.segment ?? "HATCHBACK";
+    const segment = effectiveSegment;
     let subtotal = 0;
     formServiceIds.forEach((sid) => {
       subtotal += getServicePrice(sid, segment);
@@ -116,7 +145,11 @@ export default function QuotationsPage() {
     const taxAmount = Math.round(subtotal * TAX_RATE);
     const grandTotal = subtotal + taxAmount;
     return { subtotal, taxAmount, grandTotal };
-  }, [formServiceIds, selectedVehicle?.segment]);
+  }, [formServiceIds, effectiveSegment]);
+
+  const segmentSelectLocked = customerMode === "existing" && !!selectedVehicle;
+  const canSelectServices =
+    customerMode === "existing" ? !!formVehicleId : true;
 
   const kpis = useMemo(() => {
     const total = quotationList.length;
@@ -131,35 +164,120 @@ export default function QuotationsPage() {
   }, [quotationList]);
 
   const resetForm = () => {
+    setCustomerMode("existing");
     setFormCustomerId("");
     setFormVehicleId("");
+    setFormSegment("HATCHBACK");
+    setNewCustomerName("");
+    setNewCustomerPhone("");
+    setNewCustomerEmail("");
+    setNewVehicleReg("");
+    setNewVehicleMake("");
+    setNewVehicleModel("");
     setFormServiceIds(new Set());
     setFormTerms("");
   };
 
   const handleNewQuotationSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formCustomerId || !formVehicleId || formServiceIds.size === 0) {
-      toast.error("Please select customer, vehicle, and at least one service");
+    if (formServiceIds.size === 0) {
+      toast.error("Please select at least one service");
       return;
     }
-    const customer = customers.find((c) => c.id === formCustomerId);
-    const vehicle = vehicles.find((v) => v.id === formVehicleId);
-    if (!customer || !vehicle) return;
+
+    let customerId: string;
+    let customerName: string;
+    let customerPhone: string;
+    let vehicleId: string;
+    let vehicleRegNumber: string;
+    let vehicleMakeModel: string;
+    let vehicleSegment: VehicleSegment;
+
+    if (customerMode === "existing") {
+      if (!formCustomerId || !formVehicleId) {
+        toast.error("Please select customer and vehicle");
+        return;
+      }
+      const customer = customers.find((c) => c.id === formCustomerId);
+      const vehicle = vehicles.find((v) => v.id === formVehicleId);
+      if (!customer || !vehicle) return;
+      customerId = customer.id;
+      customerName = customer.name;
+      customerPhone = customer.phone;
+      vehicleId = vehicle.id;
+      vehicleRegNumber = vehicle.registrationNumber;
+      vehicleMakeModel = `${vehicle.make} ${vehicle.model}`;
+      vehicleSegment = vehicle.segment;
+    } else {
+      const name = newCustomerName.trim();
+      const phoneDigits = newCustomerPhone.replace(/\D/g, "").slice(-10);
+      const reg = newVehicleReg.trim().toUpperCase();
+      const make = newVehicleMake.trim();
+      const model = newVehicleModel.trim();
+      if (!name || phoneDigits.length !== 10) {
+        toast.error("Enter name and a valid 10-digit phone number");
+        return;
+      }
+      if (!reg || !make || !model) {
+        toast.error("Enter vehicle registration, make, and model");
+        return;
+      }
+      const now = new Date().toISOString();
+      customerId = `cust-quot-${Date.now()}`;
+      customerName = name;
+      customerPhone =
+        newCustomerPhone.replace(/\D/g, "").length >= 10 && newCustomerPhone.startsWith("+")
+          ? newCustomerPhone.trim()
+          : `+91-${phoneDigits}`;
+      const vehicleIdNew = `veh-quot-${Date.now()}`;
+      vehicleId = vehicleIdNew;
+      vehicleRegNumber = reg;
+      vehicleMakeModel = `${make} ${model}`.trim();
+      vehicleSegment = formSegment;
+
+      addCustomer({
+        id: customerId,
+        name: customerName,
+        phone: customerPhone,
+        email: newCustomerEmail.trim() || `${customerId}@placeholder.local`,
+        address: "",
+        referralCode: `REF-${Math.random().toString(36).slice(2, 6).toUpperCase()}`,
+        totalVisits: 0,
+        rewardPoints: 0,
+        walletBalance: 0,
+        createdAt: now,
+      });
+
+      setVehicles((prev) => [
+        ...prev,
+        {
+          id: vehicleIdNew,
+          customerId,
+          customerName,
+          registrationNumber: vehicleRegNumber,
+          make,
+          model,
+          segment: formSegment,
+          fuelType: "PETROL",
+          color: "—",
+          year: new Date().getFullYear(),
+        },
+      ]);
+    }
 
     const newQuotation: Quotation = {
       id: `quot-${Date.now()}`,
       quotationNumber: `QUO-2026-${String(quotationList.length + 1).padStart(4, "0")}`,
-      customerId: customer.id,
-      customerName: customer.name,
-      customerPhone: customer.phone,
-      vehicleId: vehicle.id,
-      vehicleRegNumber: vehicle.registrationNumber,
-      vehicleMakeModel: `${vehicle.make} ${vehicle.model}`,
-      vehicleSegment: vehicle.segment,
+      customerId,
+      customerName,
+      customerPhone,
+      vehicleId,
+      vehicleRegNumber,
+      vehicleMakeModel,
+      vehicleSegment,
       services: Array.from(formServiceIds).map((sid) => {
         const svc = serviceCatalog.find((s) => s.id === sid)!;
-        const price = getServicePrice(sid, vehicle.segment);
+        const price = getServicePrice(sid, vehicleSegment);
         return { serviceCatalogId: sid, name: svc.name, price };
       }),
       subtotal: formCalculations.subtotal,
@@ -436,60 +554,195 @@ export default function QuotationsPage() {
           <DialogHeader>
             <DialogTitle>New Quotation</DialogTitle>
             <DialogDescription>
-              Create a new quotation for a customer. Select customer, vehicle, and services.
+              Choose an existing customer and vehicle, or add a new prospect with vehicle details. Segment sets
+              service pricing.
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleNewQuotationSubmit} className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label>Customer</Label>
-                <Select
-                  value={formCustomerId}
-                  onValueChange={(v) => {
-                    setFormCustomerId(v);
-                    setFormVehicleId("");
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select customer" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {customers.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.name} ({c.phone})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+            <div className="flex flex-wrap gap-2 rounded-lg border border-border bg-muted/30 p-1">
+              <Button
+                type="button"
+                variant={customerMode === "existing" ? "default" : "ghost"}
+                size="sm"
+                className="flex-1 min-w-[140px]"
+                onClick={() => {
+                  setCustomerMode("existing");
+                  setFormCustomerId("");
+                  setFormVehicleId("");
+                }}
+              >
+                Existing customer
+              </Button>
+              <Button
+                type="button"
+                variant={customerMode === "new" ? "default" : "ghost"}
+                size="sm"
+                className="flex-1 min-w-[140px]"
+                onClick={() => {
+                  setCustomerMode("new");
+                  setFormCustomerId("");
+                  setFormVehicleId("");
+                }}
+              >
+                New prospect
+              </Button>
+            </div>
+
+            {customerMode === "existing" && (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Customer</Label>
+                  <Select
+                    value={formCustomerId}
+                    onValueChange={(v) => {
+                      setFormCustomerId(v);
+                      setFormVehicleId("");
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select customer" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {customers.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.name} ({c.phone})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Vehicle</Label>
+                  <Select
+                    value={formVehicleId}
+                    onValueChange={setFormVehicleId}
+                    disabled={!formCustomerId}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select vehicle" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {customerVehicles.length === 0 && formCustomerId ? (
+                        <SelectItem value="__no_vehicle__" disabled>
+                          No vehicles on file — use New prospect
+                        </SelectItem>
+                      ) : (
+                        customerVehicles.map((v) => (
+                          <SelectItem key={v.id} value={v.id}>
+                            {v.registrationNumber} — {v.make} {v.model}
+                          </SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label>Vehicle</Label>
-                <Select
-                  value={formVehicleId}
-                  onValueChange={setFormVehicleId}
-                  disabled={!formCustomerId}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select vehicle" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {customerVehicles.map((v) => (
-                      <SelectItem key={v.id} value={v.id}>
-                        {v.registrationNumber} — {v.make} {v.model}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+            )}
+
+            {customerMode === "new" && (
+              <div className="space-y-4 rounded-lg border border-border bg-muted/20 p-4">
+                <p className="text-sm font-medium">Prospect &amp; vehicle</p>
+                <p className="text-xs text-muted-foreground -mt-2">
+                  Saves to your customer and vehicle lists when you create the quotation.
+                </p>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="quot-new-name">Name *</Label>
+                    <Input
+                      id="quot-new-name"
+                      value={newCustomerName}
+                      onChange={(e) => setNewCustomerName(e.target.value)}
+                      placeholder="Full name"
+                      autoComplete="name"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="quot-new-phone">Phone *</Label>
+                    <Input
+                      id="quot-new-phone"
+                      value={newCustomerPhone}
+                      onChange={(e) => setNewCustomerPhone(e.target.value)}
+                      placeholder="10-digit mobile"
+                      inputMode="tel"
+                    />
+                  </div>
+                  <div className="space-y-2 sm:col-span-2">
+                    <Label htmlFor="quot-new-email">Email (optional)</Label>
+                    <Input
+                      id="quot-new-email"
+                      type="email"
+                      value={newCustomerEmail}
+                      onChange={(e) => setNewCustomerEmail(e.target.value)}
+                      placeholder="email@example.com"
+                      autoComplete="email"
+                    />
+                  </div>
+                  <div className="space-y-2 sm:col-span-2">
+                    <Label htmlFor="quot-new-reg">Registration *</Label>
+                    <Input
+                      id="quot-new-reg"
+                      value={newVehicleReg}
+                      onChange={(e) => setNewVehicleReg(e.target.value)}
+                      placeholder="e.g. KA01AB1234"
+                      className="font-mono uppercase"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="quot-new-make">Make *</Label>
+                    <Input
+                      id="quot-new-make"
+                      value={newVehicleMake}
+                      onChange={(e) => setNewVehicleMake(e.target.value)}
+                      placeholder="e.g. Maruti"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="quot-new-model">Model *</Label>
+                    <Input
+                      id="quot-new-model"
+                      value={newVehicleModel}
+                      onChange={(e) => setNewVehicleModel(e.target.value)}
+                      placeholder="e.g. Swift"
+                    />
+                  </div>
+                </div>
               </div>
+            )}
+
+            <div className="space-y-2">
+              <Label>Vehicle segment (pricing)</Label>
+              <Select
+                value={segmentSelectLocked && selectedVehicle ? selectedVehicle.segment : formSegment}
+                onValueChange={(v) => {
+                  if (!segmentSelectLocked) setFormSegment(v as VehicleSegment);
+                }}
+                disabled={segmentSelectLocked}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SEGMENT_OPTIONS.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {segmentSelectLocked
+                  ? "Locked to the selected vehicle’s segment."
+                  : customerMode === "existing" && !formVehicleId
+                  ? "Pick a segment for pricing until you select a vehicle."
+                  : "Used for segment-based service prices."}
+              </p>
             </div>
 
             <div className="space-y-2">
               <Label>Services</Label>
               <div className="rounded-lg border border-border p-3 max-h-48 overflow-y-auto space-y-2">
                 {serviceCatalog.filter((s) => s.isActive).map((svc) => {
-                  const price = selectedVehicle
-                    ? getServicePrice(svc.id, selectedVehicle.segment)
-                    : svc.defaultPrice;
+                  const price = getServicePrice(svc.id, effectiveSegment);
                   return (
                     <div
                       key={svc.id}
@@ -499,7 +752,7 @@ export default function QuotationsPage() {
                         id={`svc-${svc.id}`}
                         checked={formServiceIds.has(svc.id)}
                         onCheckedChange={() => toggleService(svc.id)}
-                        disabled={!formVehicleId}
+                        disabled={!canSelectServices}
                       />
                       <label
                         htmlFor={`svc-${svc.id}`}

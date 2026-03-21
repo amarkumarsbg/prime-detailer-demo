@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { customers, vehicles, serviceCatalog } from "@/lib/mock-data";
+import { serviceCatalog } from "@/lib/mock-data";
+import { useVehicleStore } from "@/store/vehicle-store";
+import { useCustomerStore } from "@/store/customer-store";
 import { useStaffStore } from "@/store/staff-store";
 import { useAppointmentStore } from "@/store/appointment-store";
 import { useSettingsStore } from "@/store/settings-store";
@@ -72,8 +74,11 @@ const STATUS_COLORS: Record<AppointmentStatus, { bg: string; text: string; dot: 
 };
 
 export default function AppointmentsPage() {
+  const vehicles = useVehicleStore((s) => s.vehicles);
+  const customers = useCustomerStore((s) => s.customers);
   const staff = useStaffStore((s) => s.staff);
   const appointments = useAppointmentStore((s) => s.appointments);
+  const addAppointment = useAppointmentStore((s) => s.addAppointment);
   const updateAppointment = useAppointmentStore((s) => s.updateAppointment);
   const businessName = useSettingsStore((s) => s.businessName);
   const businessPhone = useSettingsStore((s) => s.businessPhone);
@@ -81,8 +86,101 @@ export default function AppointmentsPage() {
   const businessAddress = useSettingsStore((s) => s.businessAddress);
 
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [currentMonth, setCurrentMonth] = useState(new Date(2026, 2, 12));
-  const [selectedDate, setSelectedDate] = useState<Date | null>(new Date(2026, 2, 12));
+  const [formCustomerId, setFormCustomerId] = useState("");
+  const [formVehicleId, setFormVehicleId] = useState("");
+  const [formServiceId, setFormServiceId] = useState("");
+  const [formMechanicId, setFormMechanicId] = useState("");
+  const [formDate, setFormDate] = useState(() => format(new Date(), "yyyy-MM-dd"));
+  const [formTime, setFormTime] = useState("09:00");
+  const [formNotes, setFormNotes] = useState("");
+
+  const [currentMonth, setCurrentMonth] = useState(() => new Date());
+  const [selectedDate, setSelectedDate] = useState<Date | null>(() => new Date());
+
+  const vehiclesForCustomer = useMemo(() => {
+    if (!formCustomerId) return [];
+    return vehicles.filter((v) => v.customerId === formCustomerId);
+  }, [formCustomerId, vehicles]);
+
+  const resetAppointmentForm = () => {
+    setFormCustomerId("");
+    setFormVehicleId("");
+    setFormServiceId("");
+    setFormMechanicId("");
+    setFormDate(format(new Date(), "yyyy-MM-dd"));
+    setFormTime("09:00");
+    setFormNotes("");
+  };
+
+  const handleAppointmentDialogChange = (open: boolean) => {
+    setDialogOpen(open);
+    if (open) {
+      const d = selectedDate ?? new Date();
+      setFormDate(format(d, "yyyy-MM-dd"));
+      setFormTime("09:00");
+    } else {
+      resetAppointmentForm();
+    }
+  };
+
+  const handleNewAppointmentSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const customer = customers.find((c) => c.id === formCustomerId);
+    const vehicle = vehicles.find((v) => v.id === formVehicleId);
+    const service = serviceCatalog.find((s) => s.id === formServiceId);
+    if (!customer || !vehicle || !service) {
+      toast.error("Please select customer, vehicle, and service");
+      return;
+    }
+    if (!formDate || !formTime) {
+      toast.error("Please set date and time");
+      return;
+    }
+
+    const mechanic = formMechanicId ? staff.find((s) => s.id === formMechanicId) : undefined;
+    const now = new Date().toISOString();
+    const y = new Date().getFullYear();
+    let maxBooking = 0;
+    for (const a of appointments) {
+      const m = a.bookingId.match(/^BK-(\d{4})-(\d+)/);
+      if (m && Number(m[1]) === y)
+        maxBooking = Math.max(maxBooking, Number(m[2]));
+    }
+    const bookingId = `BK-${y}-${String(maxBooking + 1).padStart(4, "0")}`;
+
+    const newApt: Appointment = {
+      id: `apt-${Date.now()}`,
+      bookingId,
+      customerId: customer.id,
+      customerName: customer.name,
+      customerPhone: customer.phone,
+      vehicleId: vehicle.id,
+      vehicleRegNumber: vehicle.registrationNumber,
+      vehicleMakeModel: `${vehicle.make} ${vehicle.model}`,
+      serviceType: service.name,
+      mechanicId: mechanic?.id,
+      mechanicName: mechanic?.name,
+      date: formDate,
+      time: formTime,
+      status: "SCHEDULED",
+      whatsappSent: false,
+      createdAt: now,
+      notes: formNotes.trim() || undefined,
+    };
+
+    addAppointment(newApt);
+    const [yy, mm, dd] = formDate.split("-").map(Number);
+    const scheduledDay = new Date(yy, mm - 1, dd);
+
+    toast.success("Appointment scheduled", {
+      description: `${bookingId} · ${format(scheduledDay, "d MMM yyyy")} ${formTime}`,
+    });
+    setDialogOpen(false);
+    resetAppointmentForm();
+
+    setSelectedDate(scheduledDay);
+    setCurrentMonth(scheduledDay);
+  };
 
   const [messageDialogOpen, setMessageDialogOpen] = useState(false);
   const [messagePreview, setMessagePreview] = useState("");
@@ -176,7 +274,8 @@ export default function AppointmentsPage() {
       });
   }, [appointments]);
 
-  const todayCount = appointmentsByDate.get(format(new Date(2026, 2, 12), "yyyy-MM-dd"))?.length ?? 0;
+  const todayKey = format(new Date(), "yyyy-MM-dd");
+  const todayCount = appointmentsByDate.get(todayKey)?.length ?? 0;
   const scheduledCount = appointments.filter((a) => a.status === "SCHEDULED").length;
   const confirmedCount = appointments.filter((a) => a.status === "CONFIRMED").length;
 
@@ -191,76 +290,139 @@ export default function AppointmentsPage() {
               <Sparkles className="w-4 h-4 mr-2" />
               WhatsApp message
             </Button>
-            <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <Dialog open={dialogOpen} onOpenChange={handleAppointmentDialogChange}>
             <DialogTrigger asChild>
-              <Button><Plus className="w-4 h-4 mr-2" />New Appointment</Button>
+              <Button type="button">
+                <Plus className="w-4 h-4 mr-2" />
+                New Appointment
+              </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-lg">
               <DialogHeader>
                 <DialogTitle>Schedule Appointment</DialogTitle>
-                <DialogDescription>Book a service appointment for a customer.</DialogDescription>
+                <DialogDescription>
+                  Book a service appointment. Date defaults to the day selected on the calendar (or today).
+                </DialogDescription>
               </DialogHeader>
-              <form onSubmit={(e) => { e.preventDefault(); toast.success("Appointment scheduled"); setDialogOpen(false); }} className="space-y-4 mt-2">
+              <form onSubmit={handleNewAppointmentSubmit} className="space-y-4 mt-2">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label>Customer</Label>
-                    <Select required>
-                      <SelectTrigger><SelectValue placeholder="Select customer" /></SelectTrigger>
+                    <Label htmlFor="apt-customer">Customer</Label>
+                    <Select
+                      required
+                      value={formCustomerId}
+                      onValueChange={(v) => {
+                        setFormCustomerId(v);
+                        setFormVehicleId("");
+                      }}
+                    >
+                      <SelectTrigger id="apt-customer">
+                        <SelectValue placeholder="Select customer" />
+                      </SelectTrigger>
                       <SelectContent>
                         {customers.map((c) => (
-                          <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                          <SelectItem key={c.id} value={c.id}>
+                            {c.name}
+                          </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label>Vehicle</Label>
-                    <Select required>
-                      <SelectTrigger><SelectValue placeholder="Select vehicle" /></SelectTrigger>
+                    <Label htmlFor="apt-vehicle">Vehicle</Label>
+                    <Select
+                      required
+                      value={formVehicleId}
+                      onValueChange={setFormVehicleId}
+                      disabled={!formCustomerId}
+                    >
+                      <SelectTrigger id="apt-vehicle">
+                        <SelectValue placeholder={formCustomerId ? "Select vehicle" : "Select customer first"} />
+                      </SelectTrigger>
                       <SelectContent>
-                        {vehicles.slice(0, 10).map((v) => (
-                          <SelectItem key={v.id} value={v.id}>{v.registrationNumber}</SelectItem>
-                        ))}
+                        {vehiclesForCustomer.length === 0 ? (
+                          <SelectItem value="__none__" disabled>
+                            No vehicles for this customer
+                          </SelectItem>
+                        ) : (
+                          vehiclesForCustomer.map((v) => (
+                            <SelectItem key={v.id} value={v.id}>
+                              {v.registrationNumber} — {v.make} {v.model}
+                            </SelectItem>
+                          ))
+                        )}
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label>Service</Label>
-                    <Select required>
-                      <SelectTrigger><SelectValue placeholder="Select service" /></SelectTrigger>
+                    <Label htmlFor="apt-service">Service</Label>
+                    <Select required value={formServiceId} onValueChange={setFormServiceId}>
+                      <SelectTrigger id="apt-service">
+                        <SelectValue placeholder="Select service" />
+                      </SelectTrigger>
                       <SelectContent>
-                        {serviceCatalog.map((s) => (
-                          <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-                        ))}
+                        {serviceCatalog
+                          .filter((s) => s.isActive)
+                          .map((s) => (
+                            <SelectItem key={s.id} value={s.id}>
+                              {s.name}
+                            </SelectItem>
+                          ))}
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label>Mechanic (optional)</Label>
-                    <Select>
-                      <SelectTrigger><SelectValue placeholder="Assign mechanic" /></SelectTrigger>
+                    <Label htmlFor="apt-mechanic">Mechanic (optional)</Label>
+                    <Select value={formMechanicId || "__none__"} onValueChange={(v) => setFormMechanicId(v === "__none__" ? "" : v)}>
+                      <SelectTrigger id="apt-mechanic">
+                        <SelectValue placeholder="Assign mechanic" />
+                      </SelectTrigger>
                       <SelectContent>
-                        {staff.filter((s) => s.role === "MECHANIC").map((s) => (
-                          <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-                        ))}
+                        <SelectItem value="__none__">None</SelectItem>
+                        {staff
+                          .filter((s) => s.role === "MECHANIC")
+                          .map((s) => (
+                            <SelectItem key={s.id} value={s.id}>
+                              {s.name}
+                            </SelectItem>
+                          ))}
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label>Date</Label>
-                    <Input type="date" required />
+                    <Label htmlFor="apt-date">Date</Label>
+                    <Input
+                      id="apt-date"
+                      type="date"
+                      required
+                      value={formDate}
+                      onChange={(e) => setFormDate(e.target.value)}
+                    />
                   </div>
                   <div className="space-y-2">
-                    <Label>Time</Label>
-                    <Input type="time" required />
+                    <Label htmlFor="apt-time">Time</Label>
+                    <Input
+                      id="apt-time"
+                      type="time"
+                      required
+                      value={formTime}
+                      onChange={(e) => setFormTime(e.target.value)}
+                    />
                   </div>
                   <div className="space-y-2 sm:col-span-2">
-                    <Label>Notes (optional)</Label>
-                    <Input placeholder="Any special instructions..." />
+                    <Label htmlFor="apt-notes">Notes (optional)</Label>
+                    <Input
+                      id="apt-notes"
+                      placeholder="Any special instructions..."
+                      value={formNotes}
+                      onChange={(e) => setFormNotes(e.target.value)}
+                    />
                   </div>
                 </div>
                 <div className="flex justify-end gap-2 pt-2">
-                  <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
+                  <Button type="button" variant="outline" onClick={() => handleAppointmentDialogChange(false)}>
+                    Cancel
+                  </Button>
                   <Button type="submit">Schedule</Button>
                 </div>
               </form>
@@ -362,9 +524,27 @@ export default function AppointmentsPage() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <Card className="lg:col-span-2">
               <CardHeader className="pb-2">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-base">{format(currentMonth, "MMMM yyyy")}</CardTitle>
-                  <div className="flex gap-1">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <CardTitle className="text-base">{format(currentMonth, "MMMM yyyy")}</CardTitle>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Today: {format(new Date(), "EEEE, d MMM yyyy")}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-xs"
+                      onClick={() => {
+                        const t = new Date();
+                        setCurrentMonth(t);
+                        setSelectedDate(t);
+                      }}
+                    >
+                      Today
+                    </Button>
                     <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}>
                       <ChevronLeft className="w-4 h-4" />
                     </Button>
@@ -419,7 +599,11 @@ export default function AppointmentsPage() {
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-base">
-                  {selectedDate ? format(selectedDate, "EEE, d MMM") : "Select a day"}
+                  {selectedDate
+                    ? isToday(selectedDate)
+                      ? `Today · ${format(selectedDate, "EEE, d MMM yyyy")}`
+                      : format(selectedDate, "EEE, d MMM yyyy")
+                    : "Select a day"}
                 </CardTitle>
               </CardHeader>
               <CardContent>
