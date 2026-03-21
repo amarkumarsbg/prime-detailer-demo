@@ -189,7 +189,6 @@ export function Sidebar() {
 
         <div className="flex-1 flex flex-col border-r border-sidebar-border bg-sidebar overflow-hidden min-h-0">
           <SidebarContent navOverflow="hidden" />
-          <SidebarFooter />
         </div>
       </aside>
 

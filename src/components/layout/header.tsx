@@ -19,7 +19,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { NotificationPanel } from "./notification-panel";
-import { Bell, LogOut, Moon, Sun, User, Menu, Search, Users, ClipboardList, X, Wrench } from "lucide-react";
+import { Bell, LogOut, Moon, Sun, User, Menu, Search, Users, ClipboardList, X, Wrench, Building2 } from "lucide-react";
 import { useState, useEffect, useRef, useMemo } from "react";
 import Link from "next/link";
 
@@ -114,26 +114,26 @@ export function Header() {
 
   return (
     <header className="shrink-0 z-30 h-16 border-b border-sidebar-border bg-background flex items-center gap-2 sm:gap-3 px-3 sm:px-4 md:px-6">
-      {/* Company logo — left */}
+      {/* Mobile only — company logo (desktop branding lives in the sidebar) */}
       <Link
         href="/dashboard"
-        className="flex items-center gap-2 shrink-0 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="md:hidden flex items-center gap-2 shrink-0 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-primary shrink-0">
           <Wrench className="w-5 h-5 text-primary-foreground" />
         </div>
         <div className="hidden min-[400px]:flex flex-col leading-tight min-w-0">
-          <span className="text-sm font-bold text-foreground truncate max-w-[120px] sm:max-w-[180px] md:max-w-[220px]">
+          <span className="text-sm font-bold text-foreground truncate max-w-[120px] sm:max-w-[180px]">
             {businessName}
           </span>
           <span className="text-[10px] text-muted-foreground hidden sm:block truncate">Service Management</span>
         </div>
       </Link>
 
-      {/* Branch — desktop / tablet only */}
-      <div className="hidden lg:flex items-center gap-2 text-sm text-muted-foreground shrink-0 max-w-[200px]">
-        <span className="text-muted-foreground/50">|</span>
-        <span className="font-medium text-foreground truncate">{currentBranch?.name}</span>
+      {/* Desktop / tablet — current branch only (matches pre-refactor header) */}
+      <div className="hidden md:flex items-center gap-2 text-sm text-muted-foreground shrink-0 min-w-0">
+        <Building2 className="w-4 h-4 shrink-0" />
+        <span className="font-medium text-foreground truncate max-w-[200px]">{currentBranch?.name}</span>
       </div>
 
       {/* Search — center, flexible */}
