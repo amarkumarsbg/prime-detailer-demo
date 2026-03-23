@@ -32,6 +32,7 @@ import { useJobCardStore } from "@/store/job-card-store";
 import { useStaffStore } from "@/store/staff-store";
 import { useHighEndServiceStore } from "@/store/high-end-service-store";
 import { useReminderStore } from "@/store/reminder-store";
+import { createOrGetInvoiceForJob } from "@/lib/invoice-from-job-card";
 import { formatDate, formatCurrency } from "@/lib/utils";
 import type { JobCard, JobCardStatus, ServiceItem, InspectionPhoto, MechanicSwitchLog } from "@/types";
 
@@ -95,6 +96,8 @@ export default function JobCardDetailPage() {
   const [currentMechanicName, setCurrentMechanicName] = useState<string | undefined>(jobCard?.mechanicName);
   const [switchLog, setSwitchLog] = useState<MechanicSwitchLog[]>(jobCard?.mechanicSwitchLog ?? []);
   const [showSwitchDialog, setShowSwitchDialog] = useState(false);
+  const [showQuickAssignDialog, setShowQuickAssignDialog] = useState(false);
+  const [quickAssignMechanicId, setQuickAssignMechanicId] = useState("");
   const [switchToMechanicId, setSwitchToMechanicId] = useState("");
   const [switchReason, setSwitchReason] = useState("");
   const [switchCustomReason, setSwitchCustomReason] = useState("");
@@ -158,6 +161,27 @@ export default function JobCardDetailPage() {
     toast.success("Mechanic switched", {
       description: `${currentMechanicName ?? "Unassigned"} → ${newMechanic.name}`,
     });
+  };
+
+  const handleQuickAssignConfirm = () => {
+    if (!quickAssignMechanicId) {
+      toast.error("Select a mechanic");
+      return;
+    }
+    const m = mechanics.find((x) => x.id === quickAssignMechanicId);
+    if (!m || !jobCard) return;
+
+    setCurrentMechanicId(m.id);
+    setCurrentMechanicName(m.name);
+    updateJobCard(jobCard.id, {
+      mechanicId: m.id,
+      mechanicName: m.name,
+      updatedAt: new Date().toISOString(),
+    });
+
+    setShowQuickAssignDialog(false);
+    setQuickAssignMechanicId("");
+    toast.success("Mechanic assigned", { description: m.name });
   };
 
   const formatDuration = (ms: number) => {
@@ -365,6 +389,19 @@ export default function JobCardDetailPage() {
     return WORKFLOW_STATUSES.indexOf(currentStatus);
   }, [currentStatus]);
 
+  /** True when a mechanic is on the job (local state or persisted card). */
+  const hasMechanicAssigned = Boolean(currentMechanicId ?? jobCard?.mechanicId);
+
+  /** Next workflow step after "Update Status" (null if terminal or cancelled). */
+  const nextWorkflowStatus =
+    currentStatusIndex >= 0 && currentStatusIndex < WORKFLOW_STATUSES.length - 1
+      ? WORKFLOW_STATUSES[currentStatusIndex + 1]
+      : null;
+
+  /** Block advancing into In Service until someone is assigned (same idea as Before-photo gate). */
+  const advanceBlockedByMechanic =
+    nextWorkflowStatus === "AWAITING_SERVICE" && !hasMechanicAssigned;
+
   const completedCount = serviceItems.filter((s) => s.isCompleted).length;
   const totalCount = serviceItems.length;
   const progressPercent = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
@@ -403,6 +440,12 @@ export default function JobCardDetailPage() {
       if (currentStatus === "INSPECTION" && nextStatus === "AWAITING_SERVICE") {
         if (!hasBeforePhoto) {
           toast.error("Upload at least one Before photo before continuing");
+          return;
+        }
+        if (!hasMechanicAssigned) {
+          toast.error("Assign a mechanic before moving to In Service", {
+            description: "Use Assign mechanic in the workflow bar above.",
+          });
           return;
         }
       }
@@ -473,6 +516,25 @@ export default function JobCardDetailPage() {
     });
   };
 
+  const handleGenerateInvoice = () => {
+    if (!jobCard) return;
+    const result = createOrGetInvoiceForJob(jobCard.id);
+    if (!result.ok) {
+      if (result.code === "NOT_DELIVERED") {
+        toast.error("Deliver the job before generating an invoice");
+      } else if (result.code === "NO_SERVICES") {
+        toast.error("Add services on the job card before invoicing");
+      } else {
+        toast.error("Job card not found");
+      }
+      return;
+    }
+    if (result.created) {
+      toast.success("Invoice created", { description: result.invoiceNumber });
+    }
+    router.push(`/billing/${result.invoiceId}`);
+  };
+
   if (!jobCard) {
     return (
       <div className="space-y-4 sm:space-y-6">
@@ -505,7 +567,7 @@ export default function JobCardDetailPage() {
           <CardContent className="!pt-6 !pb-5 !px-4 sm:!pt-8 sm:!pb-6 sm:!px-10">
             <p className="text-xs text-muted-foreground mb-3 sm:hidden">Swipe steps to see full workflow</p>
             <div className="overflow-x-auto overflow-y-visible -mx-1 px-1 pb-2 sm:mx-0 sm:px-0 sm:pb-0 touch-pan-x [scrollbar-width:thin]">
-              <div className="flex items-center min-w-max sm:min-w-0 sm:w-full sm:justify-center gap-0">
+              <div className="flex items-center justify-start min-w-max sm:min-w-0 sm:w-full gap-x-2 sm:gap-x-4">
                 {WORKFLOW_STATUSES.map((status, index) => {
                   const isCompleted = index < currentStatusIndex;
                   const isCurrent = index === currentStatusIndex;
@@ -513,7 +575,7 @@ export default function JobCardDetailPage() {
 
                   return (
                     <div key={status} className="flex items-center shrink-0">
-                      <div className="flex flex-col items-center w-[4.5rem] sm:w-24 px-0.5">
+                      <div className="flex flex-col items-center w-[5.25rem] sm:w-28 px-1">
                         <div
                           className={`w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center border-2 transition-colors ${
                             isCompleted
@@ -530,7 +592,7 @@ export default function JobCardDetailPage() {
                           )}
                         </div>
                         <span
-                          className={`text-[10px] sm:text-xs mt-1.5 text-center leading-snug max-w-[4.5rem] sm:max-w-none ${
+                          className={`text-[10px] sm:text-xs mt-1.5 text-center leading-snug max-w-[5.25rem] sm:max-w-none ${
                             isCurrent ? "font-semibold text-foreground" : "text-muted-foreground"
                           }`}
                         >
@@ -539,7 +601,7 @@ export default function JobCardDetailPage() {
                       </div>
                       {!isLast && (
                         <div
-                          className={`h-0.5 w-6 sm:flex-1 sm:min-w-[0.5rem] sm:max-w-20 shrink-0 ${
+                          className={`h-0.5 w-10 sm:flex-1 sm:min-w-8 sm:max-w-40 shrink-0 ${
                             isCompleted ? "bg-primary" : "bg-muted"
                           }`}
                           aria-hidden
@@ -550,25 +612,44 @@ export default function JobCardDetailPage() {
                 })}
               </div>
             </div>
-            <div className="flex flex-col sm:flex-row sm:justify-start gap-2 sm:gap-3 mt-5">
-              <Button
-                className="w-full sm:w-auto"
-                onClick={handleUpdateStatus}
-                disabled={
-                  currentStatus === "DELIVERED" ||
-                  currentStatusIndex >= WORKFLOW_STATUSES.length - 1
-                }
-              >
-                Update Status
-              </Button>
-              <Button
-                className="w-full sm:w-auto"
-                variant="destructive"
-                onClick={handleCancel}
-                disabled={currentStatus === "DELIVERED"}
-              >
-                Cancel
-              </Button>
+            <div className="mt-5 space-y-2">
+              {advanceBlockedByMechanic && (
+                <p className="text-sm text-amber-600 dark:text-amber-500">
+                  Assign a mechanic before moving to In Service — use the button below or the summary header.
+                </p>
+              )}
+              <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 sm:gap-3">
+                {!hasMechanicAssigned && (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="w-full sm:w-auto"
+                    onClick={() => setShowQuickAssignDialog(true)}
+                  >
+                    <User className="w-4 h-4 mr-2" />
+                    Assign mechanic
+                  </Button>
+                )}
+                <Button
+                  className="w-full sm:w-auto"
+                  onClick={handleUpdateStatus}
+                  disabled={
+                    currentStatus === "DELIVERED" ||
+                    currentStatusIndex >= WORKFLOW_STATUSES.length - 1 ||
+                    advanceBlockedByMechanic
+                  }
+                >
+                  Update Status
+                </Button>
+                <Button
+                  className="w-full sm:w-auto"
+                  variant="destructive"
+                  onClick={handleCancel}
+                  disabled={currentStatus === "DELIVERED"}
+                >
+                  Cancel
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -612,9 +693,11 @@ export default function JobCardDetailPage() {
                   {currentStatus !== "DELIVERED" && currentStatus !== "CANCELLED" && (
                     <button
                       type="button"
-                      onClick={() => setShowSwitchDialog(true)}
+                      onClick={() =>
+                        currentMechanicName ? setShowSwitchDialog(true) : setShowQuickAssignDialog(true)
+                      }
                       className="text-primary hover:text-primary/80 transition-colors"
-                      title="Switch mechanic"
+                      title={currentMechanicName ? "Switch mechanic" : "Assign mechanic"}
                     >
                       <ArrowLeftRight className="w-3.5 h-3.5" />
                     </button>
@@ -1008,9 +1091,24 @@ export default function JobCardDetailPage() {
                 </div>
               )}
               {currentStatus !== "DELIVERED" && currentStatus !== "CANCELLED" && (
-                <Button variant="outline" size="sm" onClick={() => setShowSwitchDialog(true)}>
-                  <ArrowLeftRight className="w-3.5 h-3.5 mr-1.5" />
-                  Switch Mechanic
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    currentMechanicName ? setShowSwitchDialog(true) : setShowQuickAssignDialog(true)
+                  }
+                >
+                  {currentMechanicName ? (
+                    <>
+                      <ArrowLeftRight className="w-3.5 h-3.5 mr-1.5" />
+                      Switch mechanic
+                    </>
+                  ) : (
+                    <>
+                      <User className="w-3.5 h-3.5 mr-1.5" />
+                      Assign mechanic
+                    </>
+                  )}
                 </Button>
               )}
             </div>
@@ -1108,6 +1206,47 @@ export default function JobCardDetailPage() {
         </CardContent>
       </Card>
 
+      {/* Quick assign mechanic (no scroll — same page top) */}
+      <Dialog
+        open={showQuickAssignDialog}
+        onOpenChange={(open) => {
+          setShowQuickAssignDialog(open);
+          if (!open) setQuickAssignMechanicId("");
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Assign mechanic</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Choose who will work on {jobCard.jobNumber}. You can change this later from Switch mechanic.
+          </p>
+          <div className="space-y-2 pt-1">
+            <Label htmlFor="quick-assign-mechanic">Mechanic</Label>
+            <Select value={quickAssignMechanicId} onValueChange={setQuickAssignMechanicId}>
+              <SelectTrigger id="quick-assign-mechanic">
+                <SelectValue placeholder={mechanics.length ? "Select mechanic" : "No mechanics in staff list"} />
+              </SelectTrigger>
+              <SelectContent>
+                {mechanics.map((m) => (
+                  <SelectItem key={m.id} value={m.id}>
+                    {m.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setShowQuickAssignDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleQuickAssignConfirm} disabled={!mechanics.length}>
+              Assign
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Switch Mechanic Dialog */}
       <Dialog open={showSwitchDialog} onOpenChange={setShowSwitchDialog}>
         <DialogContent className="sm:max-w-md">
@@ -1201,12 +1340,27 @@ export default function JobCardDetailPage() {
               </Button>
             </Link>
           )}
-          <Link href={`/billing?jobCardId=${jobCard.id}`}>
-            <Button variant="outline">
+          {currentStatus === "DELIVERED" ? (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleGenerateInvoice}
+              title="Creates the invoice if needed and opens it to print or record payment."
+            >
               <FileText className="w-4 h-4 mr-2" />
               Generate Invoice
             </Button>
-          </Link>
+          ) : (
+            <Button
+              type="button"
+              variant="outline"
+              disabled
+              title="Mark the job as Delivered in the workflow above, then generate the invoice."
+            >
+              <FileText className="w-4 h-4 mr-2" />
+              Generate Invoice
+            </Button>
+          )}
           <Link href={`/customers/${jobCard.customerId}`}>
             <Button variant="outline">
               <User className="w-4 h-4 mr-2" />

@@ -31,7 +31,7 @@ import { useWalletStore } from "@/store/wallet-store";
 import { useSettingsStore } from "@/store/settings-store";
 import { useVehicleCatalogStore } from "@/store/vehicle-catalog-store";
 import { formatCurrency } from "@/lib/utils";
-import type { VehicleSegment, ServiceCatalogItem } from "@/types";
+import type { Vehicle, VehicleSegment, ServiceCatalogItem } from "@/types";
 
 const SEGMENT_OPTIONS: { value: VehicleSegment; label: string }[] = [
   { value: "HATCHBACK", label: "Hatchback" },
@@ -53,6 +53,7 @@ export default function NewJobCardPage() {
   const { referralRewardAmount, newCustomerDiscount } = useSettingsStore();
   const { getBrandNames, getModels, getModelSegment } = useVehicleCatalogStore();
   const vehicles = useVehicleStore((s) => s.vehicles);
+  const setVehicles = useVehicleStore((s) => s.setVehicles);
   const staff = useStaffStore((s) => s.staff);
   const mechanics = useMemo(
     () => staff.filter((s) => s.role === "MECHANIC"),
@@ -243,6 +244,32 @@ export default function NewJobCardPage() {
       ? selectedServices.reduce((sum, s) => sum + s.incentivePercent, 0) / selectedServices.length
       : 0;
 
+    const regUpper = vehicleNumber.trim().toUpperCase();
+    const latestVehicles = useVehicleStore.getState().vehicles;
+    const matchedVehicle = latestVehicles.find(
+      (v) => v.customerId === custId && v.registrationNumber === regUpper
+    );
+
+    let resolvedVehicleId: string;
+    if (matchedVehicle) {
+      resolvedVehicleId = matchedVehicle.id;
+    } else {
+      resolvedVehicleId = `veh-local-${Date.now()}`;
+      const newVehicle: Vehicle = {
+        id: resolvedVehicleId,
+        customerId: custId,
+        customerName: customerName.trim(),
+        registrationNumber: regUpper,
+        make: vehicleBrand.trim(),
+        model: vehicleModel.trim() || "—",
+        segment: vehicleSegment as VehicleSegment,
+        fuelType: "PETROL",
+        color: "—",
+        year: new Date().getFullYear(),
+      };
+      setVehicles((prev) => [newVehicle, ...prev]);
+    }
+
     const newJobCard = {
       id,
       jobNumber,
@@ -250,7 +277,7 @@ export default function NewJobCardPage() {
       customerId: custId,
       customerName,
       customerPhone,
-      vehicleId: `veh-local-${Date.now()}`,
+      vehicleId: resolvedVehicleId,
       vehicleRegNumber: vehicleNumber,
       vehicleMakeModel: `${vehicleBrand} ${vehicleModel}`.trim(),
       vehicleSegment: vehicleSegment as VehicleSegment,

@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useState, useMemo } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { toast } from "sonner";
 import { PageHeader } from "@/components/shared/page-header";
 import { DataTable } from "@/components/shared/data-table";
 import { KPICard } from "@/components/shared/kpi-card";
@@ -9,7 +10,7 @@ import { InvoiceStatusBadge } from "@/components/shared/status-badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { useInvoiceStore } from "@/store/invoice-store";
+import { createOrGetInvoiceForJob } from "@/lib/invoice-from-job-card";
 import { useDashboardFilterStore, DASHBOARD_FILTER } from "@/store/dashboard-filter-store";
 import { isPendingPaymentInvoice } from "@/lib/dashboard-filters";
 import { FilterBanner } from "@/components/shared/filter-banner";
@@ -32,6 +33,39 @@ function getPaymentMethodLabel(method: string): string {
     CARD: "Card",
   };
   return labels[method] ?? method;
+}
+
+/** Handles /billing?jobCardId=… from job card “Generate Invoice” (requires useSearchParams + Suspense). */
+function BillingFromJobCardEffect() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const jobCardId = searchParams.get("jobCardId");
+
+  useEffect(() => {
+    if (!jobCardId) return;
+
+    const result = createOrGetInvoiceForJob(jobCardId);
+    if (!result.ok) {
+      if (result.code === "NOT_FOUND") {
+        toast.error("Job card not found");
+        router.replace("/billing");
+      } else if (result.code === "NOT_DELIVERED") {
+        toast.error("Deliver the job before generating an invoice");
+        router.replace(`/job-cards/${jobCardId}`);
+      } else {
+        toast.error("Add services on the job card before invoicing");
+        router.replace(`/job-cards/${jobCardId}`);
+      }
+      return;
+    }
+
+    if (result.created) {
+      toast.success("Invoice created", { description: result.invoiceNumber });
+    }
+    router.replace(`/billing/${result.invoiceId}`);
+  }, [jobCardId, router]);
+
+  return null;
 }
 
 export default function BillingPage() {
@@ -171,6 +205,9 @@ export default function BillingPage() {
 
   return (
     <div className="space-y-4 sm:space-y-6">
+      <Suspense fallback={null}>
+        <BillingFromJobCardEffect />
+      </Suspense>
       <PageHeader
         title="Billing & Invoices"
         description="View and manage invoices, payments, and billing history"

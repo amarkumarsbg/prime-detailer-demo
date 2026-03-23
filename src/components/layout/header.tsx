@@ -139,7 +139,7 @@ export function Header() {
       {/* Search — center, flexible */}
       <div className="flex-1 flex justify-center min-w-0">
         <div className="relative w-full max-w-md" ref={searchRef}>
-          <div className="flex items-center gap-1.5 h-9 px-3 rounded-lg border border-border bg-muted/50 text-sm transition-colors focus-within:ring-1 focus-within:ring-primary focus-within:border-primary">
+          <div className="flex items-center gap-1.5 h-9 px-3 rounded-lg border border-border bg-muted/50 text-sm transition-colors focus-within:ring-1 focus-within:ring-primary focus-within:border-primary w-full">
             <Search className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
             <input
               ref={searchInputRef}
@@ -148,17 +148,17 @@ export function Header() {
               onChange={(e) => setSearchQuery(e.target.value)}
               onFocus={() => setSearchFocused(true)}
               placeholder="Search..."
-              className="bg-transparent outline-none text-sm placeholder:text-muted-foreground w-24 sm:w-48 lg:w-64"
+              className="flex-1 min-w-0 bg-transparent outline-none text-sm placeholder:text-muted-foreground"
             />
             {searchQuery && (
-              <button onClick={() => { setSearchQuery(""); searchInputRef.current?.focus(); }} className="shrink-0">
+              <button
+                type="button"
+                onClick={() => { setSearchQuery(""); searchInputRef.current?.focus(); }}
+                className="shrink-0 rounded p-0.5 hover:bg-muted/80"
+                aria-label="Clear search"
+              >
                 <X className="w-3.5 h-3.5 text-muted-foreground hover:text-foreground" />
               </button>
-            )}
-            {!searchQuery && (
-              <kbd className="hidden sm:inline-flex pointer-events-none h-5 items-center gap-1 rounded border border-border bg-background px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
-                <span className="text-xs">&#8984;</span>K
-              </kbd>
             )}
           </div>
 

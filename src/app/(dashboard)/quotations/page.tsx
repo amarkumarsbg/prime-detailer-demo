@@ -39,8 +39,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { quotations, serviceCatalog } from "@/lib/mock-data";
 import { useVehicleStore } from "@/store/vehicle-store";
 import { useCustomerStore } from "@/store/customer-store";
+import { useJobCardStore } from "@/store/job-card-store";
 import { formatCurrency } from "@/lib/utils";
-import type { Quotation, QuotationStatus, VehicleSegment } from "@/types";
+import type { JobCard, Quotation, QuotationStatus, ServiceItem, VehicleSegment } from "@/types";
 import {
   Plus,
   FileText,
@@ -95,6 +96,8 @@ export default function QuotationsPage() {
   const setVehicles = useVehicleStore((s) => s.setVehicles);
   const customers = useCustomerStore((s) => s.customers);
   const addCustomer = useCustomerStore((s) => s.addCustomer);
+  const addJobCard = useJobCardStore((s) => s.addJobCard);
+  const getNextJobNumber = useJobCardStore((s) => s.getNextJobNumber);
   const [activeTab, setActiveTab] = useState<string>("ALL");
   const [newDialogOpen, setNewDialogOpen] = useState(false);
   const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
@@ -305,6 +308,18 @@ export default function QuotationsPage() {
 
   const handleSendWhatsApp = (q: Quotation, e: React.MouseEvent) => {
     e.stopPropagation();
+    const now = new Date().toISOString();
+    const patch: Partial<Quotation> = {
+      sentViaWhatsApp: true,
+      updatedAt: now,
+      ...(q.status === "DRAFT" ? { status: "SENT" as const } : {}),
+    };
+    setQuotationList((prev) =>
+      prev.map((row) => (row.id === q.id ? { ...row, ...patch } : row))
+    );
+    setSelectedQuotation((sel) =>
+      sel?.id === q.id ? { ...sel, ...patch } : sel
+    );
     toast.success("Quotation sent via WhatsApp", {
       description: `Estimate sent to ${q.customerName} at ${q.customerPhone}`,
     });
@@ -312,8 +327,65 @@ export default function QuotationsPage() {
 
   const handleConvertToJobCard = (q: Quotation, e: React.MouseEvent) => {
     e.stopPropagation();
+    if (q.status === "CONVERTED") return;
+
+    const jobId = `jc-q-${Date.now().toString(36)}`;
+    const jobNumber = getNextJobNumber();
+    const now = new Date().toISOString();
+
+    const serviceItems: ServiceItem[] = q.services.map((s, idx) => ({
+      id: `si-${jobId}-${idx}`,
+      jobCardId: jobId,
+      serviceCatalogId: s.serviceCatalogId,
+      name: s.name,
+      price: s.price,
+      isCompleted: false,
+    }));
+
+    const incentivePercent = 5;
+    const incentiveAmount = Math.round((q.grandTotal * incentivePercent) / 100);
+
+    const newJob: JobCard = {
+      id: jobId,
+      jobNumber,
+      branchId: "br-001",
+      customerId: q.customerId,
+      customerName: q.customerName,
+      customerPhone: q.customerPhone,
+      vehicleId: q.vehicleId,
+      vehicleRegNumber: q.vehicleRegNumber,
+      vehicleMakeModel: q.vehicleMakeModel,
+      vehicleSegment: q.vehicleSegment,
+      status: "RECEIVED",
+      reportedIssues: `Converted from quotation ${q.quotationNumber}`,
+      expectedDelivery: new Date(Date.now() + 86400000).toISOString(),
+      services: serviceItems,
+      estimatedAmount: q.grandTotal,
+      incentivePercent,
+      incentiveAmount,
+      termsAndConditions: q.termsAndConditions,
+      quotationId: q.id,
+      createdBy: "usr-004",
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    addJobCard(newJob);
+
+    const patch: Partial<Quotation> = {
+      status: "CONVERTED",
+      convertedToJobCardId: jobId,
+      updatedAt: now,
+    };
+    setQuotationList((prev) =>
+      prev.map((row) => (row.id === q.id ? { ...row, ...patch } : row))
+    );
+    setSelectedQuotation((sel) =>
+      sel?.id === q.id ? { ...sel, ...patch } : sel
+    );
+
     toast.success("Converted to Job Card", {
-      description: `Quotation ${q.quotationNumber} has been converted.`,
+      description: `${q.quotationNumber} → ${jobNumber}. Open Job Cards to continue.`,
     });
   };
 

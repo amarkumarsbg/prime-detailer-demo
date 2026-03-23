@@ -103,7 +103,12 @@ export default function CustomersPage() {
       ),
       sortable: true,
     },
-    { key: "phone", label: "Phone", sortable: true },
+    {
+      key: "phone",
+      label: "Phone",
+      sortable: true,
+      className: "whitespace-nowrap",
+    },
     { key: "email", label: "Email", sortable: true },
     {
       key: "vehiclesCount",

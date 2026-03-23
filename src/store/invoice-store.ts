@@ -9,6 +9,8 @@ import { useJobCardStore } from "@/store/job-card-store";
 
 interface InvoiceStore {
   invoices: Invoice[];
+  addInvoice: (invoice: Invoice) => void;
+  getNextInvoiceNumber: () => string;
   updateInvoice: (id: string, updates: Partial<Invoice>) => void;
   /** Append payment, recompute status, apply inventory when fully paid. */
   recordPayment: (
@@ -32,6 +34,18 @@ export const useInvoiceStore = create<InvoiceStore>()(
   persist(
     (set, get) => ({
       invoices: mockInvoices,
+
+      addInvoice: (invoice) =>
+        set((state) => ({ invoices: [invoice, ...state.invoices] })),
+
+      getNextInvoiceNumber: () => {
+        const all = get().invoices;
+        const maxNum = all.reduce((max, inv) => {
+          const match = inv.invoiceNumber.match(/INV-\d{4}-(\d+)/);
+          return match ? Math.max(max, parseInt(match[1], 10)) : max;
+        }, 0);
+        return `INV-2026-${String(maxNum + 1).padStart(4, "0")}`;
+      },
 
       updateInvoice: (id, updates) =>
         set((state) => ({
