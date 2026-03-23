@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { createOrGetInvoiceForJob } from "@/lib/invoice-from-job-card";
+import { useInvoiceStore } from "@/store/invoice-store";
 import { useDashboardFilterStore, DASHBOARD_FILTER } from "@/store/dashboard-filter-store";
 import { isPendingPaymentInvoice } from "@/lib/dashboard-filters";
 import { FilterBanner } from "@/components/shared/filter-banner";
