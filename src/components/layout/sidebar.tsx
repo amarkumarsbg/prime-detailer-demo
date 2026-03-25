@@ -39,6 +39,15 @@ type NavItem = {
   roles?: UserRole[];
 };
 
+/** Sidebar navigation clears dashboard drill-down filters (alerts use `setActiveFilter` before routing). */
+const SIDEBAR_CLEAR_FILTER_HREFS = new Set([
+  "/job-cards",
+  "/inventory",
+  "/customers",
+  "/billing",
+  "/reminders",
+]);
+
 const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
   {
     label: "Main",
@@ -120,7 +129,7 @@ function SidebarContent({
                   key={item.href}
                   href={item.href}
                   onClick={() => {
-                    if (item.href === "/job-cards") clearDashboardFilter(null);
+                    if (SIDEBAR_CLEAR_FILTER_HREFS.has(item.href)) clearDashboardFilter(null);
                     onNavClick?.();
                   }}
                   className={cn(

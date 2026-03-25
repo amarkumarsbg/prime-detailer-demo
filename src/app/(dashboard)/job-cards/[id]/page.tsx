@@ -67,6 +67,14 @@ const STATUS_LABELS: Record<JobCardStatus, string> = {
   CANCELLED: "Cancelled",
 };
 
+function normalizeJobCardStatus(raw: string | undefined): JobCardStatus {
+  if (!raw) return "RECEIVED";
+  const upper = String(raw).toUpperCase();
+  if (upper === "CANCELLED") return "CANCELLED";
+  const hit = WORKFLOW_STATUSES.find((w) => w === upper);
+  return hit ?? "RECEIVED";
+}
+
 export default function JobCardDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -107,17 +115,7 @@ export default function JobCardDetailPage() {
     () => jobCard?.qualityCheckCompleted ?? false
   );
 
-  useEffect(() => {
-    if (jobCard) {
-      setQualityCheckDone(jobCard.qualityCheckCompleted ?? false);
-    }
-  }, [jobCard?.id, jobCard?.qualityCheckCompleted]);
-
-  useEffect(() => {
-    if (jobCard?.status) {
-      setCurrentStatus(jobCard.status);
-    }
-  }, [jobCard?.id, jobCard?.status]);
+  const prevJobIdRef = useRef<string | null>(null);
 
   const SWITCH_REASONS = [
     "Mechanic on leave",
@@ -275,8 +273,35 @@ export default function JobCardDetailPage() {
       }
     }
 
+    const delivered =
+      jobCard != null && normalizeJobCardStatus(jobCard.status) === "DELIVERED";
+    const deliveredAt = jobCard?.actualDelivery ?? jobCard?.updatedAt;
+    if (delivered && deliveredAt && timeline.length > 0) {
+      return timeline.map((entry) => {
+        if (entry.to === null && entry.isActive) {
+          const endMs = new Date(deliveredAt).getTime();
+          const fromMs = new Date(entry.from).getTime();
+          return {
+            ...entry,
+            to: deliveredAt,
+            isActive: false,
+            duration: Math.max(0, endMs - fromMs),
+          };
+        }
+        return entry;
+      });
+    }
+
     return timeline;
-  }, [jobCard?.createdAt, jobCard?.mechanicName, switchLog, currentMechanicName]);
+  }, [
+    jobCard?.createdAt,
+    jobCard?.mechanicName,
+    jobCard?.status,
+    jobCard?.actualDelivery,
+    jobCard?.updatedAt,
+    switchLog,
+    currentMechanicName,
+  ]);
 
   const totalWorkDuration = useMemo(
     () => mechanicTimeline.reduce((sum, t) => sum + t.duration, 0),
@@ -322,10 +347,33 @@ export default function JobCardDetailPage() {
   const canCompare = hasBeforePhoto && hasAfterPhoto;
 
   const [photoTab, setPhotoTab] = useState<"BEFORE" | "AFTER" | "COMPARE">(() => {
-    if (jobCard?.status === "READY" || jobCard?.status === "DELIVERED") return "AFTER";
+    const st = normalizeJobCardStatus(jobCard?.status);
+    if (st === "READY" || st === "DELIVERED") return "AFTER";
     return "BEFORE";
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!jobCard || jobCard.id !== id) return;
+    const idChanged = prevJobIdRef.current !== id;
+    prevJobIdRef.current = id;
+
+    const normalized = normalizeJobCardStatus(jobCard.status);
+    setCurrentStatus(normalized);
+    setServiceItems(
+      Array.isArray(jobCard.services) ? jobCard.services.map((s) => ({ ...s })) : []
+    );
+    setCurrentMechanicId(jobCard.mechanicId);
+    setCurrentMechanicName(jobCard.mechanicName);
+    setSwitchLog(jobCard.mechanicSwitchLog ?? []);
+    setQualityCheckDone(jobCard.qualityCheckCompleted ?? false);
+
+    if (idChanged) {
+      setNotes(jobCard.notes ?? "");
+      setInspectionPhotos([]);
+      setPhotoTab(normalized === "READY" || normalized === "DELIVERED" ? "AFTER" : "BEFORE");
+    }
+  }, [id, jobCard]);
 
   useEffect(() => {
     if (photoTab === "AFTER" && !canUploadAfter) setPhotoTab("BEFORE");
@@ -412,7 +460,8 @@ export default function JobCardDetailPage() {
 
   const currentStatusIndex = useMemo(() => {
     if (currentStatus === "CANCELLED") return -1;
-    return WORKFLOW_STATUSES.indexOf(currentStatus);
+    const idx = WORKFLOW_STATUSES.indexOf(currentStatus);
+    return idx >= 0 ? idx : 0;
   }, [currentStatus]);
 
   /** True when a mechanic is on the job (local state or persisted card). */
@@ -433,11 +482,17 @@ export default function JobCardDetailPage() {
   const progressPercent = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
 
   const toggleServiceComplete = (serviceId: string) => {
-    setServiceItems((prev) =>
-      prev.map((s) =>
+    if (!jobCard) return;
+    setServiceItems((prev) => {
+      const next = prev.map((s) =>
         s.id === serviceId ? { ...s, isCompleted: !s.isCompleted } : s
-      )
-    );
+      );
+      updateJobCard(jobCard.id, {
+        services: next,
+        updatedAt: new Date().toISOString(),
+      });
+      return next;
+    });
   };
 
   const handleQualityCheckChange = (checked: boolean) => {
@@ -500,6 +555,7 @@ export default function JobCardDetailPage() {
       const patch: Partial<JobCard> = {
         status: nextStatus,
         updatedAt: nowIso,
+        services: serviceItems,
       };
 
       if (nextStatus === "READY" && !jobCard.inventoryConsumedAt) {
@@ -826,6 +882,11 @@ export default function JobCardDetailPage() {
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
+            {serviceItems.length === 0 && (
+              <p className="text-sm text-muted-foreground py-4 text-center">
+                No services on this job card yet. Add services from the job setup flow or create the job with at least one service.
+              </p>
+            )}
             {serviceItems.map((item) => (
               <div
                 key={item.id}
@@ -1247,7 +1308,11 @@ export default function JobCardDetailPage() {
                               <p className="text-xs">{new Date(entry.to).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}</p>
                             </div>
                           ) : (
-                            <span className="text-green-600 dark:text-green-400 font-medium">Ongoing</span>
+                            <span className="text-green-600 dark:text-green-400 font-medium">
+                              {normalizeJobCardStatus(jobCard.status) === "DELIVERED"
+                                ? "Completed"
+                                : "Ongoing"}
+                            </span>
                           )}
                         </td>
                         <td className="px-3 py-2.5 text-right font-mono font-medium">
@@ -1261,7 +1326,10 @@ export default function JobCardDetailPage() {
                             </span>
                           ) : (
                             <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground">
-                              {entry.reason ?? "Switched"}
+                              {normalizeJobCardStatus(jobCard.status) === "DELIVERED" &&
+                              idx === mechanicTimeline.length - 1
+                                ? "Completed"
+                                : entry.reason ?? "Ended"}
                             </span>
                           )}
                         </td>
