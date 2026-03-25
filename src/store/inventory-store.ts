@@ -31,6 +31,14 @@ interface InventoryStore {
     jobCard: JobCard | undefined,
     performedBy: string
   ) => { ok: boolean; error?: string };
+  /**
+   * Deducts stock when a job is marked Ready (service consumption profile).
+   * Idempotent if jobCard.inventoryConsumedAt is set.
+   */
+  applyDeductionForJobCardReady: (
+    jobCard: JobCard,
+    performedBy: string
+  ) => { ok: boolean; error?: string };
 }
 
 function validateDeductions(parts: Part[], lines: ConsumptionDeduction[]): string | null {
@@ -184,6 +192,43 @@ export const useInventoryStore = create<InventoryStore>()(
             unit,
             reason: `Invoice ${invoice.invoiceNumber}`,
             invoiceId: invoice.id,
+            jobCardId: jobCard.id,
+            performedBy,
+            createdAt,
+          };
+        });
+        set({
+          parts: newParts,
+          stockMovements: [...newMovements, ...get().stockMovements],
+        });
+        return { ok: true };
+      },
+
+      applyDeductionForJobCardReady: (jobCard, performedBy) => {
+        if (jobCard.inventoryConsumedAt) {
+          return { ok: true };
+        }
+        const lines = deductionsForJob(jobCard, serviceCatalog);
+        if (lines.length === 0) {
+          return { ok: true };
+        }
+        const err = validateDeductions(get().parts, lines);
+        if (err) {
+          return { ok: false, error: err };
+        }
+        const newParts = applyDeductionToParts(get().parts, lines);
+        const createdAt = new Date().toISOString();
+        const newMovements: StockMovement[] = lines.map((d, i) => {
+          const p = get().parts.find((x) => x.id === d.partId);
+          const qty = d.ml ?? d.count ?? 0;
+          const unit = d.ml != null ? "ML" : p?.primaryUnit ?? "Piece";
+          return {
+            id: `sm-ready-${jobCard.id}-${i}-${Date.now()}`,
+            partId: d.partId,
+            type: "OUT" as const,
+            quantity: qty,
+            unit,
+            reason: `Job ready — ${jobCard.jobNumber}`,
             jobCardId: jobCard.id,
             performedBy,
             createdAt,

@@ -8,8 +8,8 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { JobCardStatusBadge } from "@/components/shared/status-badge";
-import { jobCards } from "@/lib/mock-data";
 import { useStaffStore } from "@/store/staff-store";
+import { useJobCardStore } from "@/store/job-card-store";
 import { getInitials } from "@/lib/utils";
 import type { JobCard } from "@/types";
 import {
@@ -37,6 +37,7 @@ interface MechanicStats {
 
 export default function MechanicsPage() {
   const staff = useStaffStore((s) => s.staff);
+  const jobCards = useJobCardStore((s) => s.jobCards);
   const mechanics = useMemo(
     () => staff.filter((s) => s.role === "MECHANIC"),
     [staff]
@@ -70,7 +71,7 @@ export default function MechanicsPage() {
         completionRate: allJobs.length > 0 ? Math.round((completed.length / allJobs.length) * 100) : 0,
       };
     }).sort((a, b) => b.totalJobs - a.totalJobs);
-  }, [mechanics]);
+  }, [mechanics, jobCards]);
 
   const totalActive = mechanicStats.reduce((s, m) => s + m.activeJobs, 0);
   const totalCompleted = mechanicStats.reduce((s, m) => s + m.completedJobs, 0);

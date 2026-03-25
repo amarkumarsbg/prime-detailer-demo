@@ -29,11 +29,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useJobCardStore } from "@/store/job-card-store";
+import { useInventoryStore } from "@/store/inventory-store";
 import { useStaffStore } from "@/store/staff-store";
 import { useHighEndServiceStore } from "@/store/high-end-service-store";
 import { useReminderStore } from "@/store/reminder-store";
 import { createOrGetInvoiceForJob } from "@/lib/invoice-from-job-card";
 import { formatDate, formatCurrency } from "@/lib/utils";
+import { pushActivityLog } from "@/lib/activity-log-helper";
 import type { JobCard, JobCardStatus, ServiceItem, InspectionPhoto, MechanicSwitchLog } from "@/types";
 
 const WORKFLOW_STATUSES: JobCardStatus[] = [
@@ -111,6 +113,12 @@ export default function JobCardDetailPage() {
     }
   }, [jobCard?.id, jobCard?.qualityCheckCompleted]);
 
+  useEffect(() => {
+    if (jobCard?.status) {
+      setCurrentStatus(jobCard.status);
+    }
+  }, [jobCard?.id, jobCard?.status]);
+
   const SWITCH_REASONS = [
     "Mechanic on leave",
     "Lunch break",
@@ -153,6 +161,16 @@ export default function JobCardDetailPage() {
       updatedAt: new Date().toISOString(),
     });
 
+    if (jobCard) {
+      pushActivityLog({
+        action: "MECHANIC_SWITCHED",
+        entityType: "JOB_CARD",
+        entityId: jobCard.id,
+        entityLabel: jobCard.jobNumber,
+        details: `${jobCard.jobNumber}: ${currentMechanicName ?? "Unassigned"} → ${newMechanic.name}`,
+      });
+    }
+
     setShowSwitchDialog(false);
     setSwitchToMechanicId("");
     setSwitchReason("");
@@ -177,6 +195,14 @@ export default function JobCardDetailPage() {
       mechanicId: m.id,
       mechanicName: m.name,
       updatedAt: new Date().toISOString(),
+    });
+
+    pushActivityLog({
+      action: "ASSIGNED",
+      entityType: "JOB_CARD",
+      entityId: jobCard.id,
+      entityLabel: jobCard.jobNumber,
+      details: `${jobCard.jobNumber} assigned to ${m.name}`,
     });
 
     setShowQuickAssignDialog(false);
@@ -470,8 +496,36 @@ export default function JobCardDetailPage() {
 
       setCurrentStatus(nextStatus);
 
+      const nowIso = new Date().toISOString();
+      const patch: Partial<JobCard> = {
+        status: nextStatus,
+        updatedAt: nowIso,
+      };
+
+      if (nextStatus === "READY" && !jobCard.inventoryConsumedAt) {
+        const jobForStock = {
+          ...jobCard,
+          status: "READY" as const,
+          services: serviceItems,
+        };
+        const stockResult = useInventoryStore
+          .getState()
+          .applyDeductionForJobCardReady(jobForStock, "USR-001");
+        if (stockResult.ok) {
+          patch.inventoryConsumedAt = nowIso;
+        } else {
+          toast.warning("Stock not reduced", {
+            description: stockResult.error ?? "Fix inventory levels and try again from Ready if needed.",
+          });
+        }
+      }
+
+      if (nextStatus === "DELIVERED") {
+        patch.actualDelivery = nowIso;
+      }
+
       if (nextStatus === "DELIVERED" && jobCard.highEndServiceIds && jobCard.highEndServiceIds.length > 0) {
-        const now = new Date().toISOString();
+        const now = nowIso;
         jobCard.highEndServiceIds.forEach((hesId) => {
           const config = highEndServiceConfigs.find((c) => c.id === hesId);
           if (config) {
@@ -494,7 +548,17 @@ export default function JobCardDetailPage() {
         });
       }
 
-      updateJobCard(jobCard.id, { status: nextStatus, updatedAt: new Date().toISOString() });
+      updateJobCard(jobCard.id, patch);
+
+      if (nextStatus === "DELIVERED") {
+        pushActivityLog({
+          action: "STATUS_CHANGED",
+          entityType: "JOB_CARD",
+          entityId: jobCard.id,
+          entityLabel: jobCard.jobNumber,
+          details: `${jobCard.jobNumber} marked delivered`,
+        });
+      }
 
       toast.success("Status updated", {
         description: `Job card moved to "${STATUS_LABELS[nextStatus]}"`,
@@ -569,9 +633,12 @@ export default function JobCardDetailPage() {
             <div className="overflow-x-auto overflow-y-visible -mx-1 px-1 pb-2 sm:mx-0 sm:px-0 sm:pb-0 touch-pan-x [scrollbar-width:thin]">
               <div className="flex items-center justify-start min-w-max sm:min-w-0 sm:w-full gap-x-2 sm:gap-x-4">
                 {WORKFLOW_STATUSES.map((status, index) => {
-                  const isCompleted = index < currentStatusIndex;
-                  const isCurrent = index === currentStatusIndex;
                   const isLast = index === WORKFLOW_STATUSES.length - 1;
+                  const isCompleted =
+                    index < currentStatusIndex ||
+                    (currentStatus === "DELIVERED" && isLast && index === currentStatusIndex);
+                  const isCurrent =
+                    index === currentStatusIndex && !(currentStatus === "DELIVERED" && isLast);
 
                   return (
                     <div key={status} className="flex items-center shrink-0">
@@ -593,7 +660,9 @@ export default function JobCardDetailPage() {
                         </div>
                         <span
                           className={`text-[10px] sm:text-xs mt-1.5 text-center leading-snug max-w-[5.25rem] sm:max-w-none ${
-                            isCurrent ? "font-semibold text-foreground" : "text-muted-foreground"
+                            isCurrent || (currentStatus === "DELIVERED" && isLast)
+                              ? "font-semibold text-foreground"
+                              : "text-muted-foreground"
                           }`}
                         >
                           {WORKFLOW_LABELS[status]}

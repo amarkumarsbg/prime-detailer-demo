@@ -3,8 +3,10 @@
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { jobCards, serviceReminders, customers } from "@/lib/mock-data";
+import { serviceReminders } from "@/lib/mock-data";
 import { useVehicleStore } from "@/store/vehicle-store";
+import { useJobCardStore } from "@/store/job-card-store";
+import { useCustomerStore } from "@/store/customer-store";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -30,6 +32,7 @@ import { cn, formatDate } from "@/lib/utils";
 import { buildOwnershipTimeline } from "@/lib/ownership-transfers";
 import type { OwnershipTimelineItem } from "@/lib/ownership-transfers";
 import { toast } from "sonner";
+import { pushActivityLog } from "@/lib/activity-log-helper";
 import { ArrowLeft, Bell, AlertTriangle, Clock, Calendar, Wrench, Droplets, Disc3, Snowflake, Battery, Shield, FileCheck, UserPlus } from "lucide-react";
 import { Breadcrumbs } from "@/components/shared/breadcrumbs";
 import type { JobCard, Vehicle } from "@/types";
@@ -58,14 +61,22 @@ export default function VehicleDetailPage() {
   const vehicleId = params.id as string;
   const vehicleList = useVehicleStore((s) => s.vehicles);
   const setVehicleList = useVehicleStore((s) => s.setVehicles);
+  const storeJobCards = useJobCardStore((s) => s.jobCards);
 
   const vehicle = useMemo(
     () => vehicleList.find((v) => v.id === vehicleId) ?? null,
     [vehicleList, vehicleId]
   );
-  const vehicleJobCards = jobCards
-    .filter((jc) => jc.vehicleId === vehicleId)
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const vehicleJobCards = useMemo(() => {
+    if (!vehicle) return [];
+    return storeJobCards
+      .filter(
+        (jc) =>
+          jc.vehicleId === vehicleId ||
+          jc.vehicleRegNumber?.toUpperCase() === vehicle.registrationNumber.toUpperCase()
+      )
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }, [storeJobCards, vehicleId, vehicle]);
 
   if (!vehicle) {
     return (
@@ -274,6 +285,7 @@ function VehicleOwnershipSection({
   vehicleList: Vehicle[];
   setVehicleList: React.Dispatch<React.SetStateAction<Vehicle[]>>;
 }) {
+  const customers = useCustomerStore((s) => s.customers);
   const [transferDialogOpen, setTransferDialogOpen] = useState(false);
   const [newCustomerId, setNewCustomerId] = useState("");
   const [transferReason, setTransferReason] = useState("");
@@ -285,7 +297,7 @@ function VehicleOwnershipSection({
 
   const otherCustomers = useMemo(
     () => customers.filter((c) => c.id !== currentVehicle.customerId),
-    [currentVehicle.customerId]
+    [customers, currentVehicle.customerId]
   );
 
   const handleTransfer = () => {
@@ -322,11 +334,18 @@ function VehicleOwnershipSection({
     setTransferReason("");
     setTransferDialogOpen(false);
     toast.success("Ownership transferred successfully");
+    pushActivityLog({
+      action: "OWNERSHIP_TRANSFERRED",
+      entityType: "VEHICLE",
+      entityId: vehicleId,
+      entityLabel: currentVehicle.registrationNumber,
+      details: `Ownership transferred from ${currentVehicle.customerName} to ${newCustomer.name}`,
+    });
   };
 
   const timelineItems = useMemo(
     () => buildOwnershipTimeline(currentVehicle, customers),
-    [currentVehicle]
+    [currentVehicle, customers]
   );
 
   return (

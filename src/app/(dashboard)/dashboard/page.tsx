@@ -32,6 +32,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo } from "react";
 import { useDashboardFilterStore, DASHBOARD_FILTER } from "@/store/dashboard-filter-store";
+import { isTodaysBookingsJob, isReadyForDeliveryJob } from "@/lib/dashboard-filters";
 import {
   ResponsiveContainer,
   LineChart,
@@ -51,6 +52,15 @@ export default function DashboardPage() {
   const { jobCards } = useJobCardStore();
   const parts = useInventoryStore((s) => s.parts);
   const stats = dashboardStats;
+
+  const todaysBookingsLive = useMemo(
+    () => jobCards.filter(isTodaysBookingsJob),
+    [jobCards]
+  );
+  const readyForDeliveryLive = useMemo(
+    () => jobCards.filter(isReadyForDeliveryJob),
+    [jobCards]
+  );
 
   const alerts = useMemo(() => {
     const items: { id: string; icon: React.ElementType; label: string; count: number; href: string; color: string; bgColor: string }[] = [];
@@ -203,22 +213,30 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>
           <CardHeader className="pb-3 flex flex-row items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Clock className="w-4 h-4 text-muted-foreground" />
-              <CardTitle className="text-base font-semibold">Today&apos;s Bookings</CardTitle>
+            <div>
+              <div className="flex items-center gap-2">
+                <Clock className="w-4 h-4 text-muted-foreground" />
+                <CardTitle className="text-base font-semibold">Today&apos;s Bookings</CardTitle>
+              </div>
+              <p className="text-xs text-muted-foreground mt-0.5">Job cards created today</p>
             </div>
-            <Link href="/job-cards">
-              <Button variant="ghost" size="sm">
-                View all <ArrowRight className="w-3 h-3 ml-1" />
-              </Button>
-            </Link>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setActiveFilter(DASHBOARD_FILTER.TODAYS_BOOKINGS);
+                router.push("/job-cards");
+              }}
+            >
+              View all <ArrowRight className="w-3 h-3 ml-1" />
+            </Button>
           </CardHeader>
           <CardContent className="pt-0">
-            {stats.todaysBookings.length === 0 ? (
+            {todaysBookingsLive.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-8">No bookings today</p>
             ) : (
               <div className="max-h-[min(260px,45vh)] overflow-y-auto overscroll-contain space-y-3 pr-1 -mr-0.5 [scrollbar-gutter:stable]">
-                {stats.todaysBookings.map((jc) => (
+                {todaysBookingsLive.map((jc) => (
                   <Link
                     key={jc.id}
                     href={`/job-cards/${jc.id}`}
@@ -252,20 +270,25 @@ export default function DashboardPage() {
               <CheckCircle2 className="w-4 h-4 text-emerald-500" />
               <CardTitle className="text-base font-semibold">Ready for Delivery</CardTitle>
             </div>
-            <Link href="/job-cards">
-              <Button variant="ghost" size="sm">
-                View all <ArrowRight className="w-3 h-3 ml-1" />
-              </Button>
-            </Link>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setActiveFilter(DASHBOARD_FILTER.READY_FOR_DELIVERY);
+                router.push("/job-cards");
+              }}
+            >
+              View all <ArrowRight className="w-3 h-3 ml-1" />
+            </Button>
           </CardHeader>
           <CardContent className="pt-0">
-            {stats.readyForDelivery.length === 0 ? (
+            {readyForDeliveryLive.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-8">
                 No vehicles ready for delivery
               </p>
             ) : (
               <div className="max-h-[min(260px,45vh)] overflow-y-auto overscroll-contain space-y-3 pr-1 -mr-0.5 [scrollbar-gutter:stable]">
-                {stats.readyForDelivery.map((jc) => (
+                {readyForDeliveryLive.map((jc) => (
                   <Link
                     key={jc.id}
                     href={`/job-cards/${jc.id}`}

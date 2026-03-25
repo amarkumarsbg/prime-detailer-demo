@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useSidebarStore } from "@/store/sidebar-store";
 import { useAuthStore } from "@/store/auth-store";
+import { useDashboardFilterStore } from "@/store/dashboard-filter-store";
 import { useSettingsStore } from "@/store/settings-store";
 import type { UserRole } from "@/types";
 import {
@@ -89,6 +90,7 @@ function SidebarContent({
 }) {
   const pathname = usePathname();
   const userRole = useAuthStore((s) => s.user?.role);
+  const clearDashboardFilter = useDashboardFilterStore((s) => s.setActiveFilter);
 
   const filteredGroups = NAV_GROUPS
     .map((group) => ({
@@ -102,7 +104,7 @@ function SidebarContent({
       className={cn(
         "flex-1 min-h-0 py-2 px-2 space-y-1 overflow-x-hidden",
         navOverflow === "hidden" && "overflow-y-hidden overscroll-none",
-        navOverflow === "auto" && "overflow-y-auto scrollbar-none"
+        navOverflow === "auto" && "overflow-y-auto overscroll-y-contain scrollbar-none"
       )}
     >
       {filteredGroups.map((group) => (
@@ -117,7 +119,10 @@ function SidebarContent({
                 <Link
                   key={item.href}
                   href={item.href}
-                  onClick={onNavClick}
+                  onClick={() => {
+                    if (item.href === "/job-cards") clearDashboardFilter(null);
+                    onNavClick?.();
+                  }}
                   className={cn(
                     "flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13px] font-medium transition-colors",
                     isActive
@@ -176,7 +181,7 @@ export function Sidebar() {
   return (
     <>
       {/* Desktop Sidebar — always expanded; no collapse control */}
-      <aside className="hidden md:flex fixed left-0 top-0 z-40 h-screen w-[250px] flex-col transition-all duration-300">
+      <aside className="hidden md:flex fixed left-0 top-0 z-40 h-[100dvh] max-h-screen w-[250px] flex-col transition-all duration-300 min-h-0">
         <div className="flex items-center h-16 border-b border-r border-sidebar-border bg-background px-4 shrink-0 gap-3">
           <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-primary shrink-0">
             <Wrench className="w-5 h-5 text-primary-foreground" />
@@ -188,7 +193,7 @@ export function Sidebar() {
         </div>
 
         <div className="flex-1 flex flex-col border-r border-sidebar-border bg-sidebar overflow-hidden min-h-0">
-          <SidebarContent navOverflow="hidden" />
+          <SidebarContent navOverflow="auto" />
         </div>
       </aside>
 
@@ -203,7 +208,7 @@ export function Sidebar() {
       {/* Mobile Sidebar Drawer */}
       <aside
         className={cn(
-          "fixed left-0 top-0 z-50 h-screen w-[280px] border-r border-sidebar-border bg-sidebar flex flex-col transition-transform duration-300 md:hidden",
+          "fixed left-0 top-0 z-50 h-[100dvh] max-h-screen min-h-0 w-[280px] border-r border-sidebar-border bg-sidebar flex flex-col transition-transform duration-300 md:hidden",
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >

@@ -90,17 +90,31 @@ export default function BillingPage() {
   }, [invoicesForView]);
 
   const toTableRows = (list: Invoice[]) =>
-    list.map((inv) => ({
-      id: inv.id,
-      invoiceNumber: inv.invoiceNumber,
-      customerName: inv.customerName,
-      vehicleRegNumber: inv.vehicleRegNumber,
-      grandTotal: inv.grandTotal,
-      status: inv.status,
-      paymentMethod: inv.payments[0]?.method ?? null,
-      walletAmountUsed: inv.walletAmountUsed,
-      createdAt: inv.createdAt,
-    })) as Record<string, unknown>[];
+    list.map((inv) => {
+      const serviceLines = inv.lineItems
+        .filter((l) => l.type === "SERVICE")
+        .map((l) => l.description);
+      const servicesSummary =
+        serviceLines.length === 0
+          ? inv.lineItems
+              .slice(0, 2)
+              .map((l) => l.description)
+              .join(", ") || "—"
+          : serviceLines.slice(0, 2).join(", ") + (serviceLines.length > 2 ? "…" : "");
+      return {
+        id: inv.id,
+        invoiceNumber: inv.invoiceNumber,
+        jobNumber: inv.jobNumber,
+        customerName: inv.customerName,
+        vehicleRegNumber: inv.vehicleRegNumber,
+        servicesSummary,
+        grandTotal: inv.grandTotal,
+        status: inv.status,
+        paymentMethod: inv.payments[0]?.method ?? null,
+        walletAmountUsed: inv.walletAmountUsed,
+        createdAt: inv.createdAt,
+      };
+    }) as Record<string, unknown>[];
 
   const allTableData = useMemo(() => toTableRows(invoicesForView), [invoicesForView]);
 
@@ -153,6 +167,23 @@ export default function BillingPage() {
         <span className="text-muted-foreground">{item.vehicleRegNumber as string}</span>
       ),
       sortable: true,
+    },
+    {
+      key: "jobNumber",
+      label: "Job #",
+      render: (item: Record<string, unknown>) => (
+        <span className="font-mono text-sm text-muted-foreground">{item.jobNumber as string}</span>
+      ),
+      sortable: true,
+    },
+    {
+      key: "servicesSummary",
+      label: "Services / items",
+      render: (item: Record<string, unknown>) => (
+        <span className="text-muted-foreground line-clamp-2 max-w-[220px] text-sm">
+          {item.servicesSummary as string}
+        </span>
+      ),
     },
     {
       key: "grandTotal",
@@ -273,7 +304,13 @@ export default function BillingPage() {
                   }
                   columns={columns}
                   searchPlaceholder="Search by invoice number, customer, or vehicle..."
-                  searchKeys={["invoiceNumber", "customerName", "vehicleRegNumber"]}
+                  searchKeys={[
+                    "invoiceNumber",
+                    "customerName",
+                    "vehicleRegNumber",
+                    "jobNumber",
+                    "servicesSummary",
+                  ]}
                   pageSize={10}
                   onRowClick={handleRowClick}
                 />

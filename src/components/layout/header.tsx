@@ -93,7 +93,8 @@ export function Header() {
         j.customerName.toLowerCase().includes(q) ||
         j.customerPhone.replace(/\D/g, "").includes(q.replace(/\D/g, "")) ||
         j.vehicleRegNumber.toLowerCase().includes(q) ||
-        j.vehicleMakeModel?.toLowerCase().includes(q)
+        j.vehicleMakeModel?.toLowerCase().includes(q) ||
+        (j.services?.some((s) => s.name.toLowerCase().includes(q)) ?? false)
       )
       .slice(0, 5);
 

@@ -31,10 +31,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { JobCardStatusBadge, InvoiceStatusBadge } from "@/components/shared/status-badge";
-import { jobCards, invoices } from "@/lib/mock-data";
 import { useCustomerStore } from "@/store/customer-store";
 import { useVehicleStore } from "@/store/vehicle-store";
 import { useWalletStore } from "@/store/wallet-store";
+import { useJobCardStore } from "@/store/job-card-store";
+import { useInvoiceStore } from "@/store/invoice-store";
 import { formatCurrency, formatDate, getInitials, cn } from "@/lib/utils";
 import { getTransferTagForCustomer } from "@/lib/ownership-transfers";
 import type { Customer, Vehicle, JobCard, Invoice, WalletTransaction, FuelType, VehicleSegment } from "@/types";
@@ -103,13 +104,20 @@ export default function CustomerDetailPage() {
     return vehicleList.filter((v) => v.customerId === id);
   }, [id, vehicleList]);
 
+  const jobCards = useJobCardStore((s) => s.jobCards);
+  const invoices = useInvoiceStore((s) => s.invoices);
+
   const customerJobCards = useMemo(() => {
-    return jobCards.filter((jc) => jc.customerId === id);
-  }, [id]);
+    return jobCards
+      .filter((jc) => jc.customerId === id)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }, [id, jobCards]);
 
   const customerInvoices = useMemo(() => {
-    return invoices.filter((inv) => inv.customerId === id);
-  }, [id]);
+    return invoices
+      .filter((inv) => inv.customerId === id)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }, [id, invoices]);
 
   const { getByCustomer } = useWalletStore();
   const customerWalletTransactions = useMemo(() => {

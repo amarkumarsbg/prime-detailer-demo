@@ -18,6 +18,8 @@ interface DataTableProps<T> {
   columns: Column<T>[];
   searchPlaceholder?: string;
   searchKeys?: string[];
+  /** When set, used instead of searchKeys (e.g. match nested fields). */
+  searchMatch?: (item: T, queryLower: string) => boolean;
   pageSize?: number;
   onRowClick?: (item: T) => void;
   actions?: React.ReactNode;
@@ -29,6 +31,7 @@ export function DataTable<T extends Record<string, any>>({
   columns,
   searchPlaceholder = "Search...",
   searchKeys = [],
+  searchMatch,
   pageSize = 10,
   onRowClick,
   actions,
@@ -41,13 +44,16 @@ export function DataTable<T extends Record<string, any>>({
   const filtered = useMemo(() => {
     if (!search) return data;
     const q = search.toLowerCase();
+    if (searchMatch) {
+      return data.filter((item) => searchMatch(item, q));
+    }
     return data.filter((item) =>
       searchKeys.some((key) => {
         const val = item[key];
         return typeof val === "string" && val.toLowerCase().includes(q);
       })
     );
-  }, [data, search, searchKeys]);
+  }, [data, search, searchKeys, searchMatch]);
 
   const sorted = useMemo(() => {
     if (!sortKey) return filtered;

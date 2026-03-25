@@ -185,6 +185,8 @@ export interface JobCard {
   quotationId?: string;
   highEndServiceIds?: string[];
   whatsappLog?: WhatsAppLog[];
+  /** Set when materials were deducted from stock at Ready (billing no longer deducts). */
+  inventoryConsumedAt?: string;
   createdBy: string;
   createdAt: string;
   updatedAt: string;

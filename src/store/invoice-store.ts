@@ -4,15 +4,13 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { invoices as mockInvoices } from "@/lib/mock-data";
 import type { Invoice, InvoiceStatus, Payment } from "@/types";
-import { useInventoryStore } from "@/store/inventory-store";
-import { useJobCardStore } from "@/store/job-card-store";
 
 interface InvoiceStore {
   invoices: Invoice[];
   addInvoice: (invoice: Invoice) => void;
   getNextInvoiceNumber: () => string;
   updateInvoice: (id: string, updates: Partial<Invoice>) => void;
-  /** Append payment, recompute status, apply inventory when fully paid. */
+  /** Append payment and recompute status (inventory is applied at job Ready, not here). */
   recordPayment: (
     invoiceId: string,
     payment: Omit<Payment, "id"> & { id?: string },
@@ -72,28 +70,7 @@ export const useInvoiceStore = create<InvoiceStore>()(
           ),
         }));
 
-        let inventoryError: string | undefined;
-        if (status === "PAID" && !inv.inventoryDeductedAt) {
-          const jobCard = useJobCardStore
-            .getState()
-            .jobCards.find((j) => j.id === inv.jobCardId);
-          const result = useInventoryStore
-            .getState()
-            .applyDeductionForInvoice(
-              { ...inv, payments, status },
-              jobCard,
-              options.performedBy
-            );
-          if (result.ok) {
-            get().updateInvoice(invoiceId, {
-              inventoryDeductedAt: new Date().toISOString(),
-            });
-          } else {
-            inventoryError = result.error;
-          }
-        }
-
-        return { ok: true, inventoryError };
+        return { ok: true };
       },
     }),
     { name: "prime-detailers-invoices" }

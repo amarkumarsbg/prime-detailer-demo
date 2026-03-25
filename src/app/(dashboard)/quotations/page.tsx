@@ -36,10 +36,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { quotations, serviceCatalog } from "@/lib/mock-data";
+import { serviceCatalog } from "@/lib/mock-data";
 import { useVehicleStore } from "@/store/vehicle-store";
 import { useCustomerStore } from "@/store/customer-store";
 import { useJobCardStore } from "@/store/job-card-store";
+import { useQuotationStore } from "@/store/quotation-store";
+import { useAuthStore } from "@/store/auth-store";
+import { pushActivityLog } from "@/lib/activity-log-helper";
 import { formatCurrency } from "@/lib/utils";
 import type { JobCard, Quotation, QuotationStatus, ServiceItem, VehicleSegment } from "@/types";
 import {
@@ -98,11 +101,15 @@ export default function QuotationsPage() {
   const addCustomer = useCustomerStore((s) => s.addCustomer);
   const addJobCard = useJobCardStore((s) => s.addJobCard);
   const getNextJobNumber = useJobCardStore((s) => s.getNextJobNumber);
+  const quotationList = useQuotationStore((s) => s.quotations);
+  const addQuotation = useQuotationStore((s) => s.addQuotation);
+  const updateQuotation = useQuotationStore((s) => s.updateQuotation);
+  const getNextQuotationNumber = useQuotationStore((s) => s.getNextQuotationNumber);
+  const authUser = useAuthStore((s) => s.user);
   const [activeTab, setActiveTab] = useState<string>("ALL");
   const [newDialogOpen, setNewDialogOpen] = useState(false);
   const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
   const [selectedQuotation, setSelectedQuotation] = useState<Quotation | null>(null);
-  const [quotationList, setQuotationList] = useState<Quotation[]>(quotations);
 
   // New quotation form state
   const [customerMode, setCustomerMode] = useState<"existing" | "new">("existing");
@@ -268,9 +275,10 @@ export default function QuotationsPage() {
       ]);
     }
 
+    const createdBy = authUser?.id ?? "usr-004";
     const newQuotation: Quotation = {
       id: `quot-${Date.now()}`,
-      quotationNumber: `QUO-2026-${String(quotationList.length + 1).padStart(4, "0")}`,
+      quotationNumber: getNextQuotationNumber(),
       customerId,
       customerName,
       customerPhone,
@@ -294,11 +302,18 @@ export default function QuotationsPage() {
         new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
         "yyyy-MM-dd"
       ),
-      createdBy: "usr-004",
+      createdBy,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
-    setQuotationList((prev) => [newQuotation, ...prev]);
+    addQuotation(newQuotation);
+    pushActivityLog({
+      action: "CREATED",
+      entityType: "QUOTATION",
+      entityId: newQuotation.id,
+      entityLabel: newQuotation.quotationNumber,
+      details: `Quotation ${newQuotation.quotationNumber} created for ${newQuotation.customerName}`,
+    });
     toast.success("Quotation created", {
       description: `${newQuotation.quotationNumber} has been saved as draft.`,
     });
@@ -314,12 +329,17 @@ export default function QuotationsPage() {
       updatedAt: now,
       ...(q.status === "DRAFT" ? { status: "SENT" as const } : {}),
     };
-    setQuotationList((prev) =>
-      prev.map((row) => (row.id === q.id ? { ...row, ...patch } : row))
-    );
+    updateQuotation(q.id, patch);
     setSelectedQuotation((sel) =>
       sel?.id === q.id ? { ...sel, ...patch } : sel
     );
+    pushActivityLog({
+      action: "WHATSAPP_SENT",
+      entityType: "QUOTATION",
+      entityId: q.id,
+      entityLabel: q.quotationNumber,
+      details: `Estimate ${q.quotationNumber} sent to ${q.customerName} via WhatsApp`,
+    });
     toast.success("Quotation sent via WhatsApp", {
       description: `Estimate sent to ${q.customerName} at ${q.customerPhone}`,
     });
@@ -365,7 +385,7 @@ export default function QuotationsPage() {
       incentiveAmount,
       termsAndConditions: q.termsAndConditions,
       quotationId: q.id,
-      createdBy: "usr-004",
+      createdBy: authUser?.id ?? "usr-004",
       createdAt: now,
       updatedAt: now,
     };
@@ -377,12 +397,25 @@ export default function QuotationsPage() {
       convertedToJobCardId: jobId,
       updatedAt: now,
     };
-    setQuotationList((prev) =>
-      prev.map((row) => (row.id === q.id ? { ...row, ...patch } : row))
-    );
+    updateQuotation(q.id, patch);
     setSelectedQuotation((sel) =>
       sel?.id === q.id ? { ...sel, ...patch } : sel
     );
+
+    pushActivityLog({
+      action: "STATUS_CHANGED",
+      entityType: "QUOTATION",
+      entityId: q.id,
+      entityLabel: q.quotationNumber,
+      details: `${q.quotationNumber} converted to job ${jobNumber}`,
+    });
+    pushActivityLog({
+      action: "CREATED",
+      entityType: "JOB_CARD",
+      entityId: jobId,
+      entityLabel: jobNumber,
+      details: `Job ${jobNumber} created from ${q.quotationNumber}`,
+    });
 
     toast.success("Converted to Job Card", {
       description: `${q.quotationNumber} → ${jobNumber}. Open Job Cards to continue.`,

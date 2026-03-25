@@ -31,6 +31,7 @@ import { useWalletStore } from "@/store/wallet-store";
 import { useSettingsStore } from "@/store/settings-store";
 import { useVehicleCatalogStore } from "@/store/vehicle-catalog-store";
 import { formatCurrency } from "@/lib/utils";
+import { pushActivityLog } from "@/lib/activity-log-helper";
 import type { Vehicle, VehicleSegment, ServiceCatalogItem } from "@/types";
 
 const SEGMENT_OPTIONS: { value: VehicleSegment; label: string }[] = [
@@ -300,6 +301,14 @@ export default function NewJobCardPage() {
     };
 
     addJobCard(newJobCard);
+
+    pushActivityLog({
+      action: "CREATED",
+      entityType: "JOB_CARD",
+      entityId: id,
+      entityLabel: jobNumber,
+      details: `Job ${jobNumber} created for ${customerName} — ${vehicleNumber}`,
+    });
 
     toast.success("Job card created successfully", {
       description: `${jobNumber} for ${customerName} — ${vehicleNumber} saved locally.`,

@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { activityLogs } from "@/lib/mock-data";
+import { useActivityLogStore } from "@/store/activity-log-store";
 import { PageHeader } from "@/components/shared/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -110,11 +110,12 @@ const ENTITY_LABELS: Record<ActivityEntityType, string> = {
 
 export default function ActivityPage() {
   const router = useRouter();
+  const logs = useActivityLogStore((s) => s.logs);
   const [entityFilter, setEntityFilter] = useState<string>("all");
   const [actionFilter, setActionFilter] = useState<string>("all");
 
   const sorted = useMemo(() => {
-    let result = [...activityLogs].sort(
+    let result = [...logs].sort(
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
     if (entityFilter !== "all") {
@@ -124,7 +125,7 @@ export default function ActivityPage() {
       result = result.filter((l) => l.action === actionFilter);
     }
     return result;
-  }, [entityFilter, actionFilter]);
+  }, [entityFilter, actionFilter, logs]);
 
   const grouped = useMemo(() => {
     const groups: Record<string, typeof sorted> = {};

@@ -11,9 +11,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useJobCardStore } from "@/store/job-card-store";
 import { useDashboardFilterStore, DASHBOARD_FILTER } from "@/store/dashboard-filter-store";
-import { isOverdueJobCard } from "@/lib/dashboard-filters";
+import {
+  isOverdueJobCard,
+  isTodaysBookingsJob,
+  isReadyForDeliveryJob,
+} from "@/lib/dashboard-filters";
 import { FilterBanner } from "@/components/shared/filter-banner";
-import { formatDate } from "@/lib/utils";
+import { formatDate, formatDateTime } from "@/lib/utils";
 import type { JobCard, JobCardStatus } from "@/types";
 import { Plus, LayoutGrid, List } from "lucide-react";
 
@@ -67,8 +71,12 @@ export default function JobCardsPage() {
   const [viewMode, setViewMode] = useState<"list" | "kanban">("list");
 
   const jobCardsForView = useMemo(() => {
-    if (activeFilter !== DASHBOARD_FILTER.OVERDUE) return jobCards;
-    return jobCards.filter(isOverdueJobCard);
+    if (activeFilter === DASHBOARD_FILTER.OVERDUE) return jobCards.filter(isOverdueJobCard);
+    if (activeFilter === DASHBOARD_FILTER.TODAYS_BOOKINGS) return jobCards.filter(isTodaysBookingsJob);
+    if (activeFilter === DASHBOARD_FILTER.READY_FOR_DELIVERY) {
+      return jobCards.filter(isReadyForDeliveryJob);
+    }
+    return jobCards;
   }, [jobCards, activeFilter]);
 
   const counts = useMemo(() => {
@@ -134,9 +142,18 @@ export default function JobCardsPage() {
       render: (item: JobCard) => <JobCardStatusBadge status={item.status} />,
     },
     {
-      key: "expectedDelivery",
-      label: "Expected Delivery",
-      render: (item: JobCard) => formatDate(item.expectedDelivery),
+      key: "deliveryTiming",
+      label: "Delivery",
+      render: (item: JobCard) =>
+        item.status === "DELIVERED" ? (
+          <span className="text-muted-foreground" title="Delivered">
+            {formatDateTime(item.actualDelivery ?? item.updatedAt)}
+          </span>
+        ) : (
+          <span className="text-muted-foreground" title="Expected">
+            {formatDate(item.expectedDelivery)}
+          </span>
+        ),
     },
     {
       key: "createdAt",
@@ -182,6 +199,18 @@ export default function JobCardsPage() {
           onDismiss={() => setActiveFilter(null)}
         />
       )}
+      {activeFilter === DASHBOARD_FILTER.TODAYS_BOOKINGS && (
+        <FilterBanner
+          message="Showing job cards created today (calendar date)."
+          onDismiss={() => setActiveFilter(null)}
+        />
+      )}
+      {activeFilter === DASHBOARD_FILTER.READY_FOR_DELIVERY && (
+        <FilterBanner
+          message="Showing jobs in Ready status — ready for handover."
+          onDismiss={() => setActiveFilter(null)}
+        />
+      )}
 
       {viewMode === "list" ? (
         <Card className="border-border/80 shadow-sm overflow-hidden">
@@ -210,8 +239,15 @@ export default function JobCardsPage() {
                         : jobCardsForView.filter((jc) => jc.status === status)
                     }
                     columns={columns}
-                    searchPlaceholder="Search by job number, customer, mobile, or vehicle..."
-                    searchKeys={["jobNumber", "customerName", "customerPhone", "vehicleRegNumber"]}
+                    searchPlaceholder="Search by job, customer, vehicle, or service name..."
+                    searchMatch={(jc, q) =>
+                      jc.jobNumber.toLowerCase().includes(q) ||
+                      jc.customerName.toLowerCase().includes(q) ||
+                      jc.customerPhone.replace(/\D/g, "").includes(q.replace(/\D/g, "")) ||
+                      jc.vehicleRegNumber.toLowerCase().includes(q) ||
+                      (jc.vehicleMakeModel?.toLowerCase().includes(q) ?? false) ||
+                      (jc.services ?? []).some((s) => s.name.toLowerCase().includes(q))
+                    }
                     pageSize={10}
                     onRowClick={(item) => router.push(`/job-cards/${item.id}`)}
                   />

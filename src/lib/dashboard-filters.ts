@@ -1,5 +1,20 @@
 import type { Customer, Invoice, JobCard, Part, ServiceReminder } from "@/types";
 
+/** Job cards created on the current calendar day (local). */
+export function isTodaysBookingsJob(jc: JobCard): boolean {
+  const d = new Date(jc.createdAt);
+  const n = new Date();
+  return (
+    d.getFullYear() === n.getFullYear() &&
+    d.getMonth() === n.getMonth() &&
+    d.getDate() === n.getDate()
+  );
+}
+
+export function isReadyForDeliveryJob(jc: JobCard): boolean {
+  return jc.status === "READY";
+}
+
 export function isOverdueJobCard(jc: JobCard): boolean {
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);

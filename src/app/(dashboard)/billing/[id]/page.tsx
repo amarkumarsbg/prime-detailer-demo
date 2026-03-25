@@ -38,6 +38,7 @@ import { useJobCardStore } from "@/store/job-card-store";
 import { useAuthStore } from "@/store/auth-store";
 import { useCustomerStore } from "@/store/customer-store";
 import { useSettingsStore } from "@/store/settings-store";
+import { pushActivityLog } from "@/lib/activity-log-helper";
 import { formatCurrency, formatDate, formatDateTime } from "@/lib/utils";
 import {
   additionalDiscountTotal,
@@ -155,6 +156,13 @@ export default function InvoiceDetailPage() {
       });
     } else {
       toast.success("Payment recorded");
+      pushActivityLog({
+        action: "PAYMENT_RECEIVED",
+        entityType: "INVOICE",
+        entityId: invoice.id,
+        entityLabel: invoice.invoiceNumber,
+        details: `${formatCurrency(amount)} received on ${invoice.invoiceNumber}`,
+      });
     }
     setRecordDialogOpen(false);
   };

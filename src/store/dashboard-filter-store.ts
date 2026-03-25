@@ -8,6 +8,9 @@ export const DASHBOARD_FILTER = {
   PENDING_PAYMENT: "pending-payment",
   DUE_SOON: "due-soon",
   INACTIVE: "inactive",
+  /** Job cards created today (local calendar date; matches dashboard widget). */
+  TODAYS_BOOKINGS: "todays-bookings",
+  READY_FOR_DELIVERY: "ready-for-delivery",
 } as const;
 
 interface DashboardFilterStore {
