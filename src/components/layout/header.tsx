@@ -6,6 +6,19 @@ import { useSidebarStore } from "@/store/sidebar-store";
 import { useNotificationStore } from "@/store/notification-store";
 import { useCustomerStore } from "@/store/customer-store";
 import { useJobCardStore } from "@/store/job-card-store";
+import { useVehicleStore } from "@/store/vehicle-store";
+import { useInvoiceStore } from "@/store/invoice-store";
+import { useQuotationStore } from "@/store/quotation-store";
+import { useStaffStore } from "@/store/staff-store";
+import { useAppointmentStore } from "@/store/appointment-store";
+import { useInventoryStore } from "@/store/inventory-store";
+import { useExpenseStore } from "@/store/expense-store";
+import { serviceCatalog } from "@/lib/mock-data";
+import {
+  GLOBAL_SEARCH_MIN_CHARS,
+  runGlobalSearch,
+  type GlobalSearchSectionKey,
+} from "@/lib/global-search";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import { getInitials } from "@/lib/utils";
@@ -19,7 +32,27 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { NotificationPanel } from "./notification-panel";
-import { Bell, LogOut, Moon, Sun, User, Menu, Search, Users, ClipboardList, X, Wrench, Building2 } from "lucide-react";
+import {
+  Bell,
+  LogOut,
+  Moon,
+  Sun,
+  User,
+  Menu,
+  Search,
+  Users,
+  ClipboardList,
+  X,
+  Wrench,
+  Building2,
+  Car,
+  FileText,
+  Receipt,
+  Calendar,
+  UserCog,
+  Package,
+  Banknote,
+} from "lucide-react";
 import { useState, useEffect, useRef, useMemo } from "react";
 import Link from "next/link";
 
@@ -37,8 +70,15 @@ export function Header() {
   const notifRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const { customers } = useCustomerStore();
-  const { jobCards } = useJobCardStore();
+  const customers = useCustomerStore((s) => s.customers);
+  const jobCards = useJobCardStore((s) => s.jobCards);
+  const vehicles = useVehicleStore((s) => s.vehicles);
+  const invoices = useInvoiceStore((s) => s.invoices);
+  const quotations = useQuotationStore((s) => s.quotations);
+  const staff = useStaffStore((s) => s.staff);
+  const appointments = useAppointmentStore((s) => s.appointments);
+  const parts = useInventoryStore((s) => s.parts);
+  const expenses = useExpenseStore((s) => s.expenses);
 
   useEffect(() => setMounted(true), []);
 
@@ -74,35 +114,53 @@ export function Header() {
     return () => document.removeEventListener("keydown", down);
   }, []);
 
-  const searchResults = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (q.length < 2) return { customers: [], jobCards: [] };
+  const searchSections = useMemo(
+    () =>
+      runGlobalSearch(searchQuery, {
+        customers,
+        vehicles,
+        jobCards,
+        quotations,
+        invoices,
+        staff,
+        appointments,
+        parts,
+        serviceCatalog,
+        expenses,
+      }),
+    [
+      searchQuery,
+      customers,
+      vehicles,
+      jobCards,
+      quotations,
+      invoices,
+      staff,
+      appointments,
+      parts,
+      expenses,
+    ]
+  );
 
-    const matchedCustomers = customers
-      .filter((c) =>
-        c.name.toLowerCase().includes(q) ||
-        c.phone.replace(/\D/g, "").includes(q.replace(/\D/g, "")) ||
-        c.email.toLowerCase().includes(q) ||
-        c.address?.toLowerCase().includes(q)
-      )
-      .slice(0, 5);
+  const hasResults = searchSections.length > 0;
+  const showDropdown =
+    searchFocused && searchQuery.trim().length >= GLOBAL_SEARCH_MIN_CHARS;
 
-    const matchedJobs = jobCards
-      .filter((j) =>
-        j.jobNumber.toLowerCase().includes(q) ||
-        j.customerName.toLowerCase().includes(q) ||
-        j.customerPhone.replace(/\D/g, "").includes(q.replace(/\D/g, "")) ||
-        j.vehicleRegNumber.toLowerCase().includes(q) ||
-        j.vehicleMakeModel?.toLowerCase().includes(q) ||
-        (j.services?.some((s) => s.name.toLowerCase().includes(q)) ?? false)
-      )
-      .slice(0, 5);
-
-    return { customers: matchedCustomers, jobCards: matchedJobs };
-  }, [searchQuery, customers, jobCards]);
-
-  const hasResults = searchResults.customers.length > 0 || searchResults.jobCards.length > 0;
-  const showDropdown = searchFocused && searchQuery.trim().length >= 2;
+  const sectionIcon = (key: GlobalSearchSectionKey) => {
+    const map: Record<GlobalSearchSectionKey, typeof Users> = {
+      customers: Users,
+      vehicles: Car,
+      jobCards: ClipboardList,
+      quotations: FileText,
+      invoices: Receipt,
+      appointments: Calendar,
+      staff: UserCog,
+      parts: Package,
+      services: Wrench,
+      expenses: Banknote,
+    };
+    return map[key];
+  };
 
   const handleLogout = () => {
     logout();
@@ -148,7 +206,7 @@ export function Header() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onFocus={() => setSearchFocused(true)}
-              placeholder="Search..."
+              placeholder="Search customers, vehicles, jobs, invoices…"
               className="flex-1 min-w-0 bg-transparent outline-none text-sm placeholder:text-muted-foreground"
             />
             {searchQuery && (
@@ -168,45 +226,41 @@ export function Header() {
               {!hasResults ? (
                 <p className="text-sm text-muted-foreground text-center py-6">No results found</p>
               ) : (
-                <div className="max-h-80 overflow-y-auto py-1">
-                  {searchResults.customers.length > 0 && (
-                    <div>
-                      <p className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Customers</p>
-                      {searchResults.customers.map((c) => (
-                        <button
-                          key={c.id}
-                          onClick={() => { router.push(`/customers/${c.id}`); setSearchFocused(false); setSearchQuery(""); }}
-                          className="flex items-center gap-2.5 w-full px-3 py-2 text-sm hover:bg-accent transition-colors text-left"
+                <div className="max-h-[min(24rem,70vh)] overflow-y-auto py-1">
+                  {searchSections.map((section, sIdx) => {
+                    const Icon = sectionIcon(section.key);
+                    return (
+                      <div key={section.key}>
+                        <p
+                          className={`px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground ${
+                            sIdx > 0 ? "border-t border-border mt-1 pt-1.5" : ""
+                          }`}
                         >
-                          <Users className="w-4 h-4 text-muted-foreground shrink-0" />
-                          <div className="flex-1 min-w-0">
-                            <span className="font-medium">{c.name}</span>
-                            <span className="text-muted-foreground text-xs ml-1.5">{c.phone}</span>
-                            {c.email && <span className="text-muted-foreground text-xs ml-1">· {c.email}</span>}
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                  {searchResults.jobCards.length > 0 && (
-                    <div>
-                      <p className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground border-t border-border mt-1 pt-1.5">Job Cards</p>
-                      {searchResults.jobCards.map((j) => (
-                        <button
-                          key={j.id}
-                          onClick={() => { router.push(`/job-cards/${j.id}`); setSearchFocused(false); setSearchQuery(""); }}
-                          className="flex items-center gap-2.5 w-full px-3 py-2 text-sm hover:bg-accent transition-colors text-left"
-                        >
-                          <ClipboardList className="w-4 h-4 text-muted-foreground shrink-0" />
-                          <div className="flex-1 min-w-0">
-                            <span className="font-medium">{j.jobNumber}</span>
-                            <span className="text-muted-foreground text-xs ml-1.5">{j.customerName}</span>
-                            <span className="text-muted-foreground text-xs ml-1">· {j.vehicleRegNumber}</span>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                          {section.label}
+                        </p>
+                        {section.hits.map((hit) => (
+                          <button
+                            key={`${section.key}-${hit.id}`}
+                            type="button"
+                            onClick={() => {
+                              router.push(hit.href);
+                              setSearchFocused(false);
+                              setSearchQuery("");
+                            }}
+                            className="flex items-center gap-2.5 w-full px-3 py-2 text-sm hover:bg-accent transition-colors text-left"
+                          >
+                            <Icon className="w-4 h-4 text-muted-foreground shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <span className="font-medium line-clamp-1">{hit.title}</span>
+                              {hit.meta ? (
+                                <p className="text-muted-foreground text-xs line-clamp-2 mt-0.5">{hit.meta}</p>
+                              ) : null}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
