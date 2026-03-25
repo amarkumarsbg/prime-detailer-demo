@@ -89,7 +89,11 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
 
   return (
     <div className="fixed inset-0 z-100">
-      <div className="fixed inset-0 bg-black/50" onClick={() => onOpenChange(false)} />
+      <div
+        className="fixed inset-0 bg-black/50 cursor-pointer"
+        onClick={() => onOpenChange(false)}
+        aria-hidden
+      />
       <div className="fixed left-1/2 top-[20%] -translate-x-1/2 w-full max-w-lg">
         <Command
           className="rounded-xl border border-border bg-popover text-popover-foreground shadow-2xl overflow-hidden"

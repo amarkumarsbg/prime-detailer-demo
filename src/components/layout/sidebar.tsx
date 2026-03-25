@@ -124,7 +124,7 @@ function SidebarContent({
                     onNavClick?.();
                   }}
                   className={cn(
-                    "flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13px] font-medium transition-colors",
+                    "flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13px] font-medium transition-colors cursor-pointer",
                     isActive
                       ? "bg-primary text-primary-foreground shadow-sm"
                       : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
@@ -157,7 +157,7 @@ function SidebarFooter({ onNavClick }: { onNavClick?: () => void }) {
       <Link
         href="/profile"
         onClick={onNavClick}
-        className="flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13px] font-medium transition-colors text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+        className="flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13px] font-medium transition-colors cursor-pointer text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
       >
         <User className="w-4 h-4 shrink-0" />
         <span>Profile</span>
@@ -165,7 +165,7 @@ function SidebarFooter({ onNavClick }: { onNavClick?: () => void }) {
       <button
         type="button"
         onClick={handleLogout}
-        className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors text-destructive hover:bg-destructive/10"
+        className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors cursor-pointer text-destructive hover:bg-destructive/10"
       >
         <LogOut className="w-4 h-4 shrink-0" />
         <span>Log out</span>

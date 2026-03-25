@@ -96,9 +96,9 @@ export function NotificationPanel({ onClose }: NotificationPanelProps) {
               return (
                 <div
                   key={n.id}
-                  className={`group relative flex gap-3 px-4 py-3 border-b border-border/50 transition-colors ${
-                    n.href ? "cursor-pointer hover:bg-muted/50" : ""
-                  } ${!n.read ? "bg-primary/3" : ""}`}
+                  className={`group relative flex gap-3 px-4 py-3 border-b border-border/50 transition-colors cursor-pointer hover:bg-muted/50 ${
+                    !n.read ? "bg-primary/3" : ""
+                  }`}
                   onClick={() => handleClick(n.id, n.href)}
                 >
                   {!n.read && (

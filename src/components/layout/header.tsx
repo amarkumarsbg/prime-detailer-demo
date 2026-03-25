@@ -243,7 +243,11 @@ export function Header() {
             <>
               {/* Mobile: backdrop + fixed full-width panel */}
               <div className="sm:hidden">
-                <div className="fixed inset-0 top-14 z-40 bg-black/30" onClick={() => setNotifOpen(false)} />
+                <div
+                  className="fixed inset-0 top-14 z-40 bg-black/30 cursor-pointer"
+                  onClick={() => setNotifOpen(false)}
+                  aria-hidden
+                />
                 <div className="fixed inset-x-0 top-14 z-50 px-3 pt-2">
                   <div className="rounded-xl border border-border bg-card shadow-xl animate-in fade-in-0 slide-in-from-top-2">
                     <NotificationPanel onClose={() => setNotifOpen(false)} />
