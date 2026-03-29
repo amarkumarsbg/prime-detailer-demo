@@ -44,6 +44,7 @@ import { useQuotationStore } from "@/store/quotation-store";
 import { useAuthStore } from "@/store/auth-store";
 import { pushActivityLog } from "@/lib/activity-log-helper";
 import { formatCurrency } from "@/lib/utils";
+import { findVehicleByNormalizedReg } from "@/lib/vehicle-registration";
 import type { JobCard, Quotation, QuotationStatus, ServiceItem, VehicleSegment } from "@/types";
 import {
   Plus,
@@ -230,6 +231,13 @@ export default function QuotationsPage() {
       }
       if (!reg || !make || !model) {
         toast.error("Enter vehicle registration, make, and model");
+        return;
+      }
+      const regTaken = findVehicleByNormalizedReg(vehicles, reg);
+      if (regTaken) {
+        toast.error("Registration already in the system", {
+          description: `${regTaken.registrationNumber} is assigned to ${regTaken.customerName}. Select an existing customer and vehicle, or use ownership transfer.`,
+        });
         return;
       }
       const now = new Date().toISOString();

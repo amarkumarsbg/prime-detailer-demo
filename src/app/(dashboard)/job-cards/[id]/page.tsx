@@ -483,15 +483,13 @@ export default function JobCardDetailPage() {
 
   const toggleServiceComplete = (serviceId: string) => {
     if (!jobCard) return;
-    setServiceItems((prev) => {
-      const next = prev.map((s) =>
-        s.id === serviceId ? { ...s, isCompleted: !s.isCompleted } : s
-      );
-      updateJobCard(jobCard.id, {
-        services: next,
-        updatedAt: new Date().toISOString(),
-      });
-      return next;
+    const next = serviceItems.map((s) =>
+      s.id === serviceId ? { ...s, isCompleted: !s.isCompleted } : s
+    );
+    setServiceItems(next);
+    updateJobCard(jobCard.id, {
+      services: next,
+      updatedAt: new Date().toISOString(),
     });
   };
 
@@ -623,8 +621,17 @@ export default function JobCardDetailPage() {
   };
 
   const handleCancel = () => {
-    if (!jobCard || currentStatus === "DELIVERED") return;
+    if (!jobCard || currentStatus === "DELIVERED" || currentStatus === "CANCELLED") return;
+    const nowIso = new Date().toISOString();
     setCurrentStatus("CANCELLED");
+    updateJobCard(jobCard.id, { status: "CANCELLED", updatedAt: nowIso });
+    pushActivityLog({
+      action: "CANCELLED",
+      entityType: "JOB_CARD",
+      entityId: jobCard.id,
+      entityLabel: jobCard.jobNumber,
+      details: `${jobCard.jobNumber} cancelled`,
+    });
     toast.error("Job card cancelled", {
       description: `${jobCard.jobNumber} has been cancelled.`,
     });
@@ -770,7 +777,7 @@ export default function JobCardDetailPage() {
                   className="w-full sm:w-auto"
                   variant="destructive"
                   onClick={handleCancel}
-                  disabled={currentStatus === "DELIVERED"}
+                  disabled={currentStatus === "DELIVERED" || currentStatus === "CANCELLED"}
                 >
                   Cancel
                 </Button>

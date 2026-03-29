@@ -30,6 +30,7 @@ import type { Vehicle, FuelType, VehicleSegment } from "@/types";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { findVehicleByNormalizedReg } from "@/lib/vehicle-registration";
 
 const fuelTypes: FuelType[] = ["PETROL", "DIESEL", "CNG", "ELECTRIC", "HYBRID"];
 
@@ -87,6 +88,19 @@ export default function VehiclesPage() {
   const watchSegment = watch("segment");
 
   const onSubmit = (data: AddVehicleFormData) => {
+    const dup = findVehicleByNormalizedReg(vehicleList, data.registrationNumber);
+    if (dup) {
+      if (dup.customerId === data.customerId) {
+        toast.error("This registration is already listed for this customer", {
+          description: `${dup.registrationNumber} — ${dup.make} ${dup.model}`,
+        });
+      } else {
+        toast.error("Registration already assigned to another customer", {
+          description: `${dup.registrationNumber} belongs to ${dup.customerName}. Transfer ownership first if the vehicle changed hands.`,
+        });
+      }
+      return;
+    }
     const customer = customers.find((c) => c.id === data.customerId);
     const newVehicle: Vehicle = {
       id: `veh-${Date.now()}`,

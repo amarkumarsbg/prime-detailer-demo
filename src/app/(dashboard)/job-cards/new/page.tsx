@@ -32,6 +32,7 @@ import { useSettingsStore } from "@/store/settings-store";
 import { useVehicleCatalogStore } from "@/store/vehicle-catalog-store";
 import { formatCurrency } from "@/lib/utils";
 import { pushActivityLog } from "@/lib/activity-log-helper";
+import { findVehicleByNormalizedReg } from "@/lib/vehicle-registration";
 import type { Vehicle, VehicleSegment, ServiceCatalogItem } from "@/types";
 
 const SEGMENT_OPTIONS: { value: VehicleSegment; label: string }[] = [
@@ -182,6 +183,14 @@ export default function NewJobCardPage() {
     const mechanic = mechanics.find((m) => m.id === mechanicId);
 
     const custId = existingCustomerId ?? `cust-local-${Date.now()}`;
+    const regUpper = vehicleNumber.trim().toUpperCase();
+    const existingForReg = findVehicleByNormalizedReg(useVehicleStore.getState().vehicles, regUpper);
+    if (existingForReg && existingForReg.customerId !== custId) {
+      toast.error("This registration is already on file for another customer", {
+        description: `${existingForReg.registrationNumber} is assigned to ${existingForReg.customerName}. Use that customer, or transfer ownership under Vehicles.`,
+      });
+      return;
+    }
 
     const newReferralCode = `REF-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
 
@@ -245,22 +254,32 @@ export default function NewJobCardPage() {
       ? selectedServices.reduce((sum, s) => sum + s.incentivePercent, 0) / selectedServices.length
       : 0;
 
-    const regUpper = vehicleNumber.trim().toUpperCase();
     const latestVehicles = useVehicleStore.getState().vehicles;
-    const matchedVehicle = latestVehicles.find(
-      (v) => v.customerId === custId && v.registrationNumber === regUpper
-    );
+    const matchedVehicle = findVehicleByNormalizedReg(latestVehicles, regUpper);
 
     let resolvedVehicleId: string;
     if (matchedVehicle) {
       resolvedVehicleId = matchedVehicle.id;
+      setVehicles((prev) =>
+        prev.map((v) =>
+          v.id === matchedVehicle.id
+            ? {
+                ...v,
+                make: vehicleBrand.trim(),
+                model: vehicleModel.trim() || "—",
+                segment: vehicleSegment as VehicleSegment,
+                customerName: customerName.trim(),
+              }
+            : v
+        )
+      );
     } else {
       resolvedVehicleId = `veh-local-${Date.now()}`;
       const newVehicle: Vehicle = {
         id: resolvedVehicleId,
         customerId: custId,
         customerName: customerName.trim(),
-        registrationNumber: regUpper,
+        registrationNumber: regUpper.replace(/\s/g, ""),
         make: vehicleBrand.trim(),
         model: vehicleModel.trim() || "—",
         segment: vehicleSegment as VehicleSegment,
@@ -279,7 +298,7 @@ export default function NewJobCardPage() {
       customerName,
       customerPhone,
       vehicleId: resolvedVehicleId,
-      vehicleRegNumber: vehicleNumber,
+      vehicleRegNumber: regUpper.replace(/\s/g, ""),
       vehicleMakeModel: `${vehicleBrand} ${vehicleModel}`.trim(),
       vehicleSegment: vehicleSegment as VehicleSegment,
       mechanicId: mechanicId || undefined,

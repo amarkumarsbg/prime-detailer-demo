@@ -38,6 +38,7 @@ import { useJobCardStore } from "@/store/job-card-store";
 import { useInvoiceStore } from "@/store/invoice-store";
 import { formatCurrency, formatDate, getInitials, cn } from "@/lib/utils";
 import { getTransferTagForCustomer } from "@/lib/ownership-transfers";
+import { findVehicleByNormalizedReg } from "@/lib/vehicle-registration";
 import type { Customer, Vehicle, JobCard, Invoice, WalletTransaction, FuelType, VehicleSegment } from "@/types";
 
 const fuelTypes: FuelType[] = ["PETROL", "DIESEL", "CNG", "ELECTRIC", "HYBRID"];
@@ -205,6 +206,19 @@ export default function CustomerDetailPage() {
   const onAddVehicle = (data: CustomerAddVehicleFormData) => {
     const c = allCustomers.find((cust) => cust.id === id);
     if (!c) return;
+    const dup = findVehicleByNormalizedReg(vehicleList, data.registrationNumber);
+    if (dup) {
+      if (dup.customerId === id) {
+        toast.error("This registration is already on file for this customer", {
+          description: `${dup.registrationNumber} — ${dup.make} ${dup.model}`,
+        });
+      } else {
+        toast.error("Registration belongs to another customer", {
+          description: `${dup.registrationNumber} is assigned to ${dup.customerName}. Transfer ownership under Vehicles if needed.`,
+        });
+      }
+      return;
+    }
     const newVehicle: Vehicle = {
       id: `veh-${Date.now()}`,
       customerId: id,
