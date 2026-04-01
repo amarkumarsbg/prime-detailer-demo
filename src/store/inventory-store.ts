@@ -16,6 +16,7 @@ interface InventoryStore {
   parts: Part[];
   stockMovements: StockMovement[];
   productPurchases: ProductPurchase[];
+  addPart: (part: Part) => void;
   addPurchase: (input: Omit<ProductPurchase, "id">) => void;
   recordStockAdjustment: (input: {
     partId: string;
@@ -88,6 +89,11 @@ export const useInventoryStore = create<InventoryStore>()(
       parts: mockParts,
       stockMovements: mockMovements,
       productPurchases: mockPurchases,
+
+      addPart: (part) =>
+        set((state) => ({
+          parts: [part, ...state.parts],
+        })),
 
       addPurchase: (input) => {
         const id = `pp-${Date.now()}`;

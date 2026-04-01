@@ -44,7 +44,12 @@ import { useQuotationStore } from "@/store/quotation-store";
 import { useAuthStore } from "@/store/auth-store";
 import { pushActivityLog } from "@/lib/activity-log-helper";
 import { formatCurrency } from "@/lib/utils";
-import { findVehicleByNormalizedReg } from "@/lib/vehicle-registration";
+import {
+  findVehicleByNormalizedReg,
+  INDIAN_VEHICLE_REG_HINT,
+  isValidIndianVehicleRegistration,
+  sanitizeVehicleRegistrationInput,
+} from "@/lib/vehicle-registration";
 import type { JobCard, Quotation, QuotationStatus, ServiceItem, VehicleSegment } from "@/types";
 import {
   Plus,
@@ -233,6 +238,10 @@ export default function QuotationsPage() {
         toast.error("Enter vehicle registration, make, and model");
         return;
       }
+      if (!isValidIndianVehicleRegistration(reg)) {
+        toast.error("Invalid vehicle registration", { description: INDIAN_VEHICLE_REG_HINT });
+        return;
+      }
       const regTaken = findVehicleByNormalizedReg(vehicles, reg);
       if (regTaken) {
         toast.error("Registration already in the system", {
@@ -253,7 +262,7 @@ export default function QuotationsPage() {
       vehicleMakeModel = `${make} ${model}`.trim();
       vehicleSegment = formSegment;
 
-      addCustomer({
+      const customerAdded = addCustomer({
         id: customerId,
         name: customerName,
         phone: customerPhone,
@@ -265,6 +274,12 @@ export default function QuotationsPage() {
         walletBalance: 0,
         createdAt: now,
       });
+      if (!customerAdded) {
+        toast.error("This phone number is already registered", {
+          description: "Use Existing customer or a different mobile number.",
+        });
+        return;
+      }
 
       setVehicles((prev) => [
         ...prev,
@@ -795,8 +810,9 @@ export default function QuotationsPage() {
                     <Input
                       id="quot-new-reg"
                       value={newVehicleReg}
-                      onChange={(e) => setNewVehicleReg(e.target.value)}
-                      placeholder="e.g. KA01AB1234"
+                      onChange={(e) => setNewVehicleReg(sanitizeVehicleRegistrationInput(e.target.value))}
+                      placeholder="e.g. KA-01-AB-1234 or 22BH5678KA"
+                      maxLength={16}
                       className="font-mono uppercase"
                     />
                   </div>

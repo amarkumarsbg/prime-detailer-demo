@@ -13,6 +13,7 @@ import {
   formatMlAndLitres,
   getStockStatus,
   isMlTrackedPart,
+  litresToMl,
   partStockValueInr,
 } from "@/lib/inventory-units";
 import {
@@ -41,6 +42,17 @@ import {
   ArrowUpCircle,
 } from "lucide-react";
 import type { Part, PartCategory } from "@/types";
+
+/** Primary units for stock; Litre uses ml-backed quantity like existing fluid parts. */
+const PART_STOCK_UNIT_OPTIONS: { value: string; label: string }[] = [
+  { value: "Piece", label: "Piece" },
+  { value: "Set", label: "Set" },
+  { value: "Kg", label: "Kg" },
+  { value: "Litre", label: "Litre (fluid)" },
+  { value: "Roll", label: "Roll" },
+  { value: "Box", label: "Box" },
+  { value: "Pair", label: "Pair" },
+];
 import { toast } from "sonner";
 import { useInventoryStore, parseLitresInput } from "@/store/inventory-store";
 import { carsPossibleForPartAndService } from "@/lib/inventory/consumption";
@@ -72,8 +84,29 @@ export default function InventoryPage() {
   const activeFilter = useDashboardFilterStore((s) => s.activeFilter);
   const setActiveFilter = useDashboardFilterStore((s) => s.setActiveFilter);
   const parts = useInventoryStore((s) => s.parts);
+  const addPart = useInventoryStore((s) => s.addPart);
 
   const [stockTableFilter, setStockTableFilter] = useState<StockTableFilter>("all");
+
+  const [addPartName, setAddPartName] = useState("");
+  const [addPartSku, setAddPartSku] = useState("");
+  const [addPartCategory, setAddPartCategory] = useState<PartCategory>("Other");
+  const [addPartUnit, setAddPartUnit] = useState("Piece");
+  const [addPartQty, setAddPartQty] = useState("");
+  const [addPartPrice, setAddPartPrice] = useState("");
+  const [addPartReorder, setAddPartReorder] = useState("");
+  const [addPartSupplier, setAddPartSupplier] = useState("");
+
+  const resetAddPartForm = () => {
+    setAddPartName("");
+    setAddPartSku("");
+    setAddPartCategory("Other");
+    setAddPartUnit("Piece");
+    setAddPartQty("");
+    setAddPartPrice("");
+    setAddPartReorder("");
+    setAddPartSupplier("");
+  };
 
   const partsForTable = useMemo(() => {
     let list = parts;
@@ -272,6 +305,75 @@ export default function InventoryPage() {
     setAdjustAmount("");
   };
 
+  const handleAddPartSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const name = addPartName.trim();
+    const sku = addPartSku.trim();
+    const supplier = addPartSupplier.trim() || "—";
+    if (!name || !sku) {
+      toast.error("Enter part name and SKU");
+      return;
+    }
+    const price = Number(addPartPrice);
+    if (Number.isNaN(price) || price < 0) {
+      toast.error("Enter a valid unit price");
+      return;
+    }
+    const qtyInput = Number(addPartQty);
+    const reorderInput = Number(addPartReorder);
+    if (Number.isNaN(qtyInput) || qtyInput < 0) {
+      toast.error("Enter a valid initial quantity");
+      return;
+    }
+    const now = new Date().toISOString();
+    const id = `prt-${Date.now().toString(36)}`;
+
+    if (addPartUnit === "Litre") {
+      const reorderLitres =
+        Number.isNaN(reorderInput) || reorderInput < 0 ? 0 : reorderInput;
+      addPart({
+        id,
+        name,
+        sku,
+        category: addPartCategory,
+        quantity: 0,
+        primaryUnit: "Litre",
+        secondaryUnit: "ML",
+        conversionFactor: 1000,
+        unitPrice: price,
+        reorderLevel: 0,
+        supplier,
+        stockQuantityMl: litresToMl(qtyInput),
+        reorderLevelMl: litresToMl(reorderLitres),
+        lastRestocked: now,
+      });
+    } else {
+      const qty = Math.round(qtyInput);
+      const reorder =
+        Number.isNaN(reorderInput) || reorderInput < 0 ? 0 : Math.round(reorderInput);
+      const isKg = addPartUnit === "Kg";
+      const isRoll = addPartUnit === "Roll";
+      addPart({
+        id,
+        name,
+        sku,
+        category: addPartCategory,
+        quantity: qty,
+        primaryUnit: addPartUnit,
+        secondaryUnit: isKg ? "Grams" : isRoll ? "Sq.ft" : addPartUnit,
+        conversionFactor: isKg ? 1000 : isRoll ? 50 : 1,
+        unitPrice: price,
+        reorderLevel: reorder,
+        supplier,
+        lastRestocked: now,
+      });
+    }
+
+    toast.success("Part added");
+    setAddDialogOpen(false);
+    resetAddPartForm();
+  };
+
   return (
     <div className="space-y-4 sm:space-y-6">
       <PageHeader
@@ -411,7 +513,13 @@ export default function InventoryPage() {
                 </form>
               </DialogContent>
             </Dialog>
-            <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
+            <Dialog
+              open={addDialogOpen}
+              onOpenChange={(open) => {
+                setAddDialogOpen(open);
+                if (!open) resetAddPartForm();
+              }}
+            >
               <DialogTrigger asChild>
                 <Button>
                   <Plus className="w-4 h-4 mr-2" />
@@ -421,28 +529,39 @@ export default function InventoryPage() {
               <DialogContent className="sm:max-w-lg">
                 <DialogHeader>
                   <DialogTitle>Add Part</DialogTitle>
-                  <DialogDescription>Add a new part to inventory.</DialogDescription>
+                  <DialogDescription>
+                    Set stock unit (e.g. Piece, Set) or Litre for fluids — stock list shows quantity with the
+                    same unit.
+                  </DialogDescription>
                 </DialogHeader>
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    toast.success("Part added");
-                    setAddDialogOpen(false);
-                  }}
-                  className="space-y-4 mt-2"
-                >
+                <form onSubmit={handleAddPartSubmit} className="space-y-4 mt-2">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label>Part Name</Label>
-                      <Input placeholder="e.g. Brake Pad Set" required />
+                      <Label htmlFor="add-part-name">Part Name</Label>
+                      <Input
+                        id="add-part-name"
+                        placeholder="e.g. Brake Pad Set"
+                        value={addPartName}
+                        onChange={(e) => setAddPartName(e.target.value)}
+                        required
+                      />
                     </div>
                     <div className="space-y-2">
-                      <Label>SKU</Label>
-                      <Input placeholder="e.g. BRK-PAD-001" required />
+                      <Label htmlFor="add-part-sku">SKU</Label>
+                      <Input
+                        id="add-part-sku"
+                        placeholder="e.g. BRK-PAD-001"
+                        value={addPartSku}
+                        onChange={(e) => setAddPartSku(e.target.value)}
+                        required
+                      />
                     </div>
                     <div className="space-y-2">
                       <Label>Category</Label>
-                      <Select required>
+                      <Select
+                        value={addPartCategory}
+                        onValueChange={(v) => setAddPartCategory(v as PartCategory)}
+                      >
                         <SelectTrigger>
                           <SelectValue placeholder="Select" />
                         </SelectTrigger>
@@ -456,24 +575,81 @@ export default function InventoryPage() {
                       </Select>
                     </div>
                     <div className="space-y-2">
-                      <Label>Initial Quantity</Label>
-                      <Input type="number" min="0" placeholder="0" required />
+                      <Label htmlFor="add-part-unit">Stock unit</Label>
+                      <Select value={addPartUnit} onValueChange={setAddPartUnit}>
+                        <SelectTrigger id="add-part-unit">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {PART_STOCK_UNIT_OPTIONS.map((u) => (
+                            <SelectItem key={u.value} value={u.value}>
+                              {u.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                     <div className="space-y-2">
-                      <Label>Unit Price (₹)</Label>
-                      <Input type="number" min="0" placeholder="0" required />
+                      <Label htmlFor="add-part-qty">
+                        {addPartUnit === "Litre" ? "Initial stock (litres)" : "Initial quantity"}
+                      </Label>
+                      <Input
+                        id="add-part-qty"
+                        type="number"
+                        min="0"
+                        step={addPartUnit === "Litre" ? "0.01" : "1"}
+                        placeholder="0"
+                        value={addPartQty}
+                        onChange={(e) => setAddPartQty(e.target.value)}
+                        required
+                      />
                     </div>
                     <div className="space-y-2">
-                      <Label>Reorder Level</Label>
-                      <Input type="number" min="0" placeholder="0" required />
+                      <Label htmlFor="add-part-price">Unit Price (₹)</Label>
+                      <Input
+                        id="add-part-price"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="0"
+                        value={addPartPrice}
+                        onChange={(e) => setAddPartPrice(e.target.value)}
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="add-part-reorder">
+                        {addPartUnit === "Litre" ? "Reorder at (litres)" : `Reorder level (${addPartUnit})`}
+                      </Label>
+                      <Input
+                        id="add-part-reorder"
+                        type="number"
+                        min="0"
+                        step={addPartUnit === "Litre" ? "0.01" : "1"}
+                        placeholder="0"
+                        value={addPartReorder}
+                        onChange={(e) => setAddPartReorder(e.target.value)}
+                      />
                     </div>
                     <div className="space-y-2 sm:col-span-2">
-                      <Label>Supplier</Label>
-                      <Input placeholder="e.g. Bosch India" required />
+                      <Label htmlFor="add-part-supplier">Supplier</Label>
+                      <Input
+                        id="add-part-supplier"
+                        placeholder="e.g. Bosch India (optional)"
+                        value={addPartSupplier}
+                        onChange={(e) => setAddPartSupplier(e.target.value)}
+                      />
                     </div>
                   </div>
                   <div className="flex justify-end gap-2 pt-2">
-                    <Button type="button" variant="outline" onClick={() => setAddDialogOpen(false)}>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        setAddDialogOpen(false);
+                        resetAddPartForm();
+                      }}
+                    >
                       Cancel
                     </Button>
                     <Button type="submit">Add Part</Button>

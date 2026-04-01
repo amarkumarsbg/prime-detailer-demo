@@ -7,8 +7,10 @@ import type { Customer } from "@/types";
 
 interface CustomerStore {
   customers: Customer[];
-  addCustomer: (customer: Customer) => void;
-  updateCustomer: (id: string, updates: Partial<Customer>) => void;
+  /** Returns false if another customer already uses this phone (last 10 digits). */
+  addCustomer: (customer: Customer) => boolean;
+  /** Returns false if updates.phone is already used by another customer. */
+  updateCustomer: (id: string, updates: Partial<Customer>) => boolean;
   findByPhone: (phone: string) => Customer | undefined;
   findByEmail: (email: string) => Customer | undefined;
   findByReferralCode: (code: string) => Customer | undefined;
@@ -20,15 +22,25 @@ export const useCustomerStore = create<CustomerStore>()(
     (set, get) => ({
       customers: mockCustomers,
 
-      addCustomer: (customer) =>
-        set((state) => ({ customers: [customer, ...state.customers] })),
+      addCustomer: (customer) => {
+        const dup = get().findByPhone(customer.phone);
+        if (dup) return false;
+        set((state) => ({ customers: [customer, ...state.customers] }));
+        return true;
+      },
 
-      updateCustomer: (id, updates) =>
+      updateCustomer: (id, updates) => {
+        if (updates.phone !== undefined) {
+          const other = get().findByPhone(updates.phone);
+          if (other && other.id !== id) return false;
+        }
         set((state) => ({
           customers: state.customers.map((c) =>
             c.id === id ? { ...c, ...updates } : c
           ),
-        })),
+        }));
+        return true;
+      },
 
       findByPhone: (phone) => {
         const cleaned = phone.replace(/\D/g, "").slice(-10);

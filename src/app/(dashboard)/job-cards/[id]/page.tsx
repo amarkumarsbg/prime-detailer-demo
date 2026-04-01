@@ -4,7 +4,7 @@ import { useState, useMemo, useRef, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
-import { ArrowLeft, Check, FileText, User, Car, Camera, Upload, X, ImageIcon, Trash2, ChevronLeft, ChevronRight, GripVertical, MessageCircle, ArrowLeftRight, Clock, Lock, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Check, FileText, User, Car, Camera, Upload, X, ImageIcon, Trash2, ChevronLeft, ChevronRight, GripVertical, MessageCircle, ArrowLeftRight, Clock, Lock, AlertTriangle, Sparkles } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { Breadcrumbs } from "@/components/shared/breadcrumbs";
 import { JobCardStatusBadge } from "@/components/shared/status-badge";
@@ -29,6 +29,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useJobCardStore } from "@/store/job-card-store";
+import { useInvoiceStore } from "@/store/invoice-store";
 import { useInventoryStore } from "@/store/inventory-store";
 import { useStaffStore } from "@/store/staff-store";
 import { useHighEndServiceStore } from "@/store/high-end-service-store";
@@ -75,6 +76,10 @@ function normalizeJobCardStatus(raw: string | undefined): JobCardStatus {
   return hit ?? "RECEIVED";
 }
 
+function formatHighEndIntervalMonths(m: number): string {
+  return m >= 12 ? `${m / 12}yr` : `${m}mo`;
+}
+
 export default function JobCardDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -85,6 +90,12 @@ export default function JobCardDetailPage() {
   const jobCard = useMemo(
     () => jobCards.find((jc) => jc.id === id),
     [jobCards, id]
+  );
+
+  const invoices = useInvoiceStore((s) => s.invoices);
+  const invoiceForJob = useMemo(
+    () => (jobCard ? invoices.find((inv) => inv.jobCardId === jobCard.id) : undefined),
+    [invoices, jobCard?.id]
   );
 
   const mechanics = useMemo(
@@ -114,6 +125,7 @@ export default function JobCardDetailPage() {
   const [qualityCheckDone, setQualityCheckDone] = useState(
     () => jobCard?.qualityCheckCompleted ?? false
   );
+  const [highEndFollowUpById, setHighEndFollowUpById] = useState<Record<string, number>>({});
 
   const prevJobIdRef = useRef<string | null>(null);
 
@@ -373,7 +385,21 @@ export default function JobCardDetailPage() {
       setInspectionPhotos([]);
       setPhotoTab(normalized === "READY" || normalized === "DELIVERED" ? "AFTER" : "BEFORE");
     }
-  }, [id, jobCard]);
+
+    const hesIds = jobCard.highEndServiceIds ?? [];
+    const storedFollowUp = jobCard.highEndFirstFollowUpMonthsByServiceId ?? {};
+    const followUpNext: Record<string, number> = {};
+    for (const hesId of hesIds) {
+      const cfg = highEndServiceConfigs.find((c) => c.id === hesId);
+      if (!cfg || cfg.reminderIntervals.length === 0) continue;
+      const raw = storedFollowUp[hesId];
+      followUpNext[hesId] =
+        raw != null && cfg.reminderIntervals.includes(raw)
+          ? raw
+          : cfg.reminderIntervals[0]!;
+    }
+    setHighEndFollowUpById(followUpNext);
+  }, [id, jobCard, highEndServiceConfigs]);
 
   useEffect(() => {
     if (photoTab === "AFTER" && !canUploadAfter) setPhotoTab("BEFORE");
@@ -583,6 +609,14 @@ export default function JobCardDetailPage() {
         jobCard.highEndServiceIds.forEach((hesId) => {
           const config = highEndServiceConfigs.find((c) => c.id === hesId);
           if (config) {
+            const first =
+              jobCard.highEndFirstFollowUpMonthsByServiceId?.[hesId] ??
+              config.reminderIntervals[0] ??
+              0;
+            let intervals = config.reminderIntervals.filter((m) => m >= first);
+            if (intervals.length === 0) {
+              intervals = config.reminderIntervals;
+            }
             generateHighEndReminders({
               jobCardId: jobCard.id,
               serviceName: config.name,
@@ -593,7 +627,7 @@ export default function JobCardDetailPage() {
               vehicleId: jobCard.vehicleId,
               vehicleRegNumber: jobCard.vehicleRegNumber,
               vehicleMakeModel: jobCard.vehicleMakeModel,
-              intervalMonths: config.reminderIntervals,
+              intervalMonths: intervals,
             });
           }
         });
@@ -745,43 +779,60 @@ export default function JobCardDetailPage() {
               </div>
             </div>
             <div className="mt-5 space-y-2">
-              {advanceBlockedByMechanic && (
-                <p className="text-sm text-amber-600 dark:text-amber-500">
-                  Assign a mechanic before moving to In Service — use the button below or the summary header.
-                </p>
-              )}
-              <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 sm:gap-3">
-                {!hasMechanicAssigned && (
+              {currentStatus === "DELIVERED" ? (
+                <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-3">
+                  <p className="text-sm text-muted-foreground">
+                    This job is delivered — you can create the tax invoice or open it if it already exists.
+                  </p>
                   <Button
                     type="button"
-                    variant="secondary"
-                    className="w-full sm:w-auto"
-                    onClick={() => setShowQuickAssignDialog(true)}
+                    className="w-full sm:w-auto shrink-0"
+                    onClick={handleGenerateInvoice}
+                    title="Creates the invoice if needed and opens billing to print or record payment."
                   >
-                    <User className="w-4 h-4 mr-2" />
-                    Assign mechanic
+                    <FileText className="w-4 h-4 mr-2" />
+                    {invoiceForJob ? "View invoice" : "Generate invoice"}
                   </Button>
-                )}
-                <Button
-                  className="w-full sm:w-auto"
-                  onClick={handleUpdateStatus}
-                  disabled={
-                    currentStatus === "DELIVERED" ||
-                    currentStatusIndex >= WORKFLOW_STATUSES.length - 1 ||
-                    advanceBlockedByMechanic
-                  }
-                >
-                  Update Status
-                </Button>
-                <Button
-                  className="w-full sm:w-auto"
-                  variant="destructive"
-                  onClick={handleCancel}
-                  disabled={currentStatus === "DELIVERED" || currentStatus === "CANCELLED"}
-                >
-                  Cancel
-                </Button>
-              </div>
+                </div>
+              ) : (
+                <>
+                  {advanceBlockedByMechanic && (
+                    <p className="text-sm text-amber-600 dark:text-amber-500">
+                      Assign a mechanic before moving to In Service — use the button below or the summary header.
+                    </p>
+                  )}
+                  <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 sm:gap-3">
+                    {!hasMechanicAssigned && (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        className="w-full sm:w-auto"
+                        onClick={() => setShowQuickAssignDialog(true)}
+                      >
+                        <User className="w-4 h-4 mr-2" />
+                        Assign mechanic
+                      </Button>
+                    )}
+                    <Button
+                      className="w-full sm:w-auto"
+                      onClick={handleUpdateStatus}
+                      disabled={
+                        currentStatusIndex >= WORKFLOW_STATUSES.length - 1 ||
+                        advanceBlockedByMechanic
+                      }
+                    >
+                      Update Status
+                    </Button>
+                    <Button
+                      className="w-full sm:w-auto"
+                      variant="destructive"
+                      onClick={handleCancel}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -930,6 +981,79 @@ export default function JobCardDetailPage() {
           </div>
         </CardContent>
       </Card>
+
+      {jobCard.highEndServiceIds && jobCard.highEndServiceIds.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-amber-500" />
+              High-end maintenance follow-up
+            </CardTitle>
+            <p className="text-sm text-muted-foreground mt-1">
+              {currentStatus === "DELIVERED" || currentStatus === "CANCELLED"
+                ? "Reminders were generated from these first follow-up intervals when the job was delivered."
+                : "Set the first reminder interval for each premium service. On delivery, reminders are created for this milestone and all later ones in the schedule."}
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {jobCard.highEndServiceIds.map((hesId) => {
+              const cfg = highEndServiceConfigs.find((c) => c.id === hesId);
+              if (!cfg || cfg.reminderIntervals.length === 0) return null;
+              const canEdit =
+                currentStatus !== "DELIVERED" && currentStatus !== "CANCELLED";
+              const monthsVal = highEndFollowUpById[hesId] ?? cfg.reminderIntervals[0]!;
+              return (
+                <div
+                  key={hesId}
+                  className="flex flex-col sm:flex-row sm:items-end gap-3 p-3 rounded-lg border bg-muted/30"
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium">{cfg.name}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Schedule:{" "}
+                      {cfg.reminderIntervals.map((m) => formatHighEndIntervalMonths(m)).join(", ")}
+                    </p>
+                  </div>
+                  <div className="shrink-0 w-full sm:w-48 space-y-1">
+                    <Label htmlFor={`hes-follow-${hesId}`} className="text-xs text-muted-foreground">
+                      Next follow-up
+                    </Label>
+                    {canEdit ? (
+                      <Select
+                        value={String(monthsVal)}
+                        onValueChange={(v) => {
+                          const months = Number.parseInt(v, 10);
+                          const next = { ...highEndFollowUpById, [hesId]: months };
+                          setHighEndFollowUpById(next);
+                          updateJobCard(jobCard.id, {
+                            highEndFirstFollowUpMonthsByServiceId: next,
+                            updatedAt: new Date().toISOString(),
+                          });
+                        }}
+                      >
+                        <SelectTrigger id={`hes-follow-${hesId}`} className="h-9">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {cfg.reminderIntervals.map((m) => (
+                            <SelectItem key={m} value={String(m)}>
+                              {formatHighEndIntervalMonths(m)} ({m} mo)
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <p className="text-sm font-medium py-2 tabular-nums">
+                        {formatHighEndIntervalMonths(monthsVal)} ({monthsVal} mo)
+                      </p>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+      )}
 
       {currentStatus === "QUALITY_CHECK" && (
         <Card>
@@ -1492,7 +1616,7 @@ export default function JobCardDetailPage() {
               title="Creates the invoice if needed and opens it to print or record payment."
             >
               <FileText className="w-4 h-4 mr-2" />
-              Generate Invoice
+              {invoiceForJob ? "View invoice" : "Generate invoice"}
             </Button>
           ) : (
             <Button
@@ -1502,7 +1626,7 @@ export default function JobCardDetailPage() {
               title="Mark the job as Delivered in the workflow above, then generate the invoice."
             >
               <FileText className="w-4 h-4 mr-2" />
-              Generate Invoice
+              Generate invoice
             </Button>
           )}
           <Link href={`/customers/${jobCard.customerId}`}>

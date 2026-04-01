@@ -30,7 +30,11 @@ import type { Vehicle, FuelType, VehicleSegment } from "@/types";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { findVehicleByNormalizedReg } from "@/lib/vehicle-registration";
+import {
+  findVehicleByNormalizedReg,
+  INDIAN_VEHICLE_REG_ERROR_SHORT,
+  isValidIndianVehicleRegistration,
+} from "@/lib/vehicle-registration";
 
 const fuelTypes: FuelType[] = ["PETROL", "DIESEL", "CNG", "ELECTRIC", "HYBRID"];
 
@@ -226,7 +230,12 @@ export default function VehiclesPage() {
                 <Input
                   id="registrationNumber"
                   placeholder="KA-01-AB-1234"
-                  {...register("registrationNumber")}
+                  maxLength={16}
+                  {...register("registrationNumber", {
+                    required: "Required",
+                    validate: (v) =>
+                      isValidIndianVehicleRegistration(String(v)) || INDIAN_VEHICLE_REG_ERROR_SHORT,
+                  })}
                 />
                 {errors.registrationNumber && (
                   <p className="text-sm text-destructive">{errors.registrationNumber.message}</p>

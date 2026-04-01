@@ -187,7 +187,13 @@ export default function CustomersPage() {
       walletBalance: 0,
       createdAt: new Date().toISOString(),
     };
-    addCustomerToStore(newCustomer);
+    const added = addCustomerToStore(newCustomer);
+    if (!added) {
+      toast.error("This phone number is already registered", {
+        description: "Each mobile number can only be used once. Open the existing customer or use a different number.",
+      });
+      return;
+    }
     reset();
     setAddDialogOpen(false);
     toast.success("Customer added", { description: `${data.name} has been added successfully.` });

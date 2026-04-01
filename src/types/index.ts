@@ -184,6 +184,8 @@ export interface JobCard {
   mechanicSwitchLog?: MechanicSwitchLog[];
   quotationId?: string;
   highEndServiceIds?: string[];
+  /** For each high-end service id, months until the first maintenance reminder (must match an entry in that service's reminderIntervals). */
+  highEndFirstFollowUpMonthsByServiceId?: Record<string, number>;
   whatsappLog?: WhatsAppLog[];
   /** Set when materials were deducted from stock at Ready (billing no longer deducts). */
   inventoryConsumedAt?: string;

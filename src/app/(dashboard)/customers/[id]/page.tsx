@@ -38,7 +38,11 @@ import { useJobCardStore } from "@/store/job-card-store";
 import { useInvoiceStore } from "@/store/invoice-store";
 import { formatCurrency, formatDate, getInitials, cn } from "@/lib/utils";
 import { getTransferTagForCustomer } from "@/lib/ownership-transfers";
-import { findVehicleByNormalizedReg } from "@/lib/vehicle-registration";
+import {
+  findVehicleByNormalizedReg,
+  INDIAN_VEHICLE_REG_ERROR_SHORT,
+  isValidIndianVehicleRegistration,
+} from "@/lib/vehicle-registration";
 import type { Customer, Vehicle, JobCard, Invoice, WalletTransaction, FuelType, VehicleSegment } from "@/types";
 
 const fuelTypes: FuelType[] = ["PETROL", "DIESEL", "CNG", "ELECTRIC", "HYBRID"];
@@ -96,7 +100,7 @@ export default function CustomerDetailPage() {
   const watchFuelType = watch("fuelType");
   const watchSegment = watch("segment");
 
-  const { customers: allCustomers, updateCustomer } = useCustomerStore();
+  const { customers: allCustomers, updateCustomer, findByPhone } = useCustomerStore();
   const customer = useMemo(() => {
     return allCustomers.find((c) => c.id === id) ?? null;
   }, [id, allCustomers]);
@@ -168,12 +172,24 @@ export default function CustomerDetailPage() {
       toast.error("Name and phone are required");
       return;
     }
-    updateCustomer(id, {
+    const phoneTrim = editPhone.trim();
+    const other = findByPhone(phoneTrim);
+    if (other && other.id !== id) {
+      toast.error("This phone number is already registered to another customer", {
+        description: `${other.name} uses this number.`,
+      });
+      return;
+    }
+    const ok = updateCustomer(id, {
       name: editName.trim(),
-      phone: editPhone.trim(),
+      phone: phoneTrim,
       email: editEmail.trim(),
       address: editAddress.trim(),
     });
+    if (!ok) {
+      toast.error("Could not save: phone number conflict");
+      return;
+    }
     setIsEditing(false);
     toast.success("Customer updated successfully");
   };
@@ -544,7 +560,12 @@ export default function CustomerDetailPage() {
                     <Input
                       id="cust-registrationNumber"
                       placeholder="KA-01-AB-1234"
-                      {...register("registrationNumber", { required: "Required" })}
+                      maxLength={16}
+                      {...register("registrationNumber", {
+                        required: "Required",
+                        validate: (v) =>
+                          isValidIndianVehicleRegistration(String(v)) || INDIAN_VEHICLE_REG_ERROR_SHORT,
+                      })}
                     />
                     {errors.registrationNumber && (
                       <p className="text-sm text-destructive">{errors.registrationNumber.message}</p>
