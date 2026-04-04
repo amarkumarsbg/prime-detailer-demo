@@ -168,19 +168,36 @@ export function DataTable<T extends Record<string, any>>({
                   </td>
                 </tr>
               ) : (
-                paged.map((item, i) => (
-                  <tr
-                    key={String((item as T & { id?: string }).id ?? i)}
-                    className={`border-b border-border last:border-0 hover:bg-muted/30 transition-colors ${onRowClick ? "cursor-pointer" : ""}`}
-                    onClick={() => onRowClick?.(item)}
-                  >
-                    {columns.map((col) => (
-                      <td key={col.key} className={`px-4 py-3 ${col.className || ""}`}>
-                        {col.render ? col.render(item) : (item[col.key] as React.ReactNode)}
-                      </td>
-                    ))}
-                  </tr>
-                ))
+                paged.map((item, i) => {
+                  const rowKey = String((item as T & { id?: string }).id ?? i);
+                  const clickable = Boolean(onRowClick);
+                  return (
+                    <tr
+                      key={rowKey}
+                      role={clickable ? "button" : undefined}
+                      tabIndex={clickable ? 0 : undefined}
+                      className={
+                        clickable
+                          ? "border-b border-border last:border-0 cursor-pointer outline-none transition-colors hover:bg-muted/30 focus-visible:bg-muted/30 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+                          : "border-b border-border last:border-0 hover:bg-muted/30 transition-colors"
+                      }
+                      onClick={() => onRowClick?.(item)}
+                      onKeyDown={(e) => {
+                        if (!onRowClick) return;
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          onRowClick(item);
+                        }
+                      }}
+                    >
+                      {columns.map((col) => (
+                        <td key={col.key} className={`px-4 py-3 ${col.className || ""}`}>
+                          {col.render ? col.render(item) : (item[col.key] as React.ReactNode)}
+                        </td>
+                      ))}
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>

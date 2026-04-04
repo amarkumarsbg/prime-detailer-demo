@@ -75,8 +75,8 @@ export function KPICard({
   return (
     <Card
       className={cn(
-        "flex h-full min-h-0 flex-col transition-shadow hover:shadow-md",
-        tone ? toneSurfaceClass[tone] : undefined,
+        "flex h-full min-h-0 flex-col transition-[box-shadow,transform] duration-200 ease-out motion-safe:hover:-translate-y-0.5 hover:shadow-lg dark:hover:shadow-md",
+        tone ? toneSurfaceClass[tone] : "hover:shadow-md dark:hover:shadow-md",
         isFeatured &&
           !tone &&
           "border-emerald-200/70 shadow-sm dark:border-emerald-900/60",

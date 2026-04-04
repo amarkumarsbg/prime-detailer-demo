@@ -2,6 +2,9 @@
 
 /* Class on <html> from next-themes; must match .dark itself and descendants (Tailwind v4 + next-themes). */
 @custom-variant dark (&:where(.dark, .dark *));
+/** Micro-interactions: only apply transforms when user has not requested reduced motion. */
+@custom-variant motion-safe (@media (prefers-reduced-motion: no-preference));
+@custom-variant motion-reduce (@media (prefers-reduced-motion: reduce));
 
 @theme inline {
   --color-background: var(--background);

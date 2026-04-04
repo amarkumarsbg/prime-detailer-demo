@@ -253,13 +253,18 @@ function SidebarContent({
                         onNavClick?.();
                       }}
                       className={cn(
-                        "flex cursor-pointer items-center gap-2.5 rounded-xl px-3 py-2.5 text-[13px] font-medium transition-colors duration-150",
+                        "group flex cursor-pointer items-center gap-2.5 rounded-xl px-3 py-2.5 text-[13px] font-medium transition-[color,background-color,transform] duration-150",
                         isActive
                           ? "bg-[var(--sidebar-active)] text-[var(--sidebar-active-foreground)] shadow-sm"
-                          : "text-[var(--sidebar-foreground)] hover:bg-[var(--sidebar-accent)] hover:text-[var(--sidebar-accent-foreground)]"
+                          : "text-[var(--sidebar-foreground)] hover:bg-[var(--sidebar-accent)] hover:text-[var(--sidebar-accent-foreground)] motion-safe:hover:translate-x-0.5"
                       )}
                     >
-                      <item.icon className={cn("h-4 w-4 shrink-0", isActive ? "opacity-100" : "opacity-90")} />
+                      <item.icon
+                        className={cn(
+                          "h-4 w-4 shrink-0 transition-transform duration-150",
+                          isActive ? "opacity-100" : "opacity-90 motion-safe:group-hover:scale-105"
+                        )}
+                      />
                       <span>{item.label}</span>
                     </Link>
                   );
