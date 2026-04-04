@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { cn } from "@/lib/utils";
+import { usePathname, useRouter } from "next/navigation";
+import { cn, getInitials } from "@/lib/utils";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useSidebarStore } from "@/store/sidebar-store";
 import { useAuthStore } from "@/store/auth-store";
 import { useDashboardFilterStore } from "@/store/dashboard-filter-store";
@@ -28,6 +29,7 @@ import {
   Gauge,
   FileText,
   PhoneCall,
+  LogOut,
   QrCode,
   Wallet,
   Store,
@@ -215,8 +217,17 @@ function SidebarContent({
 }
 
 export function Sidebar() {
+  const router = useRouter();
   const { mobileOpen, setMobileOpen } = useSidebarStore();
   const businessName = useSettingsStore((s) => s.businessName);
+  const user = useAuthStore((s) => s.user);
+  const logout = useAuthStore((s) => s.logout);
+
+  const handleMobileLogout = () => {
+    logout();
+    setMobileOpen(false);
+    router.push("/login");
+  };
 
   const brandHeader = (
     <div className="flex items-center gap-3 min-w-0">
@@ -275,6 +286,31 @@ export function Sidebar() {
             navOverflow="auto"
           />
         </div>
+
+        {user && (
+          <div className="shrink-0 border-t border-[var(--sidebar-border)] bg-cyan-400/[0.06] px-2.5 py-3 space-y-1">
+            <button
+              type="button"
+              onClick={handleMobileLogout}
+              className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium text-rose-400 hover:bg-rose-500/10 hover:text-rose-300 transition-colors"
+            >
+              <LogOut className="w-4 h-4 shrink-0" />
+              Log out
+            </button>
+            <Link
+              href="/profile"
+              onClick={() => setMobileOpen(false)}
+              className="flex items-center gap-3 rounded-lg px-2.5 py-2 text-[13px] font-medium text-[var(--sidebar-foreground)] hover:bg-cyan-400/[0.08] transition-colors"
+            >
+              <Avatar className="w-9 h-9 shrink-0 border border-cyan-500/20">
+                <AvatarFallback className="bg-primary text-primary-foreground text-xs font-semibold">
+                  {getInitials(user.name)}
+                </AvatarFallback>
+              </Avatar>
+              <span className="truncate min-w-0">{user.name}</span>
+            </Link>
+          </div>
+        )}
       </aside>
     </>
   );

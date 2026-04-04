@@ -533,7 +533,7 @@ export default function NewJobCardPage() {
         }
       />
 
-      <form onSubmit={handleSubmit} className="space-y-6">
+      <form onSubmit={handleSubmit} className="space-y-6 pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:pb-0">
         {/* Customer Details */}
         <Card>
           <CardHeader>
@@ -937,12 +937,16 @@ export default function NewJobCardPage() {
           </CardContent>
         </Card>
 
-        {/* Submit */}
-        <div className="flex justify-end gap-3">
-          <Link href="/job-cards">
-            <Button type="button" variant="outline">Cancel</Button>
-          </Link>
-          <Button type="submit">Create Job Card</Button>
+        {/* Submit: pinned to viewport bottom on mobile (scrollable form above) */}
+        <div className="max-md:fixed max-md:bottom-0 max-md:left-0 max-md:right-0 z-40 max-md:border-t max-md:border-border max-md:bg-background/95 max-md:backdrop-blur-md max-md:px-4 max-md:pt-3 max-md:pb-[max(0.75rem,env(safe-area-inset-bottom))] md:static md:z-auto md:border-0 md:bg-transparent md:backdrop-blur-none md:p-0">
+          <div className="flex flex-row gap-2 sm:gap-3 md:justify-end">
+            <Button type="button" variant="outline" asChild className="max-md:flex-1 md:w-auto">
+              <Link href="/job-cards">Cancel</Link>
+            </Button>
+            <Button type="submit" className="max-md:flex-1 md:w-auto">
+              Create Job Card
+            </Button>
+          </div>
         </div>
       </form>
 

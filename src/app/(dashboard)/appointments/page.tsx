@@ -59,6 +59,7 @@ import {
 } from "lucide-react";
 import type { Appointment, AppointmentStatus } from "@/types";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import {
   buildBookingConfirmationMessage,
   buildWhatsAppBookingUrl,
@@ -283,7 +284,7 @@ export default function AppointmentsPage() {
     <div className="space-y-4 sm:space-y-6">
       <PageHeader
         title="Appointments"
-        description="Schedule and manage service appointments"
+        description="Manage bookings and the service calendar — calendar for the month view, list for upcoming work."
         actions={
           <div className="flex flex-wrap items-center gap-2 justify-end">
             <Button type="button" variant="outline" onClick={openDemoWhatsAppPreview}>
@@ -514,13 +515,41 @@ export default function AppointmentsPage() {
         </Card>
       </div>
 
-      <Tabs defaultValue="calendar">
-        <TabsList>
-          <TabsTrigger value="calendar">Calendar</TabsTrigger>
-          <TabsTrigger value="list">List View</TabsTrigger>
+      <Card className="border-border/80 shadow-sm overflow-hidden">
+        <CardHeader className="border-b border-border/70 bg-muted/20 pb-4">
+          <CardTitle className="text-base">Booking workspace</CardTitle>
+          <p className="text-sm text-muted-foreground mt-1">
+            Sections stay separated: pick a day on the left, review that day&apos;s bookings on the right, or use the list for everything upcoming.
+          </p>
+        </CardHeader>
+        <CardContent className="pt-5">
+      <Tabs defaultValue="calendar" className="w-full">
+        <TabsList className="w-full flex flex-wrap justify-start rounded-none border-0 border-b border-border/70 bg-transparent p-0 h-auto gap-0 mb-1">
+          <TabsTrigger
+            value="calendar"
+            className={cn(
+              "rounded-none border-b-2 border-transparent bg-transparent shadow-none px-4 py-2.5 gap-2 text-muted-foreground",
+              "data-[state=active]:border-emerald-600 data-[state=active]:text-emerald-800 data-[state=active]:bg-transparent",
+              "dark:data-[state=active]:text-emerald-400"
+            )}
+          >
+            <Calendar className="w-4 h-4 shrink-0" />
+            Calendar
+          </TabsTrigger>
+          <TabsTrigger
+            value="list"
+            className={cn(
+              "rounded-none border-b-2 border-transparent bg-transparent shadow-none px-4 py-2.5 gap-2 text-muted-foreground",
+              "data-[state=active]:border-emerald-600 data-[state=active]:text-emerald-800 data-[state=active]:bg-transparent",
+              "dark:data-[state=active]:text-emerald-400"
+            )}
+          >
+            <Clock className="w-4 h-4 shrink-0" />
+            List view
+          </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="calendar" className="mt-4">
+        <TabsContent value="calendar" className="mt-5 outline-none">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <Card className="lg:col-span-2">
               <CardHeader className="pb-2">
@@ -668,8 +697,12 @@ export default function AppointmentsPage() {
           </div>
         </TabsContent>
 
-        <TabsContent value="list" className="mt-4">
-          <Card>
+        <TabsContent value="list" className="mt-5 outline-none">
+          <Card className="border-border/80 shadow-sm">
+            <CardHeader className="pb-2 border-b border-border/60 bg-muted/10">
+              <CardTitle className="text-base">Upcoming bookings</CardTitle>
+              <p className="text-xs text-muted-foreground mt-0.5">Chronological list with status and quick actions.</p>
+            </CardHeader>
             <CardContent className="p-0! divide-y divide-border">
               {upcomingAppointments.length === 0 ? (
                 <p className="text-center py-12 text-muted-foreground">No upcoming appointments</p>
@@ -733,6 +766,8 @@ export default function AppointmentsPage() {
           </Card>
         </TabsContent>
       </Tabs>
+        </CardContent>
+      </Card>
     </div>
   );
 }

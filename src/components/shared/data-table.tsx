@@ -22,6 +22,8 @@ interface DataTableProps<T> {
   searchMatch?: (item: T, queryLower: string) => boolean;
   pageSize?: number;
   onRowClick?: (item: T) => void;
+  /** Below `md`, render each row as a card instead of a wide table (no horizontal scroll). */
+  renderMobileCard?: (item: T) => React.ReactNode;
   actions?: React.ReactNode;
 }
 
@@ -34,6 +36,7 @@ export function DataTable<T extends Record<string, any>>({
   searchMatch,
   pageSize = 10,
   onRowClick,
+  renderMobileCard,
   actions,
 }: DataTableProps<T>) {
   const [search, setSearch] = useState("");
@@ -98,7 +101,36 @@ export function DataTable<T extends Record<string, any>>({
       </div>
 
       <div className="rounded-xl border border-border overflow-hidden">
-        <div className="overflow-x-auto">
+        {renderMobileCard && (
+          <div className="md:hidden p-3 space-y-3 bg-card">
+            {paged.length === 0 ? (
+              <p className="text-center py-12 text-sm text-muted-foreground">No results found</p>
+            ) : (
+              paged.map((item, i) => {
+                const rowKey = String((item as T & { id?: string }).id ?? `${page}-${i}`);
+                return (
+                  <div
+                    key={rowKey}
+                    role={onRowClick ? "button" : undefined}
+                    tabIndex={onRowClick ? 0 : undefined}
+                    onClick={() => onRowClick?.(item)}
+                    onKeyDown={(e) => {
+                      if (!onRowClick) return;
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        onRowClick(item);
+                      }
+                    }}
+                    className={`rounded-lg border border-border bg-card p-3 text-sm shadow-sm ${onRowClick ? "cursor-pointer hover:bg-muted/30 hover:border-primary/25 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring" : ""}`}
+                  >
+                    {renderMobileCard(item)}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        )}
+        <div className={renderMobileCard ? "hidden md:block overflow-x-auto" : "overflow-x-auto"}>
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border bg-muted/50">
@@ -128,7 +160,7 @@ export function DataTable<T extends Record<string, any>>({
               ) : (
                 paged.map((item, i) => (
                   <tr
-                    key={i}
+                    key={String((item as T & { id?: string }).id ?? i)}
                     className={`border-b border-border last:border-0 hover:bg-muted/30 transition-colors ${onRowClick ? "cursor-pointer" : ""}`}
                     onClick={() => onRowClick?.(item)}
                   >

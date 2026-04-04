@@ -22,6 +22,26 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+(function(){
+  try {
+    var k='theme';
+    var t=localStorage.getItem(k);
+    var d=document.documentElement;
+    if(t==='dark') d.classList.add('dark');
+    else if(t==='light') d.classList.remove('dark');
+    else if(!t||t==='system'){
+      if(window.matchMedia('(prefers-color-scheme: dark)').matches) d.classList.add('dark');
+      else d.classList.remove('dark');
+    }
+  }catch(e){}
+})();`,
+          }}
+        />
+      </head>
       <body className={`${inter.variable} font-sans antialiased`}>
         <ThemeProvider>
           <AttendanceRealtimeSync />

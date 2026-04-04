@@ -166,7 +166,7 @@ export default function JobCardsPage() {
     <div className="space-y-4 sm:space-y-6">
       <PageHeader
         title="Job Cards"
-        description="Track workshop jobs from intake to delivery. Switch to board view to see work by stage."
+        description="Manage your operations — track workshop jobs from intake to delivery. Use the board to see work by stage."
         actions={
           <div className="flex items-center gap-2">
             <div className="flex items-center rounded-lg border border-border overflow-hidden">
@@ -250,6 +250,28 @@ export default function JobCardsPage() {
                     }
                     pageSize={10}
                     onRowClick={(item) => router.push(`/job-cards/${item.id}`)}
+                    renderMobileCard={(jc) => (
+                      <>
+                        <div className="font-mono text-xs font-semibold text-primary">{jc.jobNumber}</div>
+                        <p className="text-sm font-medium leading-tight mt-1.5">{jc.customerName}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">{jc.customerPhone}</p>
+                        <p className="text-sm font-medium leading-tight mt-2">{jc.vehicleRegNumber}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">{jc.vehicleMakeModel}</p>
+                        <div className="mt-3 pt-3 border-t border-border space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs text-muted-foreground truncate min-w-0">
+                              {jc.mechanicName ?? "Unassigned"}
+                            </span>
+                            <JobCardStatusBadge status={jc.status} />
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            {jc.status === "DELIVERED"
+                              ? formatDateTime(jc.actualDelivery ?? jc.updatedAt)
+                              : formatDate(jc.expectedDelivery)}
+                          </p>
+                        </div>
+                      </>
+                    )}
                   />
                 </TabsContent>
               ))}
@@ -257,9 +279,11 @@ export default function JobCardsPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="flex gap-3 overflow-x-auto pb-4 -mx-1 px-1">
+        <>
+          {/* Mobile: stacked full-width stage columns; md+: horizontal board */}
+          <div className="flex flex-col gap-4 md:flex-row md:gap-3 md:overflow-x-auto pb-4 -mx-1 px-1">
           {KANBAN_COLUMNS.map((status) => (
-            <div key={status} className="shrink-0 w-[260px] sm:w-[280px]">
+            <div key={status} className="w-full md:shrink-0 md:w-[280px]">
               <div className={`rounded-xl border border-border/80 bg-card shadow-sm border-t-4 ${KANBAN_COLORS[status]}`}>
                 <div className="flex items-center justify-between px-3 py-2.5 border-b border-border/80 bg-muted/20">
                   <h3 className="text-xs font-semibold uppercase tracking-wider text-foreground">
@@ -269,7 +293,7 @@ export default function JobCardsPage() {
                     {kanbanData[status]?.length ?? 0}
                   </span>
                 </div>
-                <div className="p-2 space-y-2 max-h-[calc(100vh-260px)] overflow-y-auto">
+                <div className="p-2 space-y-2 md:max-h-[calc(100vh-260px)] md:overflow-y-auto">
                   {(kanbanData[status] ?? []).length === 0 ? (
                     <div className="flex flex-col items-center justify-center gap-1 py-10 text-xs text-muted-foreground">
                       <span>No jobs in this stage</span>
@@ -301,7 +325,8 @@ export default function JobCardsPage() {
               </div>
             </div>
           ))}
-        </div>
+          </div>
+        </>
       )}
     </div>
   );

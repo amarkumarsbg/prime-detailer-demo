@@ -4,7 +4,32 @@ import { useState, useMemo, useRef, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
-import { ArrowLeft, Check, FileText, User, Car, Camera, Upload, X, ImageIcon, Trash2, ChevronLeft, ChevronRight, GripVertical, MessageCircle, ArrowLeftRight, Clock, Lock, AlertTriangle, Sparkles } from "lucide-react";
+import {
+  ArrowLeft,
+  Check,
+  FileText,
+  User,
+  Car,
+  Camera,
+  Upload,
+  X,
+  ImageIcon,
+  Trash2,
+  ChevronLeft,
+  ChevronRight,
+  MessageCircle,
+  ArrowLeftRight,
+  Clock,
+  Lock,
+  AlertTriangle,
+  Sparkles,
+  DollarSign,
+  LayoutGrid,
+  ListChecks,
+  Phone,
+  Mail,
+  CalendarDays,
+} from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { Breadcrumbs } from "@/components/shared/breadcrumbs";
 import { JobCardStatusBadge } from "@/components/shared/status-badge";
@@ -18,6 +43,8 @@ import { Progress } from "@/components/ui/progress";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -28,14 +55,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useJobCardStore } from "@/store/job-card-store";
+import { useCustomerStore } from "@/store/customer-store";
 import { useInvoiceStore } from "@/store/invoice-store";
 import { useInventoryStore } from "@/store/inventory-store";
 import { useStaffStore } from "@/store/staff-store";
 import { useHighEndServiceStore } from "@/store/high-end-service-store";
 import { useReminderStore } from "@/store/reminder-store";
 import { createOrGetInvoiceForJob } from "@/lib/invoice-from-job-card";
-import { formatDate, formatCurrency } from "@/lib/utils";
+import { formatDate, formatCurrency, cn } from "@/lib/utils";
 import { pushActivityLog } from "@/lib/activity-log-helper";
 import type { JobCard, JobCardStatus, ServiceItem, InspectionPhoto, MechanicSwitchLog } from "@/types";
 
@@ -85,11 +114,17 @@ export default function JobCardDetailPage() {
   const router = useRouter();
   const id = params.id as string;
   const { jobCards, updateJobCard } = useJobCardStore();
+  const customers = useCustomerStore((s) => s.customers);
   const staff = useStaffStore((s) => s.staff);
 
   const jobCard = useMemo(
     () => jobCards.find((jc) => jc.id === id),
     [jobCards, id]
+  );
+
+  const customerRecord = useMemo(
+    () => (jobCard ? customers.find((c) => c.id === jobCard.customerId) : undefined),
+    [customers, jobCard?.customerId]
   );
 
   const invoices = useInvoiceStore((s) => s.invoices);
@@ -118,6 +153,14 @@ export default function JobCardDetailPage() {
   const [switchLog, setSwitchLog] = useState<MechanicSwitchLog[]>(jobCard?.mechanicSwitchLog ?? []);
   const [showSwitchDialog, setShowSwitchDialog] = useState(false);
   const [showQuickAssignDialog, setShowQuickAssignDialog] = useState(false);
+  const [beforePhotoRequiredOpen, setBeforePhotoRequiredOpen] = useState(false);
+  const beforePhotoModalInputRef = useRef<HTMLInputElement>(null);
+  const beforePhotoModalCameraRef = useRef<HTMLInputElement>(null);
+  const [afterPhotoRequiredOpen, setAfterPhotoRequiredOpen] = useState(false);
+  const afterPhotoModalInputRef = useRef<HTMLInputElement>(null);
+  const afterPhotoModalCameraRef = useRef<HTMLInputElement>(null);
+  const [serviceChecklistRequiredOpen, setServiceChecklistRequiredOpen] = useState(false);
+  const [qualityCheckRequiredOpen, setQualityCheckRequiredOpen] = useState(false);
   const [quickAssignMechanicId, setQuickAssignMechanicId] = useState("");
   const [switchToMechanicId, setSwitchToMechanicId] = useState("");
   const [switchReason, setSwitchReason] = useState("");
@@ -125,6 +168,7 @@ export default function JobCardDetailPage() {
   const [qualityCheckDone, setQualityCheckDone] = useState(
     () => jobCard?.qualityCheckCompleted ?? false
   );
+  const [detailTab, setDetailTab] = useState("overview");
   const [highEndFollowUpById, setHighEndFollowUpById] = useState<Record<string, number>>({});
 
   const prevJobIdRef = useRef<string | null>(null);
@@ -339,6 +383,7 @@ export default function JobCardDetailPage() {
   >([]);
 
   const photosToShow = displayPhotos.length > 0 ? displayPhotos : inspectionPhotos;
+  const detailPhotoCount = photosToShow.length;
 
   const hasBeforePhoto = useMemo(
     () => photosToShow.some((p) => p.type === "BEFORE"),
@@ -364,6 +409,7 @@ export default function JobCardDetailPage() {
     return "BEFORE";
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const photoTabCameraInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!jobCard || jobCard.id !== id) return;
@@ -409,17 +455,15 @@ export default function JobCardDetailPage() {
     if (photoTab === "COMPARE" && !canCompare) setPhotoTab("BEFORE");
   }, [photoTab, canCompare]);
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0 || displayPhotos.length > 0) return;
-    if (photoTab === "COMPARE") return;
-    if (photoTab === "BEFORE" && !canUploadBefore) {
+  const appendInspectionPhotosFromFiles = (files: FileList | null, type: "BEFORE" | "AFTER"): boolean => {
+    if (!files || files.length === 0 || displayPhotos.length > 0) return false;
+    if (type === "BEFORE" && !canUploadBefore) {
       toast.error("Before photos can only be uploaded during inspection / in service");
-      return;
+      return false;
     }
-    if (photoTab === "AFTER" && !canUploadAfter) {
+    if (type === "AFTER" && !canUploadAfter) {
       toast.error("Mark quality check complete first, then upload After photos");
-      return;
+      return false;
     }
 
     Array.from(files).forEach((file) => {
@@ -430,14 +474,32 @@ export default function JobCardDetailPage() {
         {
           id: `ph-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
           url,
-          type: photoTab,
+          type,
           label: name,
         },
       ]);
     });
 
     toast.success(`${files.length} photo${files.length > 1 ? "s" : ""} added`);
+    return true;
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (photoTab === "COMPARE") {
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+    appendInspectionPhotosFromFiles(e.target.files, photoTab);
     if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const handlePhotoTabCameraFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (photoTab === "COMPARE") {
+      if (photoTabCameraInputRef.current) photoTabCameraInputRef.current.value = "";
+      return;
+    }
+    appendInspectionPhotosFromFiles(e.target.files, photoTab);
+    if (photoTabCameraInputRef.current) photoTabCameraInputRef.current.value = "";
   };
 
   const [viewingPhoto, setViewingPhoto] = useState<string | null>(null);
@@ -544,7 +606,8 @@ export default function JobCardDetailPage() {
 
       if (currentStatus === "INSPECTION" && nextStatus === "AWAITING_SERVICE") {
         if (!hasBeforePhoto) {
-          toast.error("Upload at least one Before photo before continuing");
+          setPhotoTab("BEFORE");
+          setBeforePhotoRequiredOpen(true);
           return;
         }
         if (!hasMechanicAssigned) {
@@ -557,18 +620,22 @@ export default function JobCardDetailPage() {
 
       if (currentStatus === "AWAITING_SERVICE" && nextStatus === "QUALITY_CHECK") {
         if (totalCount > 0 && completedCount !== totalCount) {
-          toast.error("Complete all service checklist items before Quality Check");
+          setDetailTab("tasks");
+          setServiceChecklistRequiredOpen(true);
           return;
         }
       }
 
       if (currentStatus === "QUALITY_CHECK" && nextStatus === "READY") {
         if (!qualityCheckDone) {
-          toast.error("Mark quality check as complete first");
+          setDetailTab("tasks");
+          setQualityCheckRequiredOpen(true);
           return;
         }
         if (!hasAfterPhoto) {
-          toast.error("Upload at least one After photo before moving to Ready");
+          setDetailTab("photos");
+          setPhotoTab("AFTER");
+          setAfterPhotoRequiredOpen(true);
           return;
         }
       }
@@ -722,13 +789,61 @@ export default function JobCardDetailPage() {
         { label: jobCard.jobNumber },
       ]} />
 
-      {/* Workflow Progress Bar — scroll horizontally on narrow screens */}
+      {/* Workflow progress: vertical timeline on mobile, horizontal row on sm+ */}
       {currentStatus !== "CANCELLED" && (
         <Card>
           <CardContent className="!pt-6 !pb-5 !px-4 sm:!pt-8 sm:!pb-6 sm:!px-10">
-            <p className="text-xs text-muted-foreground mb-3 sm:hidden">Swipe steps to see full workflow</p>
-            <div className="overflow-x-auto overflow-y-visible -mx-1 px-1 pb-2 sm:mx-0 sm:px-0 sm:pb-0 touch-pan-x [scrollbar-width:thin]">
-              <div className="flex items-center justify-start min-w-max sm:min-w-0 sm:w-full gap-x-2 sm:gap-x-4">
+            <div className="sm:hidden">
+              {WORKFLOW_STATUSES.map((status, index) => {
+                const isLast = index === WORKFLOW_STATUSES.length - 1;
+                const isCompleted =
+                  index < currentStatusIndex ||
+                  (currentStatus === "DELIVERED" && isLast && index === currentStatusIndex);
+                const isCurrent =
+                  index === currentStatusIndex && !(currentStatus === "DELIVERED" && isLast);
+
+                return (
+                  <div key={status} className="flex gap-3">
+                    <div className="flex flex-col items-center shrink-0">
+                      <div
+                        className={`w-9 h-9 rounded-full flex items-center justify-center border-2 transition-colors ${
+                          isCompleted
+                            ? "bg-primary border-primary text-primary-foreground"
+                            : isCurrent
+                              ? "border-primary bg-primary/10 text-primary"
+                              : "border-muted-foreground/30 bg-muted/50 text-muted-foreground"
+                        }`}
+                      >
+                        {isCompleted ? (
+                          <Check className="w-4 h-4" />
+                        ) : (
+                          <span className="text-xs font-medium">{index + 1}</span>
+                        )}
+                      </div>
+                      {!isLast && (
+                        <div
+                          className={`w-0.5 h-6 shrink-0 my-0.5 ${isCompleted ? "bg-primary" : "bg-muted"}`}
+                          aria-hidden
+                        />
+                      )}
+                    </div>
+                    <div className={`min-w-0 pt-1.5 ${isLast ? "pb-0" : "pb-3"}`}>
+                      <span
+                        className={`text-sm leading-snug block ${
+                          isCurrent || (currentStatus === "DELIVERED" && isLast)
+                            ? "font-semibold text-foreground"
+                            : "text-muted-foreground"
+                        }`}
+                      >
+                        {WORKFLOW_LABELS[status]}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="hidden sm:block overflow-x-auto overflow-y-visible sm:mx-0 sm:px-0 sm:pb-0 [scrollbar-width:thin]">
+              <div className="flex items-center justify-start min-w-0 sm:min-w-0 sm:w-full gap-x-4">
                 {WORKFLOW_STATUSES.map((status, index) => {
                   const isLast = index === WORKFLOW_STATUSES.length - 1;
                   const isCompleted =
@@ -739,24 +854,24 @@ export default function JobCardDetailPage() {
 
                   return (
                     <div key={status} className="flex items-center shrink-0">
-                      <div className="flex flex-col items-center w-[5.25rem] sm:w-28 px-1">
+                      <div className="flex flex-col items-center w-28 px-1">
                         <div
-                          className={`w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center border-2 transition-colors ${
+                          className={`w-10 h-10 rounded-full flex items-center justify-center border-2 transition-colors ${
                             isCompleted
                               ? "bg-primary border-primary text-primary-foreground"
                               : isCurrent
-                              ? "border-primary bg-primary/10 text-primary"
-                              : "border-muted-foreground/30 bg-muted/50 text-muted-foreground"
+                                ? "border-primary bg-primary/10 text-primary"
+                                : "border-muted-foreground/30 bg-muted/50 text-muted-foreground"
                           }`}
                         >
                           {isCompleted ? (
-                            <Check className="w-3.5 h-3.5 sm:w-5 sm:h-5" />
+                            <Check className="w-5 h-5" />
                           ) : (
-                            <span className="text-[11px] sm:text-xs font-medium">{index + 1}</span>
+                            <span className="text-xs font-medium">{index + 1}</span>
                           )}
                         </div>
                         <span
-                          className={`text-[10px] sm:text-xs mt-1.5 text-center leading-snug max-w-[5.25rem] sm:max-w-none ${
+                          className={`text-xs mt-1.5 text-center leading-snug ${
                             isCurrent || (currentStatus === "DELIVERED" && isLast)
                               ? "font-semibold text-foreground"
                               : "text-muted-foreground"
@@ -838,96 +953,318 @@ export default function JobCardDetailPage() {
         </Card>
       )}
 
-      {/* Summary */}
+      {/* Job header — competitor-style context row */}
       <Card className="overflow-hidden border-border/80 shadow-sm">
-        <div className="h-1.5 bg-linear-to-r from-primary via-primary/80 to-primary/50" aria-hidden />
-        <CardContent className="pt-6 pb-5">
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-            <div className="space-y-3 min-w-0">
-              <Button variant="ghost" size="sm" className="-ml-2 h-8 text-muted-foreground hover:text-foreground" asChild>
-                <Link href="/job-cards">
-                  <ArrowLeft className="w-4 h-4 mr-1.5" />
-                  All job cards
-                </Link>
-              </Button>
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Job card</p>
-                <h1 className="text-2xl sm:text-3xl font-bold font-mono tracking-tight mt-0.5">
-                  {jobCard.jobNumber}
-                </h1>
-                <div className="flex items-center gap-3 mt-3">
-                  <JobCardStatusBadge status={currentStatus} />
-                </div>
-              </div>
+        <div className="h-1.5 bg-linear-to-r from-emerald-600/90 via-emerald-500/70 to-primary/60" aria-hidden />
+        <CardContent className="pt-5 pb-5 sm:p-6">
+          <Button variant="ghost" size="sm" className="-ml-2 h-8 text-muted-foreground hover:text-foreground mb-2" asChild>
+            <Link href="/job-cards">
+              <ArrowLeft className="w-4 h-4 mr-1.5" />
+              All job cards
+            </Link>
+          </Button>
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Job card</p>
+          <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-3 mt-1">
+            <h1 className="text-2xl sm:text-3xl font-bold font-mono tracking-tight">
+              {jobCard.jobNumber}
+            </h1>
+            <JobCardStatusBadge status={currentStatus} />
+          </div>
+          <div className="mt-4 flex flex-wrap gap-x-8 gap-y-2 text-sm">
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <CalendarDays className="w-4 h-4 shrink-0 text-emerald-600/90" />
+              <span>{formatDate(jobCard.createdAt)}</span>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-4 text-sm lg:max-w-2xl lg:shrink-0">
-              <div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Created</p>
-                <p className="font-semibold mt-1">{formatDate(jobCard.createdAt)}</p>
-              </div>
-              <div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Expected delivery</p>
-                <p className="font-semibold mt-1">{formatDate(jobCard.expectedDelivery)}</p>
-              </div>
-              <div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Mechanic</p>
-                <div className="flex items-center gap-1.5 mt-1">
-                  <p className="font-semibold">{currentMechanicName ?? "—"}</p>
-                  {currentStatus !== "DELIVERED" && currentStatus !== "CANCELLED" && (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        currentMechanicName ? setShowSwitchDialog(true) : setShowQuickAssignDialog(true)
-                      }
-                      className="text-primary hover:text-primary/80 transition-colors"
-                      title={currentMechanicName ? "Switch mechanic" : "Assign mechanic"}
-                    >
-                      <ArrowLeftRight className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
-              </div>
-              <div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Estimate</p>
-                <p className="font-semibold mt-1 tabular-nums">{formatCurrency(jobCard.estimatedAmount)}</p>
-              </div>
-              <div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Incentive</p>
-                <p className="font-semibold mt-1 tabular-nums">
-                  {jobCard.incentivePercent}% ({formatCurrency(jobCard.incentiveAmount)})
-                </p>
-              </div>
-              <div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Segment</p>
-                <p className="font-semibold mt-1">{jobCard.vehicleSegment.replace(/_/g, " ")}</p>
-              </div>
+            <div className="flex items-center gap-2 min-w-0">
+              <User className="w-4 h-4 shrink-0 text-muted-foreground" />
+              <span className="font-medium text-foreground truncate">{jobCard.customerName}</span>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card className="border-border/80 shadow-sm">
-          <CardHeader className="pb-3 border-b border-border/60 bg-muted/20">
-            <CardTitle className="text-base">Customer</CardTitle>
-          </CardHeader>
-          <CardContent className="pt-4">
-            <p className="font-semibold">{jobCard.customerName}</p>
-            <p className="text-sm text-muted-foreground mt-1">{jobCard.customerPhone}</p>
-          </CardContent>
+      <Tabs value={detailTab} onValueChange={setDetailTab} className="space-y-0">
+        <Card className="border-border/80 shadow-sm overflow-hidden">
+          <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-1 px-2 sm:px-4 py-2 border-b border-border/70 bg-muted/25">
+            <TabsList className="w-full xl:w-auto justify-start rounded-none border-0 bg-transparent p-0 h-auto gap-0 overflow-x-auto scrollbar-none flex flex-nowrap">
+              <TabsTrigger
+                value="overview"
+                className={cn(
+                  "rounded-none border-b-2 border-transparent bg-transparent shadow-none px-3 py-2.5 gap-2 text-muted-foreground",
+                  "data-[state=active]:border-emerald-600 data-[state=active]:text-emerald-800 data-[state=active]:bg-transparent",
+                  "dark:data-[state=active]:text-emerald-400"
+                )}
+              >
+                <LayoutGrid className="w-4 h-4 shrink-0" />
+                Overview
+              </TabsTrigger>
+              <TabsTrigger
+                value="tasks"
+                className={cn(
+                  "rounded-none border-b-2 border-transparent bg-transparent shadow-none px-3 py-2.5 gap-2 text-muted-foreground",
+                  "data-[state=active]:border-emerald-600 data-[state=active]:text-emerald-800 data-[state=active]:bg-transparent",
+                  "dark:data-[state=active]:text-emerald-400"
+                )}
+              >
+                <ListChecks className="w-4 h-4 shrink-0" />
+                Tasks
+                <span className="text-xs tabular-nums opacity-70">({totalCount})</span>
+              </TabsTrigger>
+              <TabsTrigger
+                value="notes"
+                className={cn(
+                  "rounded-none border-b-2 border-transparent bg-transparent shadow-none px-3 py-2.5 gap-2 text-muted-foreground",
+                  "data-[state=active]:border-emerald-600 data-[state=active]:text-emerald-800 data-[state=active]:bg-transparent",
+                  "dark:data-[state=active]:text-emerald-400"
+                )}
+              >
+                <MessageCircle className="w-4 h-4 shrink-0" />
+                Notes
+              </TabsTrigger>
+              <TabsTrigger
+                value="timeline"
+                className={cn(
+                  "rounded-none border-b-2 border-transparent bg-transparent shadow-none px-3 py-2.5 gap-2 text-muted-foreground",
+                  "data-[state=active]:border-emerald-600 data-[state=active]:text-emerald-800 data-[state=active]:bg-transparent",
+                  "dark:data-[state=active]:text-emerald-400"
+                )}
+              >
+                <Clock className="w-4 h-4 shrink-0" />
+                Timeline
+              </TabsTrigger>
+              <TabsTrigger
+                value="photos"
+                className={cn(
+                  "rounded-none border-b-2 border-transparent bg-transparent shadow-none px-3 py-2.5 gap-2 text-muted-foreground",
+                  "data-[state=active]:border-emerald-600 data-[state=active]:text-emerald-800 data-[state=active]:bg-transparent",
+                  "dark:data-[state=active]:text-emerald-400"
+                )}
+              >
+                <Camera className="w-4 h-4 shrink-0" />
+                Photos
+                <span className="text-xs tabular-nums opacity-70">({detailPhotoCount})</span>
+              </TabsTrigger>
+            </TabsList>
+            <div className="flex flex-wrap items-center gap-2 shrink-0 px-1 pb-2 xl:pb-0 xl:border-l border-border/60 xl:pl-4">
+              {invoiceForJob ? (
+                <Button size="sm" className="bg-emerald-600 hover:bg-emerald-600/90" asChild>
+                  <Link href={`/billing/${invoiceForJob.id}`}>
+                    <DollarSign className="w-4 h-4 mr-1.5" />
+                    Record payment
+                  </Link>
+                </Button>
+              ) : currentStatus === "DELIVERED" ? (
+                <Button
+                  size="sm"
+                  className="bg-emerald-600 hover:bg-emerald-600/90"
+                  type="button"
+                  onClick={handleGenerateInvoice}
+                >
+                  <DollarSign className="w-4 h-4 mr-1.5" />
+                  Generate invoice
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-dashed text-muted-foreground"
+                  disabled
+                  title="Invoice is available after the job is marked delivered."
+                >
+                  <DollarSign className="w-4 h-4 mr-1.5" />
+                  Billing
+                </Button>
+              )}
+              {currentStatus !== "DELIVERED" &&
+                currentStatus !== "CANCELLED" &&
+                !hasMechanicAssigned && (
+                  <Button size="sm" variant="secondary" type="button" onClick={() => setShowQuickAssignDialog(true)}>
+                    <User className="w-4 h-4 mr-1.5" />
+                    Assign mechanic
+                  </Button>
+                )}
+            </div>
+          </div>
         </Card>
-        <Card className="border-border/80 shadow-sm">
-          <CardHeader className="pb-3 border-b border-border/60 bg-muted/20">
-            <CardTitle className="text-base">Vehicle</CardTitle>
-          </CardHeader>
-          <CardContent className="pt-4">
-            <p className="font-semibold font-mono tracking-wide">{jobCard.vehicleRegNumber}</p>
-            <p className="text-sm text-muted-foreground mt-1">{jobCard.vehicleMakeModel}</p>
-          </CardContent>
-        </Card>
-      </div>
 
-      {/* Service Checklist Card */}
+        <TabsContent value="overview" className="mt-4 space-y-4 outline-none">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+            <div className="lg:col-span-5 space-y-4">
+              <Card className="border-border/80 shadow-sm">
+                <CardHeader className="pb-3 border-b border-border/60 bg-muted/20">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <User className="w-4 h-4 text-muted-foreground" />
+                    Customer details
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="pt-4 space-y-4">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Name</p>
+                    <p className="font-semibold mt-0.5">{jobCard.customerName}</p>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <Phone className="w-4 h-4 mt-0.5 text-muted-foreground shrink-0" />
+                    <div>
+                      <p className="text-xs text-muted-foreground">Phone</p>
+                      <p className="font-medium mt-0.5 tabular-nums">{jobCard.customerPhone}</p>
+                    </div>
+                  </div>
+                  {customerRecord?.email ? (
+                    <div className="flex items-start gap-3">
+                      <Mail className="w-4 h-4 mt-0.5 text-muted-foreground shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-xs text-muted-foreground">Email</p>
+                        <p className="font-medium mt-0.5 truncate">{customerRecord.email}</p>
+                      </div>
+                    </div>
+                  ) : null}
+                </CardContent>
+              </Card>
+              <Card className="border-border/80 shadow-sm">
+                <CardHeader className="pb-3 border-b border-border/60 bg-muted/20">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Car className="w-4 h-4 text-muted-foreground" />
+                    Vehicle
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="pt-4 space-y-3">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Registration</p>
+                    <p className="font-semibold font-mono tracking-wide mt-0.5">{jobCard.vehicleRegNumber}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Model</p>
+                    <p className="font-medium mt-0.5">{jobCard.vehicleMakeModel}</p>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card className="border-border/80 shadow-sm">
+                <CardHeader className="pb-3 border-b border-border/60 bg-muted/20">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <CalendarDays className="w-4 h-4 text-muted-foreground" />
+                    Schedule
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="pt-4 space-y-3 text-sm">
+                  <div className="flex justify-between gap-4">
+                    <span className="text-muted-foreground">Created</span>
+                    <span className="font-medium">{formatDate(jobCard.createdAt)}</span>
+                  </div>
+                  <div className="flex justify-between gap-4">
+                    <span className="text-muted-foreground">Expected delivery</span>
+                    <span className="font-medium">{formatDate(jobCard.expectedDelivery)}</span>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+            <div className="lg:col-span-7 space-y-4">
+              <Card className="border-border/80 shadow-sm">
+                <CardHeader className="pb-3 border-b border-border/60 bg-muted/15">
+                  <CardTitle className="text-base">Job summary</CardTitle>
+                </CardHeader>
+                <CardContent className="pt-4 grid sm:grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <p className="text-xs text-muted-foreground uppercase tracking-wide">Estimate</p>
+                    <p className="font-semibold mt-1 tabular-nums">{formatCurrency(jobCard.estimatedAmount)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground uppercase tracking-wide">Incentive</p>
+                    <p className="font-semibold mt-1 tabular-nums">
+                      {jobCard.incentivePercent}% ({formatCurrency(jobCard.incentiveAmount)})
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground uppercase tracking-wide">Segment</p>
+                    <p className="font-semibold mt-1">{jobCard.vehicleSegment.replace(/_/g, " ")}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground uppercase tracking-wide">Mechanic</p>
+                    <div className="flex items-center gap-1.5 mt-1">
+                      <p className="font-semibold">{currentMechanicName ?? "—"}</p>
+                      {currentStatus !== "DELIVERED" && currentStatus !== "CANCELLED" && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            currentMechanicName ? setShowSwitchDialog(true) : setShowQuickAssignDialog(true)
+                          }
+                          className="text-primary hover:text-primary/80 transition-colors p-1"
+                          title={currentMechanicName ? "Switch mechanic" : "Assign mechanic"}
+                        >
+                          <ArrowLeftRight className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+              {invoiceForJob ? (
+                <Card className="border-emerald-200/80 dark:border-emerald-900/50 bg-emerald-50/40 dark:bg-emerald-950/20 shadow-sm">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <FileText className="w-4 h-4 text-emerald-700 dark:text-emerald-400" />
+                      Billing
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <p className="text-sm text-muted-foreground">
+                      Invoice <span className="font-mono font-medium text-foreground">{invoiceForJob.invoiceNumber}</span>
+                    </p>
+                    <Button size="sm" className="bg-emerald-600 hover:bg-emerald-600/90 shrink-0" asChild>
+                      <Link href={`/billing/${invoiceForJob.id}`}>
+                        Open billing &amp; payments
+                      </Link>
+                    </Button>
+                  </CardContent>
+                </Card>
+              ) : null}
+              <Card className="border-border/80 shadow-sm">
+                <CardHeader className="pb-3 border-b border-border/60 bg-muted/15">
+                  <CardTitle className="text-base">Quick actions</CardTitle>
+                </CardHeader>
+                <CardContent className="flex flex-wrap gap-2">
+                  <Button variant="outline" size="sm" type="button" onClick={handleWhatsAppNotify}>
+                    <MessageCircle className="w-4 h-4 mr-1.5" />
+                    WhatsApp
+                  </Button>
+                  {jobCard.quotationId && (
+                    <Link href={`/billing?quotationId=${jobCard.quotationId}`}>
+                      <Button variant="outline" size="sm" type="button">
+                        <FileText className="w-4 h-4 mr-1.5" />
+                        Quotation
+                      </Button>
+                    </Link>
+                  )}
+                  <Link href={`/customers/${jobCard.customerId}`}>
+                    <Button variant="outline" size="sm" type="button">
+                      <User className="w-4 h-4 mr-1.5" />
+                      Customer
+                    </Button>
+                  </Link>
+                  <Link href={`/vehicles/${jobCard.vehicleId}`}>
+                    <Button variant="outline" size="sm" type="button">
+                      <Car className="w-4 h-4 mr-1.5" />
+                      Vehicle
+                    </Button>
+                  </Link>
+                </CardContent>
+              </Card>
+              {jobCard.termsAndConditions ? (
+                <Card className="border-border/80 shadow-sm">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base">Terms &amp; conditions</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm whitespace-pre-wrap text-muted-foreground leading-relaxed">
+                      {jobCard.termsAndConditions}
+                    </p>
+                  </CardContent>
+                </Card>
+              ) : null}
+            </div>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="tasks" className="mt-4 space-y-4 outline-none">
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Service Checklist</CardTitle>
@@ -1081,7 +1418,9 @@ export default function JobCardDetailPage() {
         </Card>
       )}
 
-      {/* Inspection Photos */}
+        </TabsContent>
+
+        <TabsContent value="photos" className="mt-4 space-y-4 outline-none">
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -1221,17 +1560,37 @@ export default function JobCardDetailPage() {
                 {displayPhotos.length === 0 &&
                   ((photoTab === "BEFORE" && canUploadBefore) ||
                     (photoTab === "AFTER" && canUploadAfter)) && (
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-border min-h-[220px] hover:border-primary/50 hover:bg-primary/5 transition-colors text-muted-foreground hover:text-primary"
-                    >
-                      <Upload className="w-7 h-7 mb-2" />
-                      <span className="text-sm font-medium">
-                        Upload {photoTab === "BEFORE" ? "Before" : "After"} Photo
-                      </span>
-                    </button>
+                    <div className="col-span-full grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-xl mx-auto w-full">
+                      <button
+                        type="button"
+                        onClick={() => photoTabCameraInputRef.current?.click()}
+                        className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-border min-h-[180px] sm:min-h-[220px] hover:border-primary/50 hover:bg-primary/5 transition-colors text-muted-foreground hover:text-primary"
+                      >
+                        <Camera className="w-7 h-7 mb-2" />
+                        <span className="text-sm font-medium">Take photo</span>
+                        <span className="text-xs mt-1 text-center px-2">Opens camera on your phone</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-border min-h-[180px] sm:min-h-[220px] hover:border-primary/50 hover:bg-primary/5 transition-colors text-muted-foreground hover:text-primary"
+                      >
+                        <Upload className="w-7 h-7 mb-2" />
+                        <span className="text-sm font-medium">
+                          Upload {photoTab === "BEFORE" ? "Before" : "After"}
+                        </span>
+                        <span className="text-xs mt-1 text-center px-2">Gallery or multiple files</span>
+                      </button>
+                    </div>
                   )}
+                <input
+                  ref={photoTabCameraInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="hidden"
+                  onChange={handlePhotoTabCameraFiles}
+                />
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -1310,10 +1669,15 @@ export default function JobCardDetailPage() {
         </CardContent>
       </Card>
 
-      {/* Notes Section */}
+        </TabsContent>
+
+        <TabsContent value="notes" className="mt-4 space-y-4 outline-none">
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Notes</CardTitle>
+          <CardTitle className="text-base flex items-center gap-2">
+            <MessageCircle className="w-4 h-4 text-muted-foreground" />
+            Notes &amp; details
+          </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           {notes && (
@@ -1336,7 +1700,9 @@ export default function JobCardDetailPage() {
         </CardContent>
       </Card>
 
-      {/* Mechanic Assignment & Time Tracking */}
+        </TabsContent>
+
+        <TabsContent value="timeline" className="mt-4 space-y-4 outline-none">
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -1474,6 +1840,348 @@ export default function JobCardDetailPage() {
         </CardContent>
       </Card>
 
+        </TabsContent>
+      </Tabs>
+
+      <Dialog
+        open={beforePhotoRequiredOpen}
+        onOpenChange={(open) => {
+          setBeforePhotoRequiredOpen(open);
+          if (!open) {
+            if (beforePhotoModalInputRef.current) beforePhotoModalInputRef.current.value = "";
+            if (beforePhotoModalCameraRef.current) beforePhotoModalCameraRef.current.value = "";
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-lg max-h-[90dvh] flex flex-col gap-0 p-0 overflow-hidden">
+          <DialogHeader className="px-6 pt-6 pb-2 shrink-0 text-left">
+            <DialogTitle>Before photos required</DialogTitle>
+            <DialogDescription>
+              Add at least one &quot;Before&quot; inspection photo to move this job from Inspection to In Service.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="px-6 pb-4 min-h-0 flex-1 overflow-y-auto space-y-4">
+            <input
+              ref={beforePhotoModalCameraRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={(e) => {
+                appendInspectionPhotosFromFiles(e.target.files, "BEFORE");
+                if (beforePhotoModalCameraRef.current) beforePhotoModalCameraRef.current.value = "";
+              }}
+            />
+            <input
+              ref={beforePhotoModalInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                appendInspectionPhotosFromFiles(e.target.files, "BEFORE");
+                if (beforePhotoModalInputRef.current) beforePhotoModalInputRef.current.value = "";
+              }}
+            />
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => beforePhotoModalCameraRef.current?.click()}
+                disabled={displayPhotos.length > 0 || !canUploadBefore}
+                className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-border min-h-[120px] px-2 py-4 text-muted-foreground hover:border-primary/50 hover:bg-primary/5 hover:text-primary transition-colors disabled:pointer-events-none disabled:opacity-50"
+              >
+                <Camera className="w-7 h-7 mb-2" />
+                <span className="text-xs font-medium text-center">Take photo</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => beforePhotoModalInputRef.current?.click()}
+                disabled={displayPhotos.length > 0 || !canUploadBefore}
+                className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-border min-h-[120px] px-2 py-4 text-muted-foreground hover:border-primary/50 hover:bg-primary/5 hover:text-primary transition-colors disabled:pointer-events-none disabled:opacity-50"
+              >
+                <Upload className="w-7 h-7 mb-2" />
+                <span className="text-xs font-medium text-center">Upload photos</span>
+              </button>
+            </div>
+            {photosToShow.filter((p) => p.type === "BEFORE").length > 0 ? (
+              <div className="grid grid-cols-2 gap-2">
+                {photosToShow
+                  .filter((p) => p.type === "BEFORE")
+                  .map((photo) => (
+                    <div key={photo.id} className="rounded-lg border overflow-hidden bg-muted/30">
+                      <img src={photo.url} alt={photo.label} className="w-full aspect-4/3 object-cover" />
+                      <div className="flex items-center justify-between px-2 py-1.5 border-t text-xs">
+                        <span className="truncate font-medium">{photo.label}</span>
+                        {displayPhotos.length === 0 && (
+                          <button
+                            type="button"
+                            className="text-destructive font-medium shrink-0"
+                            onClick={() => handleRemovePhoto(photo.id)}
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground text-center">No Before photos yet — use the upload area above.</p>
+            )}
+          </div>
+          <DialogFooter className="px-6 py-4 border-t bg-muted/20 shrink-0 flex-col-reverse sm:flex-row sm:justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => setBeforePhotoRequiredOpen(false)}>
+              Not now
+            </Button>
+            <Button
+              type="button"
+              className="bg-emerald-600 hover:bg-emerald-600/90"
+              onClick={() => {
+                if (!photosToShow.some((p) => p.type === "BEFORE")) {
+                  toast.error("Add at least one Before photo first");
+                  return;
+                }
+                setBeforePhotoRequiredOpen(false);
+                window.setTimeout(() => handleUpdateStatus(), 0);
+              }}
+            >
+              Continue — update status
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={afterPhotoRequiredOpen}
+        onOpenChange={(open) => {
+          setAfterPhotoRequiredOpen(open);
+          if (!open) {
+            if (afterPhotoModalInputRef.current) afterPhotoModalInputRef.current.value = "";
+            if (afterPhotoModalCameraRef.current) afterPhotoModalCameraRef.current.value = "";
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-lg max-h-[90dvh] flex flex-col gap-0 p-0 overflow-hidden">
+          <DialogHeader className="px-6 pt-6 pb-2 shrink-0 text-left">
+            <DialogTitle>After photos required</DialogTitle>
+            <DialogDescription>
+              Add at least one &quot;After&quot; inspection photo to move this job from Quality Check to Ready. QC must already be
+              marked complete (which unlocks After uploads).
+            </DialogDescription>
+          </DialogHeader>
+          <div className="px-6 pb-4 min-h-0 flex-1 overflow-y-auto space-y-4">
+            <input
+              ref={afterPhotoModalCameraRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={(e) => {
+                appendInspectionPhotosFromFiles(e.target.files, "AFTER");
+                if (afterPhotoModalCameraRef.current) afterPhotoModalCameraRef.current.value = "";
+              }}
+            />
+            <input
+              ref={afterPhotoModalInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                appendInspectionPhotosFromFiles(e.target.files, "AFTER");
+                if (afterPhotoModalInputRef.current) afterPhotoModalInputRef.current.value = "";
+              }}
+            />
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => afterPhotoModalCameraRef.current?.click()}
+                disabled={displayPhotos.length > 0 || !canUploadAfter}
+                className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-border min-h-[120px] px-2 py-4 text-muted-foreground hover:border-primary/50 hover:bg-primary/5 hover:text-primary transition-colors disabled:pointer-events-none disabled:opacity-50"
+              >
+                <Camera className="w-7 h-7 mb-2" />
+                <span className="text-xs font-medium text-center">Take photo</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => afterPhotoModalInputRef.current?.click()}
+                disabled={displayPhotos.length > 0 || !canUploadAfter}
+                className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-border min-h-[120px] px-2 py-4 text-muted-foreground hover:border-primary/50 hover:bg-primary/5 hover:text-primary transition-colors disabled:pointer-events-none disabled:opacity-50"
+              >
+                <Upload className="w-7 h-7 mb-2" />
+                <span className="text-xs font-medium text-center">Upload photos</span>
+              </button>
+            </div>
+            {!canUploadAfter && (
+              <p className="text-xs text-amber-700 dark:text-amber-500 text-center">
+                After uploads are locked until quality check is completed.
+              </p>
+            )}
+            {photosToShow.filter((p) => p.type === "AFTER").length > 0 ? (
+              <div className="grid grid-cols-2 gap-2">
+                {photosToShow
+                  .filter((p) => p.type === "AFTER")
+                  .map((photo) => (
+                    <div key={photo.id} className="rounded-lg border overflow-hidden bg-muted/30">
+                      <img src={photo.url} alt={photo.label} className="w-full aspect-4/3 object-cover" />
+                      <div className="flex items-center justify-between px-2 py-1.5 border-t text-xs">
+                        <span className="truncate font-medium">{photo.label}</span>
+                        {displayPhotos.length === 0 && (
+                          <button
+                            type="button"
+                            className="text-destructive font-medium shrink-0"
+                            onClick={() => handleRemovePhoto(photo.id)}
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground text-center">
+                No After photos yet — use the upload area above.
+              </p>
+            )}
+          </div>
+          <DialogFooter className="px-6 py-4 border-t bg-muted/20 shrink-0 flex-col-reverse sm:flex-row sm:justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => setAfterPhotoRequiredOpen(false)}>
+              Not now
+            </Button>
+            <Button
+              type="button"
+              className="bg-emerald-600 hover:bg-emerald-600/90"
+              onClick={() => {
+                if (!photosToShow.some((p) => p.type === "AFTER")) {
+                  toast.error("Add at least one After photo first");
+                  return;
+                }
+                setAfterPhotoRequiredOpen(false);
+                window.setTimeout(() => handleUpdateStatus(), 0);
+              }}
+            >
+              Continue — update status
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={serviceChecklistRequiredOpen}
+        onOpenChange={setServiceChecklistRequiredOpen}
+      >
+        <DialogContent className="sm:max-w-lg max-h-[90dvh] flex flex-col gap-0 p-0 overflow-hidden">
+          <DialogHeader className="px-6 pt-6 pb-2 shrink-0 text-left">
+            <DialogTitle>Complete service checklist</DialogTitle>
+            <DialogDescription>
+              Mark every service line as done before moving from In Service to Quality Check ({completedCount} of {totalCount}{" "}
+              completed).
+            </DialogDescription>
+          </DialogHeader>
+          <div className="px-6 pb-4 min-h-0 flex-1 overflow-y-auto space-y-3">
+            <Progress value={progressPercent} className="h-2" />
+            {serviceItems.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">No services on this job card.</p>
+            ) : (
+              <div className="space-y-2">
+                {serviceItems.map((item) => (
+                  <div
+                    key={item.id}
+                    className="flex items-center justify-between gap-3 rounded-lg border bg-muted/30 p-3"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <Checkbox
+                        id={`checklist-gate-${item.id}`}
+                        checked={item.isCompleted}
+                        onCheckedChange={() => toggleServiceComplete(item.id)}
+                      />
+                      <label htmlFor={`checklist-gate-${item.id}`} className="min-w-0 cursor-pointer select-none">
+                        <p
+                          className={`font-medium text-sm ${item.isCompleted ? "line-through text-muted-foreground" : ""}`}
+                        >
+                          {item.name}
+                        </p>
+                        <p className="text-xs text-muted-foreground tabular-nums">
+                          {new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(item.price)}
+                        </p>
+                      </label>
+                    </div>
+                    {item.isCompleted ? (
+                      <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400 shrink-0">Done</span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground shrink-0">Pending</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <DialogFooter className="px-6 py-4 border-t bg-muted/20 shrink-0 flex-col-reverse sm:flex-row sm:justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => setServiceChecklistRequiredOpen(false)}>
+              Not now
+            </Button>
+            <Button
+              type="button"
+              className="bg-emerald-600 hover:bg-emerald-600/90"
+              onClick={() => {
+                if (totalCount > 0 && completedCount !== totalCount) {
+                  toast.error("Complete every checklist item first");
+                  return;
+                }
+                setServiceChecklistRequiredOpen(false);
+                window.setTimeout(() => handleUpdateStatus(), 0);
+              }}
+            >
+              Continue — update status
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={qualityCheckRequiredOpen} onOpenChange={setQualityCheckRequiredOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader className="text-left">
+            <DialogTitle>Quality check required</DialogTitle>
+            <DialogDescription>
+              Confirm QC before moving from Quality Check to Ready. After photos stay locked until this is checked.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex items-start gap-3 rounded-lg border bg-muted/30 p-3">
+            <Checkbox
+              id="qc-complete-gate"
+              checked={qualityCheckDone}
+              onCheckedChange={(v) => handleQualityCheckChange(v === true)}
+            />
+            <label htmlFor="qc-complete-gate" className="text-sm leading-tight cursor-pointer select-none">
+              <span className="font-medium">Quality check completed</span>
+              <p className="text-muted-foreground mt-1 text-xs">
+                Confirm the work meets your standards.
+              </p>
+            </label>
+          </div>
+          <DialogFooter className="flex-col-reverse sm:flex-row sm:justify-end gap-2 sm:gap-0">
+            <Button type="button" variant="outline" onClick={() => setQualityCheckRequiredOpen(false)}>
+              Not now
+            </Button>
+            <Button
+              type="button"
+              className="bg-emerald-600 hover:bg-emerald-600/90"
+              onClick={() => {
+                if (!qualityCheckDone) {
+                  toast.error("Tick Quality check completed first");
+                  return;
+                }
+                setQualityCheckRequiredOpen(false);
+                window.setTimeout(() => handleUpdateStatus(), 0);
+              }}
+            >
+              Continue — update status
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Quick assign mechanic (no scroll — same page top) */}
       <Dialog
         open={showQuickAssignDialog}
@@ -1575,74 +2283,6 @@ export default function JobCardDetailPage() {
           </div>
         </DialogContent>
       </Dialog>
-
-      {/* Terms & Conditions */}
-      {jobCard.termsAndConditions && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Terms & Conditions</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm whitespace-pre-wrap text-muted-foreground">
-              {jobCard.termsAndConditions}
-            </p>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Quick Actions */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Quick Actions</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={handleWhatsAppNotify}>
-            <MessageCircle className="w-4 h-4 mr-2" />
-            Send WhatsApp Notification
-          </Button>
-          {jobCard.quotationId && (
-            <Link href={`/billing?quotationId=${jobCard.quotationId}`}>
-              <Button variant="outline">
-                <FileText className="w-4 h-4 mr-2" />
-                View Quotation
-              </Button>
-            </Link>
-          )}
-          {currentStatus === "DELIVERED" ? (
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleGenerateInvoice}
-              title="Creates the invoice if needed and opens it to print or record payment."
-            >
-              <FileText className="w-4 h-4 mr-2" />
-              {invoiceForJob ? "View invoice" : "Generate invoice"}
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              variant="outline"
-              disabled
-              title="Mark the job as Delivered in the workflow above, then generate the invoice."
-            >
-              <FileText className="w-4 h-4 mr-2" />
-              Generate invoice
-            </Button>
-          )}
-          <Link href={`/customers/${jobCard.customerId}`}>
-            <Button variant="outline">
-              <User className="w-4 h-4 mr-2" />
-              View Customer
-            </Button>
-          </Link>
-          <Link href={`/vehicles/${jobCard.vehicleId}`}>
-            <Button variant="outline">
-              <Car className="w-4 h-4 mr-2" />
-              View Vehicle
-            </Button>
-          </Link>
-        </CardContent>
-      </Card>
     </div>
   );
 }

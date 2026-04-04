@@ -1,6 +1,7 @@
 @import "tailwindcss";
 
-@custom-variant dark (&:is(.dark *));
+/* Class on <html> from next-themes; must match .dark itself and descendants (Tailwind v4 + next-themes). */
+@custom-variant dark (&:where(.dark, .dark *));
 
 @theme inline {
   --color-background: var(--background);
@@ -35,6 +36,7 @@
 }
 
 :root {
+  color-scheme: light;
   --background: #ffffff;
   --foreground: #0f172a;
   --card: #ffffff;
@@ -69,6 +71,7 @@
 }
 
 .dark {
+  color-scheme: dark;
   --background: #0f172a;
   --foreground: #f8fafc;
   --card: #1e293b;
