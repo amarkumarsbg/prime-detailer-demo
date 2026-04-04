@@ -28,6 +28,24 @@ const toneIconClass: Record<KPICardTone, string> = {
   rose: "bg-rose-50 text-rose-600 dark:bg-rose-950/50 dark:text-rose-400",
 };
 
+/** Full-card wash: top-left tint → light / card base (accounting-style KPI tiles). */
+const toneSurfaceClass: Record<KPICardTone, string> = {
+  emerald:
+    "border-emerald-200/65 bg-gradient-to-br from-emerald-100 via-white to-background shadow-sm shadow-emerald-900/[0.04] dark:border-emerald-800/55 dark:from-emerald-950/45 dark:via-card dark:to-card dark:shadow-none",
+  blue:
+    "border-blue-200/65 bg-gradient-to-br from-blue-100 via-white to-background shadow-sm shadow-blue-900/[0.04] dark:border-blue-800/55 dark:from-blue-950/45 dark:via-card dark:to-card dark:shadow-none",
+  amber:
+    "border-amber-200/65 bg-gradient-to-br from-amber-100 via-white to-background shadow-sm shadow-amber-900/[0.04] dark:border-amber-800/55 dark:from-amber-950/45 dark:via-card dark:to-card dark:shadow-none",
+  violet:
+    "border-violet-200/65 bg-gradient-to-br from-violet-100 via-white to-background shadow-sm shadow-violet-900/[0.04] dark:border-violet-800/55 dark:from-violet-950/45 dark:via-card dark:to-card dark:shadow-none",
+  orange:
+    "border-orange-200/65 bg-gradient-to-br from-orange-100 via-white to-background shadow-sm shadow-orange-900/[0.04] dark:border-orange-800/55 dark:from-orange-950/45 dark:via-card dark:to-card dark:shadow-none",
+  slate:
+    "border-slate-200/70 bg-gradient-to-br from-slate-100 via-white to-background shadow-sm dark:border-slate-700/60 dark:from-slate-900/50 dark:via-card dark:to-card dark:shadow-none",
+  rose:
+    "border-rose-200/65 bg-gradient-to-br from-rose-100 via-white to-background shadow-sm shadow-rose-900/[0.04] dark:border-rose-800/55 dark:from-rose-950/45 dark:via-card dark:to-card dark:shadow-none",
+};
+
 interface KPICardProps {
   title: string;
   value: string | number;
@@ -57,8 +75,10 @@ export function KPICard({
   return (
     <Card
       className={cn(
-        "flex h-full min-h-0 flex-col hover:shadow-md transition-shadow",
+        "flex h-full min-h-0 flex-col transition-shadow hover:shadow-md",
+        tone ? toneSurfaceClass[tone] : undefined,
         isFeatured &&
+          !tone &&
           "border-emerald-200/70 shadow-sm dark:border-emerald-900/60",
         className
       )}

@@ -257,21 +257,25 @@ export default function BillingPage() {
           title="Total Revenue"
           value={formatCurrency(kpis.totalRevenue)}
           icon={IndianRupee}
+          tone="emerald"
         />
         <KPICard
           title="Outstanding"
           value={formatCurrency(kpis.outstanding)}
           icon={TrendingUp}
+          tone="rose"
         />
         <KPICard
           title="Invoices This Month"
           value={kpis.thisMonth}
           icon={FileText}
+          tone="blue"
         />
         <KPICard
           title="Average Invoice Value"
           value={formatCurrency(kpis.avgValue)}
           icon={Receipt}
+          tone="violet"
         />
       </div>
 
