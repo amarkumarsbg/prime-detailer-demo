@@ -292,17 +292,19 @@ export function Sidebar() {
             <button
               type="button"
               onClick={handleMobileLogout}
-              className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium text-rose-400 hover:bg-rose-500/10 hover:text-rose-300 transition-colors"
+              className="flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-[13px] font-medium text-rose-400 hover:bg-rose-500/10 hover:text-rose-300 transition-colors"
             >
-              <LogOut className="w-4 h-4 shrink-0" />
-              Log out
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center" aria-hidden>
+                <LogOut className="w-4 h-4" />
+              </span>
+              <span className="truncate min-w-0">Log out</span>
             </button>
             <Link
               href="/profile"
               onClick={() => setMobileOpen(false)}
-              className="flex items-center gap-3 rounded-lg px-2.5 py-2 text-[13px] font-medium text-[var(--sidebar-foreground)] hover:bg-cyan-400/[0.08] transition-colors"
+              className="flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-[13px] font-medium text-[var(--sidebar-foreground)] hover:bg-cyan-400/[0.08] transition-colors"
             >
-              <Avatar className="w-9 h-9 shrink-0 border border-cyan-500/20">
+              <Avatar className="h-9 w-9 shrink-0 border border-cyan-500/20">
                 <AvatarFallback className="bg-primary text-primary-foreground text-xs font-semibold">
                   {getInitials(user.name)}
                 </AvatarFallback>
