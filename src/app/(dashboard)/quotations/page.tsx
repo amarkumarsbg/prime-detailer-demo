@@ -96,7 +96,7 @@ const SEGMENT_OPTIONS: { value: VehicleSegment; label: string }[] = [
 function getServicePrice(serviceId: string, segment: VehicleSegment): number {
   const svc = serviceCatalog.find((s) => s.id === serviceId);
   if (!svc) return 0;
-  const price = svc.segmentPricing[segment];
+  const price = svc.segmentPricing[segment as keyof typeof svc.segmentPricing];
   return price ?? svc.defaultPrice;
 }
 

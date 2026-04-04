@@ -1,8 +1,10 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { serviceCatalog } from "@/lib/mock-data";
 import type { ServiceCatalogItem, SegmentPricing } from "@/types";
+import { useServiceCatalogStore } from "@/store/service-catalog-store";
+import { AddAddonDialog } from "@/components/services/add-addon-dialog";
+import { AddServicePackageDialog } from "@/components/services/add-service-package-dialog";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,7 +20,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import {
   Select,
@@ -59,6 +60,7 @@ const SEGMENT_LABELS: Record<keyof SegmentPricing, string> = {
   LUXURY: "Luxury",
   MUV: "MUV",
   COMPACT_SUV: "Compact SUV",
+  BIKE: "Bike",
 };
 
 const SEGMENT_KEYS = Object.keys(SEGMENT_LABELS) as (keyof SegmentPricing)[];
@@ -112,8 +114,10 @@ function formToService(base: ServiceCatalogItem, form: EditFormState): ServiceCa
 }
 
 export default function ServicesPage() {
-  const [catalog, setCatalog] = useState<ServiceCatalogItem[]>(() => [...serviceCatalog]);
+  const catalog = useServiceCatalogStore((s) => s.catalog);
+  const setCatalog = useServiceCatalogStore((s) => s.setCatalog);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [addonDialogOpen, setAddonDialogOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<ServiceCatalogItem | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [editForm, setEditForm] = useState<EditFormState | null>(null);
@@ -121,10 +125,14 @@ export default function ServicesPage() {
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [extraCategories, setExtraCategories] = useState<string[]>([]);
 
   const categories = useMemo(
-    () => Array.from(new Set(catalog.map((s) => s.category))).sort(),
-    [catalog]
+    () =>
+      Array.from(new Set([...catalog.map((s) => s.category), ...extraCategories])).sort((a, b) =>
+        a.localeCompare(b)
+      ),
+    [catalog, extraCategories]
   );
 
   const filtered = useMemo(() => {
@@ -143,12 +151,6 @@ export default function ServicesPage() {
     }
     return result;
   }, [catalog, search, categoryFilter]);
-
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    toast.success("Service added successfully");
-    setDialogOpen(false);
-  };
 
   const handleSaveEdit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -180,126 +182,30 @@ export default function ServicesPage() {
           title="Service Catalog"
           description="Manage your service offerings and pricing"
           actions={
-            <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-              <DialogTrigger asChild>
-                <Button>
-                  <Plus className="w-4 h-4 mr-2" />
-                  Add Service
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
-                <DialogHeader>
-                  <DialogTitle>Add Service</DialogTitle>
-                  <DialogDescription>
-                    Add a new service to the catalog.
-                  </DialogDescription>
-                </DialogHeader>
-                <form onSubmit={handleSubmit} className="space-y-4 mt-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="svc-name">Service Name</Label>
-                    <Input
-                      id="svc-name"
-                      placeholder="e.g. Oil Change"
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="svc-desc">Description</Label>
-                    <Input
-                      id="svc-desc"
-                      placeholder="Brief description"
-                      required
-                    />
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="svc-category">Category</Label>
-                      <Select required>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select category" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {categories.map((c) => (
-                            <SelectItem key={c} value={c}>
-                              {c}
-                            </SelectItem>
-                          ))}
-                          <SelectItem value="__new">+ New Category</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="svc-price">Base Price (₹)</Label>
-                      <Input
-                        id="svc-price"
-                        type="number"
-                        placeholder="0"
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Segment Pricing (₹)</Label>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-3 rounded-lg bg-muted/50">
-                      {SEGMENT_KEYS.map((seg) => (
-                        <div key={seg} className="space-y-1">
-                          <Label
-                            htmlFor={`seg-${seg}`}
-                            className="text-xs text-muted-foreground"
-                          >
-                            {SEGMENT_LABELS[seg]}
-                          </Label>
-                          <Input
-                            id={`seg-${seg}`}
-                            type="number"
-                            placeholder="0"
-                            min={0}
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-4">
-                    <div className="flex items-center space-x-2">
-                      <Checkbox id="svc-high-end" />
-                      <Label
-                        htmlFor="svc-high-end"
-                        className="text-sm font-medium cursor-pointer"
-                      >
-                        High-end service
-                      </Label>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Label htmlFor="svc-incentive" className="text-sm">
-                        Incentive %
-                      </Label>
-                      <Input
-                        id="svc-incentive"
-                        type="number"
-                        placeholder="0"
-                        min={0}
-                        max={100}
-                        step={0.5}
-                        className="w-20"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex justify-end gap-2 pt-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setDialogOpen(false)}
-                    >
-                      Cancel
-                    </Button>
-                    <Button type="submit">Add Service</Button>
-                  </div>
-                </form>
-              </DialogContent>
-            </Dialog>
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                className="border-border"
+                onClick={() => setAddonDialogOpen(true)}
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Add Add-on
+              </Button>
+              <AddAddonDialog open={addonDialogOpen} onOpenChange={setAddonDialogOpen} />
+              <AddServicePackageDialog
+                open={dialogOpen}
+                onOpenChange={setDialogOpen}
+                extraCategories={extraCategories}
+                setExtraCategories={setExtraCategories}
+                trigger={
+                  <Button className="bg-emerald-600 hover:bg-emerald-700">
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add Service Package
+                  </Button>
+                }
+              />
+            </>
           }
         />
 

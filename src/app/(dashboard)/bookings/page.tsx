@@ -272,7 +272,7 @@ export default function BookingsPage() {
               <span className="hidden sm:inline">Refresh</span>
             </Button>
             <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 shrink-0" asChild>
-              <Link href="/job-cards/new">
+              <Link href="/bookings/walk-in">
                 <Plus className="w-4 h-4 mr-2" />
                 Create booking
               </Link>

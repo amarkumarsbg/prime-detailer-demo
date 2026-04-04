@@ -8,7 +8,14 @@ export type UserRole =
   | "RECEPTIONIST"
   | "MECHANIC";
 
-export type VehicleSegment = "HATCHBACK" | "SEDAN" | "SUV" | "LUXURY" | "MUV" | "COMPACT_SUV";
+export type VehicleSegment =
+  | "HATCHBACK"
+  | "SEDAN"
+  | "SUV"
+  | "LUXURY"
+  | "MUV"
+  | "COMPACT_SUV"
+  | "BIKE";
 
 export type JobCardStatus =
   | "RECEIVED"
@@ -151,6 +158,7 @@ export interface SegmentPricing {
   LUXURY: number;
   MUV: number;
   COMPACT_SUV: number;
+  BIKE: number;
 }
 
 export interface ServiceConsumption {
@@ -167,12 +175,20 @@ export interface ServiceCatalogItem {
   defaultPrice: number;
   segmentPricing: SegmentPricing;
   category: string;
+  /** When true, listed in booking “Select Add-ons” and omitted from the main service grid */
+  isAddon?: boolean;
   isActive: boolean;
   isHighEnd: boolean;
   incentivePercent: number;
   reminderInterval?: string;
   reminderDurationMonths?: number;
   consumptionProfile?: ServiceConsumption[];
+  /** Estimated service duration (minutes) */
+  durationMinutes?: number;
+  /** Upper bound for duration range (e.g. 40–50 min) */
+  maxDurationMinutes?: number;
+  gstApplicable?: boolean;
+  gstPercent?: number;
 }
 
 export interface ServiceItem {

@@ -1,6 +1,7 @@
 "use client";
 
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
 import type { User, Branch } from "@/types";
 import { ALL_BRANCHES_BRANCH } from "@/lib/all-branches";
 
@@ -34,36 +35,48 @@ const mockBranch: Branch = {
   qrCodeId: "qr-br-001",
 };
 
-export const useAuthStore = create<AuthState>((set) => ({
-  user: null,
-  currentBranch: null,
-  isAuthenticated: false,
-
-  login: (email: string, _password: string) => {
-    if (email) {
-      const canOrgWide =
-        mockUser.role === "SUPER_ADMIN" ||
-        mockUser.role === "ADMIN" ||
-        mockUser.role === "MANAGER";
-      set({
-        user: mockUser,
-        currentBranch: canOrgWide ? ALL_BRANCHES_BRANCH : mockBranch,
-        isAuthenticated: true,
-      });
-      return true;
-    }
-    return false;
-  },
-
-  logout: () => {
-    set({
+export const useAuthStore = create<AuthState>()(
+  persist(
+    (set) => ({
       user: null,
       currentBranch: null,
       isAuthenticated: false,
-    });
-  },
 
-  setBranch: (branch: Branch) => {
-    set({ currentBranch: branch });
-  },
-}));
+      login: (email: string, _password: string) => {
+        if (email) {
+          const canOrgWide =
+            mockUser.role === "SUPER_ADMIN" ||
+            mockUser.role === "ADMIN" ||
+            mockUser.role === "MANAGER";
+          set({
+            user: mockUser,
+            currentBranch: canOrgWide ? ALL_BRANCHES_BRANCH : mockBranch,
+            isAuthenticated: true,
+          });
+          return true;
+        }
+        return false;
+      },
+
+      logout: () => {
+        set({
+          user: null,
+          currentBranch: null,
+          isAuthenticated: false,
+        });
+      },
+
+      setBranch: (branch: Branch) => {
+        set({ currentBranch: branch });
+      },
+    }),
+    {
+      name: "prime-detailers-auth",
+      partialize: (state) => ({
+        user: state.user,
+        currentBranch: state.currentBranch,
+        isAuthenticated: state.isAuthenticated,
+      }),
+    }
+  )
+);

@@ -1,22 +1,33 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/auth-store";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated } = useAuthStore();
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const router = useRouter();
+  const [authReady, setAuthReady] = useState(false);
 
   useEffect(() => {
+    if (useAuthStore.persist.hasHydrated()) {
+      setAuthReady(true);
+      return;
+    }
+    const unsub = useAuthStore.persist.onFinishHydration(() => setAuthReady(true));
+    return unsub;
+  }, []);
+
+  useEffect(() => {
+    if (!authReady) return;
     if (!isAuthenticated) {
       router.push("/login");
     }
-  }, [isAuthenticated, router]);
+  }, [authReady, isAuthenticated, router]);
 
-  if (!isAuthenticated) {
+  if (!authReady || !isAuthenticated) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
@@ -25,11 +36,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    <div className="h-[100dvh] max-h-screen min-h-0 overflow-hidden bg-background">
+    <div className="fixed inset-0 z-0 flex flex-col overflow-hidden bg-background">
       <Sidebar />
-      <div className="flex min-h-0 min-w-0 flex-col pl-0 transition-all duration-300 md:pl-[260px] h-[100dvh] max-h-screen">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden pl-0 transition-[padding] duration-300 md:pl-[260px]">
         <Header />
-        <main className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-6">
+        <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain p-4 md:p-6 [scrollbar-gutter:stable]">
           {children}
         </main>
       </div>
