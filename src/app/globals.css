@@ -137,4 +137,29 @@ body {
       linear-gradient(90deg, rgba(255, 255, 255, 0.4) 1px, transparent 1px);
     background-size: 40px 40px;
   }
+
+  /**
+   * Native <input type="date"> draws its picker on the inline-start side on some UIs.
+   * Anchor it to the trailing edge; pair with padding-inline-end on the input (e.g. pr-9).
+   */
+  .date-input-icon-end {
+    position: relative;
+  }
+  .date-input-icon-end::-webkit-calendar-picker-indicator {
+    position: absolute;
+    inset-inline-end: 0.5rem;
+    top: 50%;
+    transform: translateY(-50%);
+    margin: 0;
+    cursor: pointer;
+    display: block;
+  }
+  .date-input-icon-end::-moz-calendar-picker-indicator {
+    position: absolute;
+    inset-inline-end: 0.5rem;
+    top: 50%;
+    transform: translateY(-50%);
+    margin: 0;
+    cursor: pointer;
+  }
 }

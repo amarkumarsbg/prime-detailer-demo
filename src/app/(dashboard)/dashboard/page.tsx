@@ -12,7 +12,7 @@ import { isAllBranchesScope } from "@/lib/all-branches";
 import { useInventoryStore } from "@/store/inventory-store";
 import { useCustomerStore } from "@/store/customer-store";
 import { getStockStatus } from "@/lib/inventory-units";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { cn, formatCurrency, formatDate } from "@/lib/utils";
 import {
   Car,
   CarFront,
@@ -755,73 +755,106 @@ export default function DashboardPage() {
         <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 pb-4">
           <CardTitle className="text-base font-semibold">Recent Bookings</CardTitle>
           <Button variant="default" size="sm" className="bg-emerald-600 hover:bg-emerald-700" asChild>
-            <Link href="/job-cards">View All Bookings</Link>
+            <Link href="/bookings">View All Bookings</Link>
           </Button>
         </CardHeader>
-        <CardContent className="pt-0 overflow-x-auto">
-          <table className="w-full min-w-[720px] border-collapse text-sm">
-            <thead>
-              <tr className="border-b bg-muted/40 text-left">
-                <th className="px-3 py-3.5 align-middle font-semibold whitespace-nowrap">ID</th>
-                <th className="px-3 py-3.5 align-middle font-semibold">Customer</th>
-                <th className="px-3 py-3.5 align-middle font-semibold">Service</th>
-                <th className="px-3 py-3.5 align-middle font-semibold whitespace-nowrap">Booking Date</th>
-                <th className="px-3 py-3.5 align-middle font-semibold whitespace-nowrap">Booked On</th>
-                <th className="px-3 py-3.5 align-middle font-semibold whitespace-nowrap">Price</th>
-                <th className="px-3 py-3.5 align-middle font-semibold min-w-[140px] w-[9rem]">Status</th>
-                <th className="px-3 py-3.5 align-middle font-semibold">Branch</th>
-                <th className="px-3 py-3.5 align-middle font-semibold text-center w-24">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {recentBookings.slice(0, 10).map((jc, i) => (
-                <tr
-                  key={jc.id}
-                  className={cnRow(i)}
-                >
-                  <td className="px-3 py-3.5 align-middle font-mono text-xs whitespace-nowrap">
-                    {jc.jobNumber}
-                  </td>
-                  <td className="px-3 py-3.5 align-middle font-medium max-w-[140px]">{jc.customerName}</td>
-                  <td className="px-3 py-3.5 align-middle text-muted-foreground max-w-[200px]">
-                    {jc.services[0]?.name ?? "—"}
-                  </td>
-                  <td className="px-3 py-3.5 align-middle whitespace-nowrap text-muted-foreground">
-                    {formatDate(jc.createdAt)}
-                  </td>
-                  <td className="px-3 py-3.5 align-middle whitespace-nowrap text-muted-foreground">
-                    {formatDate(jc.createdAt)}
-                  </td>
-                  <td className="px-3 py-3.5 align-middle whitespace-nowrap tabular-nums">
-                    {formatCurrency(jc.estimatedAmount)}
-                  </td>
-                  <td className="px-3 py-3.5 align-middle">
-                    <JobCardStatusBadge
-                      status={jc.status}
-                      className="whitespace-nowrap shrink-0"
-                    />
-                  </td>
-                  <td className="px-3 py-3.5 align-middle text-muted-foreground max-w-[180px]">
-                    {branchNameById[jc.branchId] ?? jc.branchId}
-                  </td>
-                  <td className="px-3 py-3.5 align-middle text-center">
-                    <div className="inline-flex items-center justify-center gap-1">
-                      <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
-                        <Link href={`/job-cards/${jc.id}`} aria-label="Open job card">
-                          <ClipboardList className="w-4 h-4" />
-                        </Link>
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
-                        <Link href={`/job-cards/${jc.id}`} aria-label="View job card">
-                          <Eye className="w-4 h-4" />
-                        </Link>
-                      </Button>
-                    </div>
-                  </td>
+        <CardContent className="pt-0">
+          <div className="md:hidden space-y-2">
+            {recentBookings.slice(0, 10).map((jc, i) => (
+              <div
+                key={jc.id}
+                className={cn(
+                  "rounded-lg border border-border/80 p-3 text-sm",
+                  i % 2 === 0 ? "bg-background" : "bg-muted/25"
+                )}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <span className="font-mono text-xs font-semibold text-primary">{jc.jobNumber}</span>
+                  <JobCardStatusBadge status={jc.status} className="shrink-0 whitespace-nowrap text-[10px]" />
+                </div>
+                <p className="font-medium mt-1.5 leading-tight">{jc.customerName}</p>
+                <p className="text-xs text-muted-foreground mt-1">{jc.services[0]?.name ?? "—"}</p>
+                <dl className="mt-2.5 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
+                  <dt className="text-muted-foreground">Booked</dt>
+                  <dd className="text-foreground">{formatDate(jc.createdAt)}</dd>
+                  <dt className="text-muted-foreground">Price</dt>
+                  <dd className="text-foreground tabular-nums font-medium">{formatCurrency(jc.estimatedAmount)}</dd>
+                  <dt className="text-muted-foreground">Branch</dt>
+                  <dd className="text-foreground min-w-0 truncate">{branchNameById[jc.branchId] ?? jc.branchId}</dd>
+                </dl>
+                <div className="flex items-center justify-end gap-1 mt-3 pt-2 border-t border-border/80">
+                  <Button variant="outline" size="sm" className="h-8" asChild>
+                    <Link href={`/job-cards/${jc.id}`}>
+                      <ClipboardList className="w-3.5 h-3.5 mr-1.5" />
+                      Open
+                    </Link>
+                  </Button>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" asChild>
+                    <Link href={`/job-cards/${jc.id}`} aria-label="View job card">
+                      <Eye className="w-4 h-4" />
+                    </Link>
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="hidden md:block overflow-x-auto">
+            <table className="w-full min-w-[720px] border-collapse text-sm">
+              <thead>
+                <tr className="border-b bg-muted/40 text-left">
+                  <th className="px-3 py-3.5 align-middle font-semibold whitespace-nowrap">ID</th>
+                  <th className="px-3 py-3.5 align-middle font-semibold">Customer</th>
+                  <th className="px-3 py-3.5 align-middle font-semibold">Service</th>
+                  <th className="px-3 py-3.5 align-middle font-semibold whitespace-nowrap">Booking Date</th>
+                  <th className="px-3 py-3.5 align-middle font-semibold whitespace-nowrap">Booked On</th>
+                  <th className="px-3 py-3.5 align-middle font-semibold whitespace-nowrap">Price</th>
+                  <th className="px-3 py-3.5 align-middle font-semibold min-w-[140px] w-[9rem]">Status</th>
+                  <th className="px-3 py-3.5 align-middle font-semibold">Branch</th>
+                  <th className="px-3 py-3.5 align-middle font-semibold text-center w-24">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {recentBookings.slice(0, 10).map((jc, i) => (
+                  <tr key={jc.id} className={cnRow(i)}>
+                    <td className="px-3 py-3.5 align-middle font-mono text-xs whitespace-nowrap">{jc.jobNumber}</td>
+                    <td className="px-3 py-3.5 align-middle font-medium max-w-[140px]">{jc.customerName}</td>
+                    <td className="px-3 py-3.5 align-middle text-muted-foreground max-w-[200px]">
+                      {jc.services[0]?.name ?? "—"}
+                    </td>
+                    <td className="px-3 py-3.5 align-middle whitespace-nowrap text-muted-foreground">
+                      {formatDate(jc.createdAt)}
+                    </td>
+                    <td className="px-3 py-3.5 align-middle whitespace-nowrap text-muted-foreground">
+                      {formatDate(jc.createdAt)}
+                    </td>
+                    <td className="px-3 py-3.5 align-middle whitespace-nowrap tabular-nums">
+                      {formatCurrency(jc.estimatedAmount)}
+                    </td>
+                    <td className="px-3 py-3.5 align-middle">
+                      <JobCardStatusBadge status={jc.status} className="whitespace-nowrap shrink-0" />
+                    </td>
+                    <td className="px-3 py-3.5 align-middle text-muted-foreground max-w-[180px]">
+                      {branchNameById[jc.branchId] ?? jc.branchId}
+                    </td>
+                    <td className="px-3 py-3.5 align-middle text-center">
+                      <div className="inline-flex items-center justify-center gap-1">
+                        <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
+                          <Link href={`/job-cards/${jc.id}`} aria-label="Open job card">
+                            <ClipboardList className="w-4 h-4" />
+                          </Link>
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
+                          <Link href={`/job-cards/${jc.id}`} aria-label="View job card">
+                            <Eye className="w-4 h-4" />
+                          </Link>
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </CardContent>
       </Card>
     </div>

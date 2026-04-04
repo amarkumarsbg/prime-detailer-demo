@@ -21,6 +21,7 @@ import {
   UserCog,
   Package,
   Calendar,
+  CalendarCheck,
   BarChart3,
   Banknote,
   History,
@@ -54,6 +55,7 @@ function navSectionSlug(label: string): string {
 /** Sidebar navigation clears dashboard drill-down filters (alerts use `setActiveFilter` before routing). */
 const SIDEBAR_CLEAR_FILTER_HREFS = new Set([
   "/job-cards",
+  "/bookings",
   "/inventory",
   "/customers",
   "/billing",
@@ -66,6 +68,7 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     items: [
       { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
       { label: "Job Cards", href: "/job-cards", icon: ClipboardList },
+      { label: "Bookings", href: "/bookings", icon: CalendarCheck },
       { label: "Quotations", href: "/quotations", icon: FileText },
       { label: "Appointments", href: "/appointments", icon: Calendar },
     ],

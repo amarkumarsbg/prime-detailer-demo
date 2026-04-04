@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Search, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
@@ -25,6 +25,8 @@ interface DataTableProps<T> {
   /** Below `md`, render each row as a card instead of a wide table (no horizontal scroll). */
   renderMobileCard?: (item: T) => React.ReactNode;
   actions?: React.ReactNode;
+  /** Hide built-in search (use when search lives in an external filter bar). */
+  hideSearch?: boolean;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -38,11 +40,16 @@ export function DataTable<T extends Record<string, any>>({
   onRowClick,
   renderMobileCard,
   actions,
+  hideSearch = false,
 }: DataTableProps<T>) {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+
+  useEffect(() => {
+    setPage(0);
+  }, [data]);
 
   const filtered = useMemo(() => {
     if (!search) return data;
@@ -87,18 +94,21 @@ export function DataTable<T extends Record<string, any>>({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="relative flex-1 max-w-full sm:max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            placeholder={searchPlaceholder}
-            value={search}
-            onChange={(e) => { setSearch(e.target.value); setPage(0); }}
-            className="pl-9"
-          />
+      {!hideSearch && (
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="relative flex-1 max-w-full sm:max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              placeholder={searchPlaceholder}
+              value={search}
+              onChange={(e) => { setSearch(e.target.value); setPage(0); }}
+              className="pl-9"
+            />
+          </div>
+          {actions}
         </div>
-        {actions}
-      </div>
+      )}
+      {hideSearch && actions ? <div className="flex justify-end">{actions}</div> : null}
 
       <div className="rounded-xl border border-border overflow-hidden">
         {renderMobileCard && (
