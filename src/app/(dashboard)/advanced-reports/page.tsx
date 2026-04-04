@@ -59,7 +59,7 @@ function ToggleSwitch({ enabled, onToggle }: { enabled: boolean; onToggle: () =>
       onClick={onToggle}
       className={cn(
         "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        enabled ? "bg-emerald-600" : "bg-muted"
+        enabled ? "bg-primary" : "bg-muted"
       )}
       aria-pressed={enabled}
     >
@@ -316,7 +316,7 @@ export default function AdvancedReportsPage() {
                 </Select>
               </div>
               <Button
-                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white"
+                className="w-full"
                 onClick={() => handleGenerateReport("revenue")}
               >
                 <Download className="size-4 mr-2" />
@@ -352,7 +352,7 @@ export default function AdvancedReportsPage() {
                 </Label>
               </div>
               <Button
-                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white"
+                className="w-full"
                 onClick={() => handleGenerateReport("customer")}
               >
                 <Download className="size-4 mr-2" />
@@ -395,7 +395,7 @@ export default function AdvancedReportsPage() {
                 </Select>
               </div>
               <Button
-                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white"
+                className="w-full"
                 onClick={() => handleGenerateReport("lead")}
               >
                 <Download className="size-4 mr-2" />
@@ -436,7 +436,7 @@ export default function AdvancedReportsPage() {
                 </Select>
               </div>
               <Button
-                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white"
+                className="w-full"
                 onClick={() => handleGenerateReport("executive")}
               >
                 <Download className="size-4 mr-2" />
@@ -451,7 +451,6 @@ export default function AdvancedReportsPage() {
             <CardTitle className="text-base">Automated delivery schedules</CardTitle>
             <Button
               type="button"
-              className="bg-emerald-600 hover:bg-emerald-700 text-white"
               onClick={() => setScheduleOpen(true)}
             >
               <Plus className="size-4 mr-2" />
@@ -633,11 +632,7 @@ export default function AdvancedReportsPage() {
             >
               Cancel
             </Button>
-            <Button
-              type="button"
-              className="bg-emerald-600 hover:bg-emerald-700 text-white"
-              onClick={handleCreateSchedule}
-            >
+            <Button type="button" onClick={handleCreateSchedule}>
               Create automation
             </Button>
           </DialogFooter>

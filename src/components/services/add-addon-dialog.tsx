@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Building2 } from "lucide-react";
+import { Globe, Building2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -38,6 +38,7 @@ type AddAddonForm = {
   price: string;
   durationMin: string;
   active: boolean;
+  globalAddon: boolean;
 };
 
 function emptyForm(): AddAddonForm {
@@ -47,6 +48,7 @@ function emptyForm(): AddAddonForm {
     price: "",
     durationMin: "",
     active: true,
+    globalAddon: true,
   };
 }
 
@@ -82,6 +84,10 @@ export function AddAddonDialog({
     const durationMinutes = form.durationMin.trim()
       ? Math.max(0, parseInt(form.durationMin, 10))
       : undefined;
+    if (durationMinutes == null || durationMinutes <= 0) {
+      toast.error("Duration (minutes) is required");
+      return;
+    }
 
     const newItem: ServiceCatalogItem = {
       id: `svc-${Date.now()}`,
@@ -91,10 +97,13 @@ export function AddAddonDialog({
       defaultPrice: price,
       segmentPricing: flatSegmentPrice(price),
       isAddon: true,
+      scope: form.globalAddon ? "GLOBAL" : "BRANCH",
       isActive: form.active,
       isHighEnd: false,
       incentivePercent: 3,
       durationMinutes,
+      gstPercent: 18,
+      gstApplicable: true,
     };
 
     setCatalog((prev) => [newItem, ...prev]);
@@ -133,7 +142,7 @@ export function AddAddonDialog({
               rows={4}
               value={form.description}
               onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-              placeholder="Optional details…"
+              placeholder="What does this add-on include?"
               className="resize-y min-h-[100px]"
             />
           </div>
@@ -141,7 +150,7 @@ export function AddAddonDialog({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="addon-price">
-                Price (₹) <span className="text-destructive">*</span>
+                Price — incl. GST (₹) <span className="text-destructive">*</span>
               </Label>
               <div className="relative">
                 <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-sm pointer-events-none">
@@ -159,31 +168,52 @@ export function AddAddonDialog({
                   required
                 />
               </div>
+              <p className="text-[11px] text-muted-foreground">
+                Enter the price the customer pays. GST is extracted automatically.
+              </p>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="addon-dur">Duration (minutes)</Label>
+              <Label htmlFor="addon-dur">
+                Duration (min) <span className="text-destructive">*</span>
+              </Label>
               <Input
                 id="addon-dur"
                 type="number"
-                min={0}
+                min={1}
                 placeholder="e.g. 30"
                 value={form.durationMin}
                 onChange={(e) => setForm((f) => ({ ...f, durationMin: e.target.value }))}
+                required
               />
             </div>
           </div>
 
-          <div className="rounded-xl border-2 border-sky-200 bg-sky-50/70 px-4 py-3 dark:border-sky-800 dark:bg-sky-950/30">
-            <div className="flex gap-2">
-              <Building2 className="h-5 w-5 shrink-0 text-sky-600 mt-0.5" />
-              <div>
-                <p className="text-sm font-semibold text-sky-950 dark:text-sky-50">
-                  Branch: {currentBranch?.name ?? "Current Branch"}
-                </p>
-                <p className="text-xs text-sky-800/90 dark:text-sky-200/90 mt-1">
-                  This add-on will be assigned to your branch automatically.
-                </p>
-              </div>
+          <div className="flex items-start gap-3 rounded-lg border border-border p-3">
+            <Checkbox
+              id="addon-global"
+              checked={form.globalAddon}
+              onCheckedChange={(c) => setForm((f) => ({ ...f, globalAddon: c === true }))}
+            />
+            <div>
+              <Label htmlFor="addon-global" className="flex items-center gap-2 cursor-pointer font-medium">
+                <Globe className="h-4 w-4 text-blue-600" />
+                Global Add-on (Available to all branches)
+              </Label>
+              {!form.globalAddon && (
+                <div className="mt-3 rounded-xl border-2 border-sky-200 bg-sky-50/70 px-3 py-2 dark:border-sky-800 dark:bg-sky-950/30">
+                  <div className="flex gap-2">
+                    <Building2 className="h-5 w-5 shrink-0 text-sky-600 mt-0.5" />
+                    <div>
+                      <p className="text-sm font-semibold text-sky-950 dark:text-sky-50">
+                        Branch: {currentBranch?.name ?? "Current Branch"}
+                      </p>
+                      <p className="text-xs text-sky-800/90 dark:text-sky-200/90 mt-1">
+                        This add-on applies only to this branch.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -202,7 +232,7 @@ export function AddAddonDialog({
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700">
+            <Button type="submit">
               Create
             </Button>
           </DialogFooter>

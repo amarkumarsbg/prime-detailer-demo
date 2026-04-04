@@ -90,7 +90,7 @@ function performanceDashboardBadge(role: UserRole | undefined): string {
 }
 
 const tabTriggerClass =
-  "shrink-0 gap-1.5 rounded-lg px-3 py-2 text-xs sm:text-sm data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-sm data-[state=inactive]:text-muted-foreground";
+  "shrink-0 gap-1.5 rounded-lg px-3 py-2 text-xs sm:text-sm data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm data-[state=inactive]:text-muted-foreground";
 
 type LeaderboardViewMode = "floor-managers" | "supervisor-teams";
 type LeaderboardSortMetric = "paid" | "jobs" | "rewards" | "efficiency" | "onTime";
@@ -643,11 +643,7 @@ export default function PerformancePage() {
               </SelectContent>
             </Select>
           </div>
-          <Button
-            type="button"
-            className="h-9 bg-emerald-600 hover:bg-emerald-700 text-white"
-            onClick={handleRewardCalc}
-          >
+          <Button type="button" className="h-9" onClick={handleRewardCalc}>
             <Calculator className="size-4 mr-2" />
             Reward Calc
           </Button>

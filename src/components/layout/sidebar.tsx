@@ -24,6 +24,7 @@ import {
   Package,
   Calendar,
   CalendarCheck,
+  Truck,
   BarChart3,
   Banknote,
   History,
@@ -39,6 +40,8 @@ import {
   TrendingUp,
   FileBarChart,
   ChevronDown,
+  Gift,
+  Building2,
 } from "lucide-react";
 
 type NavItem = {
@@ -72,6 +75,7 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
       { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
       { label: "Job Cards", href: "/job-cards", icon: ClipboardList },
       { label: "Bookings", href: "/bookings", icon: CalendarCheck },
+      { label: "Pickup & Drop", href: "/pickup-drop", icon: Truck },
       { label: "Quotations", href: "/quotations", icon: FileText },
       { label: "Appointments", href: "/appointments", icon: Calendar },
     ],
@@ -83,6 +87,7 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
       { label: "Vehicles", href: "/vehicles", icon: Car },
       { label: "Reminders", href: "/reminders", icon: Bell, roles: ["ADMIN", "MANAGER", "RECEPTIONIST"] },
       { label: "Follow-ups", href: "/follow-ups", icon: PhoneCall, roles: ["ADMIN", "MANAGER", "RECEPTIONIST"] },
+      { label: "Referrals", href: "/referrals", icon: Gift, roles: ["ADMIN", "MANAGER"] },
     ],
   },
   {
@@ -120,12 +125,18 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     label: "Workshop",
     items: [
       { label: "Services", href: "/services", icon: Wrench, roles: ["ADMIN", "MANAGER"] },
-      { label: "Inventory", href: "/inventory", icon: Package, roles: ["ADMIN", "MANAGER"] },
+      { label: "Stock Console", href: "/inventory", icon: Package, roles: ["ADMIN", "MANAGER"] },
     ],
   },
   {
     label: "Analytics & admin",
     items: [
+      {
+        label: "Locations",
+        href: "/branches",
+        icon: Building2,
+        roles: ["SUPER_ADMIN", "ADMIN", "MANAGER", "BRANCH_MANAGER"],
+      },
       {
         label: "Performance",
         href: "/performance",

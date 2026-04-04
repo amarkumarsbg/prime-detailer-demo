@@ -27,6 +27,8 @@ import {
   QrCode,
   TrendingUp,
   FileBarChart,
+  Gift,
+  Building2,
 } from "lucide-react";
 
 interface CommandMenuProps {
@@ -49,7 +51,7 @@ const NAV_PAGES: NavPageItem[] = [
   { name: "Vehicles", href: "/vehicles", icon: Car },
   { name: "Staff", href: "/staff", icon: UserCog },
   { name: "Services", href: "/services", icon: Wrench },
-  { name: "Inventory", href: "/inventory", icon: Package },
+  { name: "Stock Console", href: "/inventory", icon: Package },
   { name: "Billing", href: "/billing", icon: Receipt },
   { name: "Appointments", href: "/appointments", icon: Calendar },
   { name: "Attendance", href: "/attendance", icon: QrCode, roles: ["ADMIN", "MANAGER"] },
@@ -67,6 +69,13 @@ const NAV_PAGES: NavPageItem[] = [
     roles: ["ADMIN", "MANAGER", "BRANCH_MANAGER"],
   },
   { name: "Activity Log", href: "/activity", icon: History },
+  { name: "Referrals", href: "/referrals", icon: Gift, roles: ["ADMIN", "MANAGER"] },
+  {
+    name: "Locations",
+    href: "/branches",
+    icon: Building2,
+    roles: ["SUPER_ADMIN", "ADMIN", "MANAGER", "BRANCH_MANAGER"],
+  },
 ];
 
 export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {

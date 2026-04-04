@@ -35,6 +35,8 @@ export const useBranchStore = create<BranchStore>()(
       addBranch: (input) => {
         const list = get().branches;
         const id = input.id ?? nextBranchId(list);
+        const code =
+          input.code?.trim() || `SITE-${id.replace(/^br-/, "").toUpperCase()}`;
         const branch: Branch = {
           id,
           name: input.name.trim(),
@@ -42,6 +44,13 @@ export const useBranchStore = create<BranchStore>()(
           phone: input.phone.trim(),
           isActive: input.isActive ?? true,
           qrCodeId: input.qrCodeId ?? `qr-${id}`,
+          code,
+          city: input.city?.trim() ?? "",
+          state: input.state?.trim() ?? "",
+          pincode: input.pincode?.trim() ?? "",
+          email: input.email?.trim() || undefined,
+          managerName: input.managerName?.trim() || undefined,
+          managerPhone: input.managerPhone?.trim() || undefined,
         };
         set({ branches: [...list, branch] });
         return branch;
@@ -51,10 +60,17 @@ export const useBranchStore = create<BranchStore>()(
         const list = get().branches;
         const i = list.findIndex((b) => b.id === id);
         if (i < 0) return false;
-        const next = { ...list[i], ...updates };
+        const next: Branch = { ...list[i], ...updates };
         if (updates.name !== undefined) next.name = updates.name.trim();
         if (updates.address !== undefined) next.address = updates.address.trim();
         if (updates.phone !== undefined) next.phone = updates.phone.trim();
+        if (updates.code !== undefined) next.code = updates.code.trim();
+        if (updates.city !== undefined) next.city = updates.city.trim();
+        if (updates.state !== undefined) next.state = updates.state.trim();
+        if (updates.pincode !== undefined) next.pincode = updates.pincode.trim();
+        if (updates.email !== undefined) next.email = updates.email.trim() || undefined;
+        if (updates.managerName !== undefined) next.managerName = updates.managerName.trim() || undefined;
+        if (updates.managerPhone !== undefined) next.managerPhone = updates.managerPhone.trim() || undefined;
         set({
           branches: list.map((b) => (b.id === id ? next : b)),
         });
@@ -69,6 +85,6 @@ export const useBranchStore = create<BranchStore>()(
         });
       },
     }),
-    { name: "prime-detailers-branches", version: 1 }
+    { name: "prime-detailers-branches", version: 2 }
   )
 );

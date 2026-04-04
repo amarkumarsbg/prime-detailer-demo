@@ -810,7 +810,7 @@ export default function DashboardPage() {
       <Card>
         <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 pb-4">
           <CardTitle className="text-base font-semibold">Recent Bookings</CardTitle>
-          <Button variant="default" size="sm" className="bg-emerald-600 hover:bg-emerald-700" asChild>
+          <Button variant="default" size="sm" asChild>
             <Link href="/bookings">View All Bookings</Link>
           </Button>
         </CardHeader>

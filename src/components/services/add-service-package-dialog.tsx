@@ -489,7 +489,7 @@ export function AddServicePackageDialog({
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
                 Cancel
               </Button>
-              <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700">
+              <Button type="submit">
                 Create
               </Button>
             </DialogFooter>
@@ -577,12 +577,7 @@ export function AddServicePackageDialog({
               <Button type="button" variant="outline" onClick={() => setCategoryDialogOpen(false)}>
                 Cancel
               </Button>
-              <Button
-                type="submit"
-                className="bg-violet-600 hover:bg-violet-700 text-white"
-              >
-                Create Category
-              </Button>
+              <Button type="submit">Create Category</Button>
             </DialogFooter>
           </form>
         </DialogContent>

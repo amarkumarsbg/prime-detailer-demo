@@ -29,8 +29,13 @@ const mockUser: User = {
 const mockBranch: Branch = {
   id: "br-001",
   name: "Prime Detailers Koramangala",
-  address: "80 Feet Road, Koramangala 4th Block, Bengaluru 560034",
+  code: "PRM-KRM",
+  address: "80 Feet Road, Koramangala 4th Block",
+  city: "Bengaluru",
+  state: "Karnataka",
+  pincode: "560034",
   phone: "+91-80-41234567",
+  email: "krm@primedetailers.in",
   isActive: true,
   qrCodeId: "qr-br-001",
 };

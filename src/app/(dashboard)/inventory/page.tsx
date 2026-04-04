@@ -369,7 +369,7 @@ export default function InventoryPage() {
       });
     }
 
-    toast.success("Part added");
+    toast.success("Catalog item created");
     setAddDialogOpen(false);
     resetAddPartForm();
   };
@@ -377,19 +377,19 @@ export default function InventoryPage() {
   return (
     <div className="space-y-4 sm:space-y-6">
       <PageHeader
-        title="Inventory"
-        description="Track spare parts and stock levels (fluids in ml; shown in litres)"
+        title="Stock Console"
+        description="Spare parts, on-hand levels, and fluid tracking (stored in ml, displayed in litres)"
         actions={
           <div className="flex flex-wrap gap-2">
             <Dialog open={adjustDialogOpen} onOpenChange={setAdjustDialogOpen}>
               <DialogTrigger asChild>
-                <Button variant="outline">Adjust Stock</Button>
+                <Button variant="outline">Adjust quantity</Button>
               </DialogTrigger>
               <DialogContent className="sm:max-w-md">
                 <DialogHeader>
-                  <DialogTitle>Stock Adjustment</DialogTitle>
+                  <DialogTitle>Adjust on-hand quantity</DialogTitle>
                   <DialogDescription>
-                    For fluids, enter amount in millilitres. For pieces, enter units.
+                    Fluids: enter millilitres. Counted parts: enter whole units.
                   </DialogDescription>
                 </DialogHeader>
                 <form onSubmit={handleAdjustSubmit} className="space-y-4 mt-2">
@@ -441,7 +441,7 @@ export default function InventoryPage() {
                     <Button type="button" variant="outline" onClick={() => setAdjustDialogOpen(false)}>
                       Cancel
                     </Button>
-                    <Button type="submit">Confirm</Button>
+                    <Button type="submit">Apply</Button>
                   </div>
                 </form>
               </DialogContent>
@@ -450,14 +450,14 @@ export default function InventoryPage() {
               <DialogTrigger asChild>
                 <Button variant="outline">
                   <Plus className="w-4 h-4 mr-2" />
-                  Record purchase
+                  Log purchase
                 </Button>
               </DialogTrigger>
               <DialogContent className="sm:max-w-md">
                 <DialogHeader>
-                  <DialogTitle>Record product purchase</DialogTitle>
+                  <DialogTitle>Log fluid purchase</DialogTitle>
                   <DialogDescription>
-                    Log vendor, date (now), and quantity in litres. Stock increases in ml internally.
+                    Vendor, timestamp (now), and litres received. Stock updates in millilitres.
                   </DialogDescription>
                 </DialogHeader>
                 <form onSubmit={handlePurchaseSubmit} className="space-y-4 mt-2">
@@ -523,15 +523,14 @@ export default function InventoryPage() {
               <DialogTrigger asChild>
                 <Button>
                   <Plus className="w-4 h-4 mr-2" />
-                  Add Part
+                  New item
                 </Button>
               </DialogTrigger>
               <DialogContent className="sm:max-w-lg">
                 <DialogHeader>
-                  <DialogTitle>Add Part</DialogTitle>
+                  <DialogTitle>New catalog item</DialogTitle>
                   <DialogDescription>
-                    Set stock unit (e.g. Piece, Set) or Litre for fluids — stock list shows quantity with the
-                    same unit.
+                    Choose Piece, Set, Kg, etc., or Litre for fluids — the table shows the same unit you pick.
                   </DialogDescription>
                 </DialogHeader>
                 <form onSubmit={handleAddPartSubmit} className="space-y-4 mt-2">
@@ -652,7 +651,7 @@ export default function InventoryPage() {
                     >
                       Cancel
                     </Button>
-                    <Button type="submit">Add Part</Button>
+                    <Button type="submit">Create item</Button>
                   </div>
                 </form>
               </DialogContent>
@@ -663,7 +662,7 @@ export default function InventoryPage() {
 
       {activeFilter === DASHBOARD_FILTER.LOW_STOCK && (
         <FilterBanner
-          message="⚠ Showing low stock items — below reorder threshold"
+          message="Showing lines at or below reorder — narrow list from the dashboard filter"
           onDismiss={() => setActiveFilter(null)}
         />
       )}
@@ -671,23 +670,23 @@ export default function InventoryPage() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <Card>
           <CardContent className="p-5! flex items-center gap-4">
-            <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-blue-100 dark:bg-blue-900/30">
-              <Package className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+            <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-indigo-100 dark:bg-indigo-900/30">
+              <Package className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
             </div>
             <div>
               <p className="text-2xl font-bold">{totalParts}</p>
-              <p className="text-sm text-muted-foreground">Total Parts</p>
+              <p className="text-sm text-muted-foreground">Catalog lines</p>
             </div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-5! flex items-center gap-4">
-            <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-emerald-100 dark:bg-emerald-900/30">
-              <TrendingUp className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
+            <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-violet-100 dark:bg-violet-900/30">
+              <TrendingUp className="w-6 h-6 text-violet-600 dark:text-violet-400" />
             </div>
             <div>
               <p className="text-2xl font-bold">{formatCurrency(totalValue)}</p>
-              <p className="text-sm text-muted-foreground">Stock Value</p>
+              <p className="text-sm text-muted-foreground">On-hand value</p>
             </div>
           </CardContent>
         </Card>
@@ -698,7 +697,7 @@ export default function InventoryPage() {
             </div>
             <div>
               <p className="text-2xl font-bold">{lowStockCount}</p>
-              <p className="text-sm text-muted-foreground">Low Stock</p>
+              <p className="text-sm text-muted-foreground">Reorder soon</p>
             </div>
           </CardContent>
         </Card>
@@ -709,45 +708,68 @@ export default function InventoryPage() {
             </div>
             <div>
               <p className="text-2xl font-bold">{outOfStockCount}</p>
-              <p className="text-sm text-muted-foreground">Out of Stock</p>
+              <p className="text-sm text-muted-foreground">Unavailable</p>
             </div>
           </CardContent>
         </Card>
       </div>
 
       <Tabs defaultValue="parts">
-        <TabsList>
-          <TabsTrigger value="parts">Parts List</TabsTrigger>
-          <TabsTrigger value="movements">Recent Movements</TabsTrigger>
-          <TabsTrigger value="purchases">Purchases</TabsTrigger>
+        <TabsList className="bg-muted/60">
+          <TabsTrigger
+            value="parts"
+            className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-none"
+          >
+            Catalog
+          </TabsTrigger>
+          <TabsTrigger
+            value="movements"
+            className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-none"
+          >
+            Activity
+          </TabsTrigger>
+          <TabsTrigger
+            value="purchases"
+            className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-none"
+          >
+            Intake
+          </TabsTrigger>
         </TabsList>
         <TabsContent value="parts" className="mt-4 space-y-4">
+          <div className="flex items-center gap-2">
+            <span className="w-1 h-7 shrink-0 rounded-full bg-primary" aria-hidden />
+            <h2 className="text-base font-semibold tracking-tight">Parts catalog</h2>
+          </div>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <Label htmlFor="inventory-stock-filter" className="text-muted-foreground shrink-0">
-              Stock status
+              Availability
             </Label>
             <Select
               value={stockTableFilter}
               onValueChange={(v) => setStockTableFilter(v as StockTableFilter)}
             >
               <SelectTrigger id="inventory-stock-filter" className="w-full sm:w-[220px]">
-                <SelectValue placeholder="All parts" />
+                <SelectValue placeholder="All lines" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All parts</SelectItem>
-                <SelectItem value="low">Low stock</SelectItem>
-                <SelectItem value="out">Out of stock</SelectItem>
+                <SelectItem value="all">All lines</SelectItem>
+                <SelectItem value="low">Below reorder</SelectItem>
+                <SelectItem value="out">None on hand</SelectItem>
               </SelectContent>
             </Select>
           </div>
           <DataTable
             data={partsForTable}
             columns={columns}
-            searchPlaceholder="Search parts..."
+            searchPlaceholder="Search SKU, name, supplier…"
             searchKeys={["name", "sku", "category", "supplier"]}
           />
         </TabsContent>
-        <TabsContent value="movements" className="mt-4">
+        <TabsContent value="movements" className="mt-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <span className="w-1 h-7 shrink-0 rounded-full bg-primary" aria-hidden />
+            <h2 className="text-base font-semibold tracking-tight">Recent stock activity</h2>
+          </div>
           <Card>
             <CardContent className="p-0!">
               <div className="divide-y divide-border">
@@ -760,12 +782,12 @@ export default function InventoryPage() {
                       <div
                         className={`flex items-center justify-center w-10 h-10 rounded-full ${
                           m.type === "IN"
-                            ? "bg-emerald-100 dark:bg-emerald-900/30"
+                            ? "bg-violet-100 dark:bg-violet-900/30"
                             : "bg-red-100 dark:bg-red-900/30"
                         }`}
                       >
                         {m.type === "IN" ? (
-                          <ArrowDownCircle className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+                          <ArrowDownCircle className="w-5 h-5 text-violet-600 dark:text-violet-400" />
                         ) : (
                           <ArrowUpCircle className="w-5 h-5 text-red-600 dark:text-red-400" />
                         )}
@@ -787,12 +809,16 @@ export default function InventoryPage() {
             </CardContent>
           </Card>
         </TabsContent>
-        <TabsContent value="purchases" className="mt-4">
+        <TabsContent value="purchases" className="mt-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <span className="w-1 h-7 shrink-0 rounded-full bg-primary" aria-hidden />
+            <h2 className="text-base font-semibold tracking-tight">Fluid purchases</h2>
+          </div>
           <Card>
             <CardContent className="p-0!">
               <div className="divide-y divide-border">
                 {productPurchases.length === 0 ? (
-                  <p className="p-6 text-sm text-muted-foreground">No purchases recorded.</p>
+                  <p className="p-6 text-sm text-muted-foreground">No intake logged yet.</p>
                 ) : (
                   [...productPurchases]
                     .sort(

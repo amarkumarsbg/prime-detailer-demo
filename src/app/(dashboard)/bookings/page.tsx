@@ -271,7 +271,7 @@ export default function BookingsPage() {
               <RefreshCw className="w-4 h-4 sm:mr-2" />
               <span className="hidden sm:inline">Refresh</span>
             </Button>
-            <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 shrink-0" asChild>
+            <Button size="sm" className="shrink-0" asChild>
               <Link href="/bookings/walk-in">
                 <Plus className="w-4 h-4 mr-2" />
                 Create booking

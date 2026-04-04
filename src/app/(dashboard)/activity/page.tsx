@@ -101,7 +101,7 @@ const ENTITY_LABELS: Record<ActivityEntityType, string> = {
   VEHICLE: "Vehicle",
   INVOICE: "Invoice",
   APPOINTMENT: "Appointment",
-  INVENTORY: "Inventory",
+  INVENTORY: "Stock Console",
   STAFF: "Staff",
   QUOTATION: "Quotation",
   EXPENSE: "Expense",

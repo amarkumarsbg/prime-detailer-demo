@@ -15,6 +15,7 @@ import {
 import { useAuthStore } from "@/store/auth-store";
 import { useBranchStore } from "@/store/branch-store";
 import { canManageOrgBranches } from "@/lib/rbac";
+import Link from "next/link";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
 
@@ -72,7 +73,11 @@ export function BranchesSettings() {
       <CardContent className="space-y-4">
         <p className="text-sm text-muted-foreground">
           Super admins and admins can create branches used across staff, job cards, payroll, and
-          attendance.
+          attendance.{" "}
+          <Link href="/branches" className="text-primary underline-offset-4 hover:underline font-medium">
+            Open location directory
+          </Link>{" "}
+          for full details and edits.
         </p>
         <div className="rounded-lg border divide-y">
           {branches.map((b) => (

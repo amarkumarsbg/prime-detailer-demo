@@ -1067,19 +1067,14 @@ export default function JobCardDetailPage() {
             </TabsList>
             <div className="flex flex-wrap items-center gap-2 shrink-0 px-1 pb-2 xl:pb-0 xl:border-l border-border/60 xl:pl-4">
               {invoiceForJob ? (
-                <Button size="sm" className="bg-emerald-600 hover:bg-emerald-600/90" asChild>
+                <Button size="sm" asChild>
                   <Link href={`/billing/${invoiceForJob.id}`}>
                     <DollarSign className="w-4 h-4 mr-1.5" />
                     Record payment
                   </Link>
                 </Button>
               ) : currentStatus === "DELIVERED" ? (
-                <Button
-                  size="sm"
-                  className="bg-emerald-600 hover:bg-emerald-600/90"
-                  type="button"
-                  onClick={handleGenerateInvoice}
-                >
+                <Button size="sm" type="button" onClick={handleGenerateInvoice}>
                   <DollarSign className="w-4 h-4 mr-1.5" />
                   Generate invoice
                 </Button>
@@ -1229,7 +1224,7 @@ export default function JobCardDetailPage() {
                     <p className="text-sm text-muted-foreground">
                       Invoice <span className="font-mono font-medium text-foreground">{invoiceForJob.invoiceNumber}</span>
                     </p>
-                    <Button size="sm" className="bg-emerald-600 hover:bg-emerald-600/90 shrink-0" asChild>
+                    <Button size="sm" className="shrink-0" asChild>
                       <Link href={`/billing/${invoiceForJob.id}`}>
                         Open billing &amp; payments
                       </Link>
@@ -2010,7 +2005,6 @@ export default function JobCardDetailPage() {
             </Button>
             <Button
               type="button"
-              className="bg-emerald-600 hover:bg-emerald-600/90"
               onClick={() => {
                 if (!photosToShow.some((p) => p.type === "BEFORE")) {
                   toast.error("Add at least one Before photo first");
@@ -2139,7 +2133,6 @@ export default function JobCardDetailPage() {
             </Button>
             <Button
               type="button"
-              className="bg-emerald-600 hover:bg-emerald-600/90"
               onClick={() => {
                 if (!photosToShow.some((p) => p.type === "AFTER")) {
                   toast.error("Add at least one After photo first");
@@ -2228,7 +2221,6 @@ export default function JobCardDetailPage() {
             </Button>
             <Button
               type="button"
-              className="bg-emerald-600 hover:bg-emerald-600/90"
               onClick={() => {
                 if (totalCount > 0 && completedCount !== totalCount) {
                   toast.error("Complete every checklist item first");
@@ -2271,7 +2263,6 @@ export default function JobCardDetailPage() {
             </Button>
             <Button
               type="button"
-              className="bg-emerald-600 hover:bg-emerald-600/90"
               onClick={() => {
                 if (!qualityCheckDone) {
                   toast.error("Tick Quality check completed first");

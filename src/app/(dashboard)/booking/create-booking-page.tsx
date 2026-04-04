@@ -1015,7 +1015,7 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
                       }}
                     />
                   </div>
-                  <Button type="button" className="bg-emerald-600 hover:bg-emerald-700 shrink-0" onClick={runLookup}>
+                  <Button type="button" className="shrink-0" onClick={runLookup}>
                     Search
                   </Button>
                 </div>
@@ -1035,7 +1035,7 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
                           <Button
                             type="button"
                             size="sm"
-                            className="shrink-0 bg-emerald-600 hover:bg-emerald-700"
+                            className="shrink-0"
                             onClick={() => applySelectedCustomer(c)}
                           >
                             Select
@@ -1182,7 +1182,7 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
                             </div>
                           </div>
                           {sel && (
-                            <Badge className="shrink-0 bg-sky-600 hover:bg-sky-600">Selected</Badge>
+                            <Badge className="shrink-0 bg-primary text-primary-foreground hover:bg-primary">Selected</Badge>
                           )}
                         </div>
                         <Badge variant="secondary" className="mt-2 text-[10px]">
@@ -1375,7 +1375,6 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
                 </Button>
                 <Button
                   type="button"
-                  className="bg-emerald-600 hover:bg-emerald-700"
                   onClick={() => {
                     const t = newBrandDraft.trim();
                     if (!t) {
@@ -1438,7 +1437,6 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
                 </Button>
                 <Button
                   type="button"
-                  className="bg-emerald-600 hover:bg-emerald-700"
                   onClick={() => {
                     const t = newModelDraft.trim();
                     if (!t) {
@@ -1615,7 +1613,7 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
           </Card>
 
           <Card className="overflow-hidden border-violet-200/60 dark:border-violet-900/40">
-            <div className="flex items-center gap-2 bg-violet-600 text-white px-4 py-3">
+            <div className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-3">
               <Ticket className="w-4 h-4 shrink-0 opacity-90" />
               <p className="text-sm font-bold tracking-wide">MEMBERSHIP STATUS</p>
             </div>
@@ -2119,7 +2117,6 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
                     type="button"
                     variant={pickupRequired ? "default" : "outline"}
                     size="sm"
-                    className={pickupRequired ? "bg-emerald-600" : ""}
                     onClick={() => setPickupRequired(true)}
                   >
                     Yes
@@ -2128,7 +2125,6 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
                     type="button"
                     variant={!pickupRequired ? "default" : "outline"}
                     size="sm"
-                    className={!pickupRequired ? "bg-emerald-600" : ""}
                     onClick={() => setPickupRequired(false)}
                   >
                     No
@@ -2360,7 +2356,7 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
                 )}
               </div>
               <div className="hidden md:flex flex-col gap-2 pt-4 mt-2 border-t">
-                <Button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700">
+                <Button type="submit" className="w-full">
                   {isJobCard ? "Create job card" : "Create booking"}
                 </Button>
                 <Button type="button" variant="outline" className="w-full" asChild>
@@ -2384,7 +2380,7 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
               <Button type="button" variant="outline" size="sm" asChild>
                 <Link href={isJobCard ? "/job-cards" : "/bookings"}>Cancel</Link>
               </Button>
-              <Button type="submit" size="sm" className="bg-emerald-600 hover:bg-emerald-700">
+              <Button type="submit" size="sm">
                 Create
               </Button>
             </div>

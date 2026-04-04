@@ -455,7 +455,7 @@ export default function StaffPage() {
                   }}
                 >
                   <DialogTrigger asChild>
-                    <Button className="bg-emerald-600 hover:bg-emerald-700">
+                    <Button>
                       <Plus className="w-4 h-4 mr-2" />
                       Add Staff
                     </Button>
@@ -641,7 +641,7 @@ export default function StaffPage() {
                         <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
                           Cancel
                         </Button>
-                        <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700">
+                        <Button type="submit">
                           Create User
                         </Button>
                       </div>

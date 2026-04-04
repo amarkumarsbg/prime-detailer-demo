@@ -227,7 +227,7 @@ export function AnalyticsReportsDashboard() {
               <RefreshCw className="mr-2 h-4 w-4" />
               Refresh
             </Button>
-            <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={onExport}>
+            <Button size="sm" onClick={onExport}>
               <Download className="mr-2 h-4 w-4" />
               Export Report
             </Button>
@@ -420,7 +420,7 @@ export function AnalyticsReportsDashboard() {
                     transition={{ delay: idx * 0.05 }}
                     className="flex items-center gap-3 rounded-xl border border-border/60 bg-muted/30 p-3"
                   >
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-xs font-bold text-white">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
                       {idx + 1}
                     </span>
                     <div className="min-w-0 flex-1">
@@ -562,7 +562,7 @@ export function AnalyticsReportsDashboard() {
           />
           <KPICard
             tone="emerald"
-            title="Inventory value"
+            title="On-hand value"
             value={formatCurrency(metrics.partsM.inventoryValue)}
             subtitle={`${parts.length} parts in stock`}
             icon={Boxes}
@@ -893,7 +893,7 @@ export function AnalyticsReportsDashboard() {
         type="button"
         aria-label="Scroll to top"
         onClick={scrollTop}
-        className="fixed bottom-6 right-6 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-600 text-white shadow-lg transition-colors duration-200 ease-in-out hover:bg-emerald-700"
+        className="fixed bottom-6 right-6 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-colors duration-200 ease-in-out hover:bg-primary/90"
         whileHover={{ scale: 1.05 }}
         whileTap={{ scale: 0.95 }}
       >

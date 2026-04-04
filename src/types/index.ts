@@ -49,10 +49,19 @@ export type WhatsAppEventType =
 export interface Branch {
   id: string;
   name: string;
+  /** Street / building line */
   address: string;
   phone: string;
   isActive: boolean;
   qrCodeId?: string;
+  /** Short reference label (invoices, badges) */
+  code?: string;
+  city?: string;
+  state?: string;
+  pincode?: string;
+  email?: string;
+  managerName?: string;
+  managerPhone?: string;
 }
 
 export interface User {
@@ -168,6 +177,15 @@ export interface ServiceConsumption {
   unit: string;
 }
 
+/** Service category row (Service Management → Categories tab). */
+export interface ServiceCategoryRecord {
+  id: string;
+  name: string;
+  slug: string;
+  order: number;
+  bikeOnly: boolean;
+}
+
 export interface ServiceCatalogItem {
   id: string;
   name: string;
@@ -177,6 +195,8 @@ export interface ServiceCatalogItem {
   category: string;
   /** When true, listed in booking “Select Add-ons” and omitted from the main service grid */
   isAddon?: boolean;
+  /** Add-on / package visibility: all branches vs current branch only */
+  scope?: "GLOBAL" | "BRANCH";
   isActive: boolean;
   isHighEnd: boolean;
   incentivePercent: number;
@@ -603,4 +623,30 @@ export interface WhatsAppLog {
   status: "SENT" | "DELIVERED" | "READ" | "FAILED";
   relatedEntityId?: string;
   relatedEntityType?: string;
+}
+
+export type PickupDropStatus =
+  | "PENDING"
+  | "DRIVER_ASSIGNED"
+  | "PICKED_UP"
+  | "IN_SERVICE"
+  | "DELIVERED";
+
+export type PickupDropType = "PICKUP" | "DROP";
+
+export interface PickupDropRequest {
+  id: string;
+  jobCardId: string;
+  jobNumber: string;
+  type: PickupDropType;
+  customerName: string;
+  address: string;
+  scheduledTime: string;
+  driverId?: string;
+  driverName?: string;
+  status: PickupDropStatus;
+  notes?: string;
+  branchId: string;
+  createdAt: string;
+  updatedAt: string;
 }
