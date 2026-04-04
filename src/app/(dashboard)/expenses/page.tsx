@@ -1,21 +1,19 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import Link from "next/link";
+import { useMemo, useState } from "react";
+import { format } from "date-fns";
 import { PageHeader } from "@/components/shared/page-header";
 import { DataTable } from "@/components/shared/data-table";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Card, CardContent } from "@/components/ui/card";
+import { AddExpenseDialog } from "@/components/expenses/add-expense-dialog";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+  ExpenseDateRangePicker,
+  formatExpenseDateFilterLabel,
+  matchesExpenseDate,
+  type ExpenseDateFilter,
+} from "@/components/expenses/expense-date-range-picker";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -23,61 +21,197 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { useExpenseStore } from "@/store/expense-store";
-import { useAuthStore } from "@/store/auth-store";
-import type { Expense, ExpenseCategory } from "@/types";
-import { resolveSessionBranchId } from "@/lib/all-branches";
-import { Plus, TrendingDown, BarChart3 } from "lucide-react";
+import { useBranchStore } from "@/store/branch-store";
+import type { Expense, ExpensePaymentStatus } from "@/types";
+import {
+  Plus,
+  Building2,
+  BarChart2,
+  LayoutGrid,
+  X,
+  IndianRupee,
+  FileCheck,
+  AlertTriangle,
+  Tag,
+  Download,
+  MoreHorizontal,
+  Trash2,
+} from "lucide-react";
 import { toast } from "sonner";
 
-const CATEGORIES: ExpenseCategory[] = [
-  "RENT",
-  "SALARY",
-  "UTILITIES",
-  "SUPPLIES",
-  "MAINTENANCE",
-  "MARKETING",
-  "INSURANCE",
-  "MISCELLANEOUS",
-];
+function categoryLabel(c: string): string {
+  if (/^[A-Z_]+$/.test(c)) {
+    return c.charAt(0) + c.slice(1).toLowerCase().replace(/_/g, " ");
+  }
+  return c;
+}
 
-function categoryLabel(c: ExpenseCategory): string {
-  return c.charAt(0) + c.slice(1).toLowerCase().replace(/_/g, " ");
+function paymentMethodShort(m: string): string {
+  if (m === "BANK_TRANSFER") return "Bank";
+  return m.charAt(0) + m.slice(1).toLowerCase();
+}
+
+function statusBadgeVariant(
+  s: ExpensePaymentStatus
+): "success" | "warning" | "destructive" | "secondary" | "outline" | "info" {
+  switch (s) {
+    case "PAID":
+      return "success";
+    case "PENDING":
+      return "warning";
+    case "PARTIAL":
+      return "info";
+    case "OVERDUE":
+      return "destructive";
+    default:
+      return "secondary";
+  }
+}
+
+function paidAmount(e: Expense): number {
+  if (e.paymentStatus === "PAID") return e.amount;
+  if (e.paymentStatus === "PARTIAL") return e.amountPaid ?? 0;
+  return 0;
+}
+
+function payableAmount(e: Expense): number {
+  if (e.paymentStatus === "PAID") return 0;
+  if (e.paymentStatus === "PARTIAL") return Math.max(0, e.amount - (e.amountPaid ?? 0));
+  return e.amount;
+}
+
+function exportCsv(rows: Expense[]) {
+  const headers = [
+    "Date",
+    "Title",
+    "Category",
+    "Vendor",
+    "Amount",
+    "Payment status",
+    "Payment method",
+  ];
+  const lines = rows.map((e) =>
+    [
+      e.date,
+      `"${e.title.replace(/"/g, '""')}"`,
+      e.category,
+      e.vendorName ? `"${e.vendorName.replace(/"/g, '""')}"` : "",
+      String(e.amount),
+      e.paymentStatus,
+      e.paymentMethod,
+    ].join(",")
+  );
+  const csv = [headers.join(","), ...lines].join("\n");
+  const blob = new Blob([csv], {
+    type: "text/csv;charset=utf-8;",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `expenses-${format(new Date(), "yyyy-MM-dd")}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  toast.success("Export started.");
 }
 
 export default function ExpensesPage() {
   const expenses = useExpenseStore((s) => s.expenses);
-  const addExpense = useExpenseStore((s) => s.addExpense);
-  const user = useAuthStore((s) => s.user);
-  const currentBranch = useAuthStore((s) => s.currentBranch);
+  const customCategories = useExpenseStore((s) => s.customCategories);
+  const removeExpense = useExpenseStore((s) => s.removeExpense);
+  const branches = useBranchStore((s) => s.branches);
 
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [category, setCategory] = useState<ExpenseCategory>("SUPPLIES");
-  const [description, setDescription] = useState("");
-  const [amount, setAmount] = useState("");
-  const [dateStr, setDateStr] = useState(() =>
-    new Date().toISOString().slice(0, 10)
+  const [dateFilter, setDateFilter] = useState<ExpenseDateFilter>({
+    kind: "preset",
+    preset: "this_month",
+  });
+  const [branchFilter, setBranchFilter] = useState<string>("all");
+  const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [compareOn, setCompareOn] = useState(false);
+  const [fullViewOn, setFullViewOn] = useState(false);
+
+  const categoryOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const e of expenses) set.add(e.category);
+    for (const c of customCategories) set.add(c);
+    return [...set].sort();
+  }, [expenses, customCategories]);
+
+  const scoped = useMemo(() => {
+    return expenses.filter((e) => {
+      if (!matchesExpenseDate(e.date, dateFilter)) return false;
+      if (branchFilter !== "all" && e.branchId !== branchFilter) return false;
+      if (categoryFilter !== "all" && e.category !== categoryFilter) return false;
+      if (statusFilter !== "all" && e.paymentStatus !== statusFilter) return false;
+      return true;
+    });
+  }, [expenses, dateFilter, branchFilter, categoryFilter, statusFilter]);
+
+  const kpis = useMemo(() => {
+    const total = scoped.reduce((s, e) => s + e.amount, 0);
+    const totalPaid = scoped.reduce((s, e) => s + paidAmount(e), 0);
+    const payables = scoped.reduce((s, e) => s + payableAmount(e), 0);
+    const partialCount = scoped.filter((e) => e.paymentStatus === "PARTIAL").length;
+    return {
+      total,
+      totalPaid,
+      payables,
+      partialCount,
+      expenseCount: scoped.length,
+    };
+  }, [scoped]);
+
+  const dateSummary = useMemo(
+    () => formatExpenseDateFilterLabel(dateFilter),
+    [dateFilter]
   );
 
-  const totalExpenses = useMemo(
-    () => expenses.reduce((sum, e) => sum + e.amount, 0),
-    [expenses]
-  );
+  const branchSummary =
+    branchFilter === "all"
+      ? "All Branches"
+      : branches.find((b) => b.id === branchFilter)?.name ?? branchFilter;
+
+  const resetFilters = () => {
+    setDateFilter({ kind: "preset", preset: "this_month" });
+    setBranchFilter("all");
+    setCategoryFilter("all");
+    setStatusFilter("all");
+    setCompareOn(false);
+    setFullViewOn(false);
+  };
 
   const columns = useMemo(
     () => [
       {
         key: "date",
-        label: "Date",
+        label: "DATE",
         sortable: true,
         render: (item: Expense) => (
-          <span className="text-muted-foreground">{formatDate(item.date)}</span>
+          <span className="text-muted-foreground whitespace-nowrap">
+            {formatDate(item.date)}
+          </span>
+        ),
+      },
+      {
+        key: "title",
+        label: "TITLE",
+        sortable: true,
+        render: (item: Expense) => (
+          <span className="font-medium line-clamp-2">{item.title}</span>
         ),
       },
       {
         key: "category",
-        label: "Category",
+        label: "CATEGORY",
         sortable: true,
         render: (item: Expense) => (
           <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-muted">
@@ -86,176 +220,267 @@ export default function ExpensesPage() {
         ),
       },
       {
-        key: "description",
-        label: "Description",
+        key: "vendorName",
+        label: "VENDOR",
+        sortable: true,
         render: (item: Expense) => (
-          <span className="font-medium line-clamp-2">{item.description}</span>
+          <span className="text-muted-foreground line-clamp-1">
+            {item.vendorName ?? "—"}
+          </span>
         ),
       },
       {
         key: "amount",
-        label: "Amount",
+        label: "AMOUNT",
         sortable: true,
         render: (item: Expense) => (
           <span className="font-semibold tabular-nums">{formatCurrency(item.amount)}</span>
         ),
       },
       {
-        key: "createdByName",
-        label: "Recorded by",
-        className: "hidden md:table-cell",
+        key: "paymentMethod",
+        label: "PAYMENT",
+        sortable: true,
         render: (item: Expense) => (
-          <span className="text-sm text-muted-foreground">{item.createdByName}</span>
+          <span className="text-sm">{paymentMethodShort(item.paymentMethod)}</span>
+        ),
+      },
+      {
+        key: "paymentStatus",
+        label: "STATUS",
+        sortable: true,
+        render: (item: Expense) => (
+          <Badge variant={statusBadgeVariant(item.paymentStatus)}>
+            {item.paymentStatus}
+          </Badge>
+        ),
+      },
+      {
+        key: "actions",
+        label: "ACTIONS",
+        className: "w-[72px]",
+        render: (item: Expense) => (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Actions">
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                className="text-destructive focus:text-destructive"
+                onClick={() => {
+                  removeExpense(item.id);
+                  toast.success("Expense removed.");
+                }}
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         ),
       },
     ],
-    []
+    [removeExpense]
   );
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const n = Number(amount);
-    if (!description.trim() || Number.isNaN(n) || n <= 0) {
-      toast.error("Enter a description and a valid amount.");
-      return;
-    }
-    const createdBy = user?.id ?? "usr-001";
-    const createdByName = user?.name ?? "User";
-    const branchId = resolveSessionBranchId(currentBranch, user?.branchId);
-
-    addExpense({
-      category,
-      description: description.trim(),
-      amount: n,
-      date: dateStr,
-      createdBy,
-      createdByName,
-      branchId,
-    });
-    toast.success("Expense recorded.");
-    setDialogOpen(false);
-    setDescription("");
-    setAmount("");
-    setDateStr(new Date().toISOString().slice(0, 10));
-    setCategory("SUPPLIES");
-  };
-
   return (
-    <div className="space-y-4 sm:space-y-6">
+    <div className="space-y-6">
       <PageHeader
-        title="Expenses"
-        description="Record branch expenses; totals feed into Reports."
+        title="Expense Management"
+        description="Track and manage operational expenses."
         actions={
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" asChild>
-              <Link href="/reports">
-                <BarChart3 className="w-4 h-4 mr-2" />
-                View in Reports
-              </Link>
-            </Button>
-            <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-              <DialogTrigger asChild>
-                <Button>
-                  <Plus className="w-4 h-4 mr-2" />
-                  Add expense
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-md">
-                <DialogHeader>
-                  <DialogTitle>Add expense</DialogTitle>
-                  <DialogDescription>
-                    Amounts are stored for this branch and appear under Reports → Expense.
-                  </DialogDescription>
-                </DialogHeader>
-                <form onSubmit={handleSubmit} className="space-y-4 mt-2">
-                  <div className="space-y-2">
-                    <Label>Category</Label>
-                    <Select
-                      value={category}
-                      onValueChange={(v) => setCategory(v as ExpenseCategory)}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {CATEGORIES.map((c) => (
-                          <SelectItem key={c} value={c}>
-                            {categoryLabel(c)}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="exp-desc">Description</Label>
-                    <Input
-                      id="exp-desc"
-                      value={description}
-                      onChange={(e) => setDescription(e.target.value)}
-                      placeholder="What was this for?"
-                      required
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="exp-amt">Amount (₹)</Label>
-                      <Input
-                        id="exp-amt"
-                        type="number"
-                        min="1"
-                        step="1"
-                        value={amount}
-                        onChange={(e) => setAmount(e.target.value)}
-                        placeholder="0"
-                        required
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="exp-date">Date</Label>
-                      <Input
-                        id="exp-date"
-                        type="date"
-                        value={dateStr}
-                        onChange={(e) => setDateStr(e.target.value)}
-                        required
-                      />
-                    </div>
-                  </div>
-                  <div className="flex justify-end gap-2 pt-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setDialogOpen(false)}
-                    >
-                      Cancel
-                    </Button>
-                    <Button type="submit">Save</Button>
-                  </div>
-                </form>
-              </DialogContent>
-            </Dialog>
-          </div>
+          <Button onClick={() => setDialogOpen(true)}>
+            <Plus className="w-4 h-4 mr-2" />
+            Add Expense
+          </Button>
         }
       />
 
-      <Card>
-        <CardContent className="!flex !items-center gap-4 !px-5 !py-6 sm:!px-6 sm:!py-7">
-          <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-red-100 dark:bg-red-900/30">
-            <TrendingDown className="w-6 h-6 text-red-600 dark:text-red-400" />
+      <Card className="border-border/80 shadow-sm">
+        <CardContent className="pt-6 space-y-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-center lg:justify-between">
+            <div className="flex flex-wrap items-center gap-2">
+              <ExpenseDateRangePicker value={dateFilter} onChange={setDateFilter} />
+
+              <Select value={branchFilter} onValueChange={setBranchFilter}>
+                <SelectTrigger className="w-full sm:w-[200px]">
+                  <Building2 className="w-4 h-4 mr-2 shrink-0 text-muted-foreground" />
+                  <SelectValue placeholder="Branch" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Branches</SelectItem>
+                  {branches.map((b) => (
+                    <SelectItem key={b.id} value={b.id}>
+                      {b.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <div className="flex items-center gap-1">
+                <Button
+                  type="button"
+                  variant={compareOn ? "default" : "outline"}
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => setCompareOn((v) => !v)}
+                >
+                  <BarChart2 className="w-4 h-4" />
+                  Compare
+                </Button>
+                <Button
+                  type="button"
+                  variant={fullViewOn ? "default" : "outline"}
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => setFullViewOn((v) => !v)}
+                >
+                  <LayoutGrid className="w-4 h-4" />
+                  Full
+                </Button>
+              </div>
+            </div>
+
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground self-start lg:self-auto"
+              onClick={resetFilters}
+            >
+              <X className="w-4 h-4 mr-1" />
+              Reset
+            </Button>
           </div>
-          <div>
-            <p className="text-2xl font-bold">{formatCurrency(totalExpenses)}</p>
-            <p className="text-sm text-muted-foreground">Total recorded expenses</p>
-          </div>
+
+          <p className="text-xs text-muted-foreground">
+            Showing: {dateSummary} • {branchSummary}
+            {compareOn ? " • Compare on" : ""}
+            {fullViewOn ? " • Full layout" : ""}
+          </p>
         </CardContent>
       </Card>
 
-      <DataTable
-        data={expenses}
-        columns={columns}
-        searchPlaceholder="Search expenses..."
-        searchKeys={["description", "category", "createdByName"]}
-      />
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Card className="border-border/80 shadow-sm overflow-hidden">
+          <CardContent className="!flex !flex-row !items-center !justify-between gap-4 !py-5">
+            <div className="min-w-0 space-y-1">
+              <p className="text-sm font-medium text-muted-foreground">Total Expenses</p>
+              <p className="text-2xl font-bold tabular-nums">{formatCurrency(kpis.total)}</p>
+              <p className="text-xs text-muted-foreground">
+                {kpis.expenseCount} expense(s)
+                {compareOn ? " · vs prior: —" : ""}
+              </p>
+            </div>
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-blue-500/15 text-blue-600 dark:text-blue-400">
+              <IndianRupee className="h-6 w-6" />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-border/80 shadow-sm overflow-hidden">
+          <CardContent className="!flex !flex-row !items-center !justify-between gap-4 !py-5">
+            <div className="min-w-0 space-y-1">
+              <p className="text-sm font-medium text-muted-foreground">Total Paid</p>
+              <p className="text-2xl font-bold tabular-nums">{formatCurrency(kpis.totalPaid)}</p>
+              <p className="text-xs text-muted-foreground">Including partial payments</p>
+            </div>
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+              <FileCheck className="h-6 w-6" />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-border/80 shadow-sm overflow-hidden">
+          <CardContent className="!flex !flex-row !items-center !justify-between gap-4 !py-5">
+            <div className="min-w-0 space-y-1">
+              <p className="text-sm font-medium text-muted-foreground">Total Payables</p>
+              <p className="text-2xl font-bold tabular-nums">{formatCurrency(kpis.payables)}</p>
+              <p className="text-xs text-muted-foreground">Pending + due amounts</p>
+            </div>
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-orange-500/15 text-orange-600 dark:text-orange-400">
+              <AlertTriangle className="h-6 w-6" />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-border/80 shadow-sm overflow-hidden">
+          <CardContent className="!flex !flex-row !items-center !justify-between gap-4 !py-5">
+            <div className="min-w-0 space-y-1">
+              <p className="text-sm font-medium text-muted-foreground">Partial Payments</p>
+              <p className="text-2xl font-bold tabular-nums">{kpis.partialCount}</p>
+              <p className="text-xs text-muted-foreground">In progress</p>
+            </div>
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400">
+              <Tag className="h-6 w-6" />
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="space-y-3">
+        <h2 className="text-base font-semibold tracking-tight">
+          Expenses ({scoped.length})
+        </h2>
+        <DataTable
+          data={scoped}
+          columns={columns}
+          searchPlaceholder="Search expenses..."
+          searchKeys={["title", "category", "vendorName"]}
+          searchMatch={(item, q) => {
+            const e = item as Expense;
+            const hay = [
+              e.title,
+              e.category,
+              e.vendorName,
+              e.description,
+              e.paymentStatus,
+            ]
+              .filter(Boolean)
+              .join(" ")
+              .toLowerCase();
+            return hay.includes(q);
+          }}
+          hideSearch={false}
+          actions={
+            <div className="flex flex-wrap items-center gap-2 justify-end">
+              <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                <SelectTrigger className="w-[160px] sm:w-[180px]">
+                  <SelectValue placeholder="Category" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Categories</SelectItem>
+                  {categoryOptions.map((c) => (
+                    <SelectItem key={c} value={c}>
+                      {categoryLabel(c)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-[140px] sm:w-[160px]">
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="PAID">Paid</SelectItem>
+                  <SelectItem value="PENDING">Pending</SelectItem>
+                  <SelectItem value="PARTIAL">Partial</SelectItem>
+                  <SelectItem value="OVERDUE">Overdue</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button type="button" variant="outline" size="sm" onClick={() => exportCsv(scoped)}>
+                <Download className="w-4 h-4 mr-2" />
+                Export
+              </Button>
+            </div>
+          }
+        />
+      </div>
+
+      <AddExpenseDialog open={dialogOpen} onOpenChange={setDialogOpen} />
     </div>
   );
 }

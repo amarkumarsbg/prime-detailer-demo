@@ -21,7 +21,7 @@ import { useExpenseStore } from "@/store/expense-store";
 import { useJobCardStore } from "@/store/job-card-store";
 import { useBranchStore } from "@/store/branch-store";
 import { useAuthStore } from "@/store/auth-store";
-import type { ExpenseCategory, Invoice, PaymentMethod } from "@/types";
+import type { Invoice, PaymentMethod } from "@/types";
 import {
   Building2,
   FileDown,
@@ -94,13 +94,10 @@ export default function AccountingPage() {
     const netProfit = totalRevenue - totalExpenses;
     const margin = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
 
-    const byCategory = filteredExpenses.reduce<Partial<Record<ExpenseCategory, number>>>(
-      (acc, e) => {
-        acc[e.category] = (acc[e.category] ?? 0) + e.amount;
-        return acc;
-      },
-      {}
-    );
+    const byCategory = filteredExpenses.reduce<Record<string, number>>((acc, e) => {
+      acc[e.category] = (acc[e.category] ?? 0) + e.amount;
+      return acc;
+    }, {});
 
     return { totalRevenue, totalExpenses, netProfit, margin, recognized, byCategory };
   }, [filteredInvoices, filteredExpenses]);
@@ -276,17 +273,15 @@ export default function AccountingPage() {
                   <p className="text-sm text-muted-foreground text-center py-10">No expense data</p>
                 ) : (
                   <ul className="text-sm space-y-2">
-                    {(Object.entries(pl.byCategory) as [ExpenseCategory, number][]).map(
-                      ([cat, amt]) => (
-                        <li
-                          key={cat}
-                          className="flex justify-between gap-2 border-b border-border/60 pb-2 last:border-0"
-                        >
-                          <span className="capitalize">{cat.toLowerCase().replace(/_/g, " ")}</span>
-                          <span className="font-medium tabular-nums">{formatCurrency(amt)}</span>
-                        </li>
-                      )
-                    )}
+                    {Object.entries(pl.byCategory).map(([cat, amt]) => (
+                      <li
+                        key={cat}
+                        className="flex justify-between gap-2 border-b border-border/60 pb-2 last:border-0"
+                      >
+                        <span className="capitalize">{cat.toLowerCase().replace(/_/g, " ")}</span>
+                        <span className="font-medium tabular-nums">{formatCurrency(amt)}</span>
+                      </li>
+                    ))}
                   </ul>
                 )}
               </CardContent>
