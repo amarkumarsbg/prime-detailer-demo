@@ -481,7 +481,7 @@ export default function AppointmentsPage() {
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Card>
-          <CardContent className="p-5! flex items-center gap-4">
+          <CardContent className="!flex !items-center gap-4 !px-5 !py-6 sm:!px-6 sm:!py-7">
             <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-blue-100 dark:bg-blue-900/30">
               <Calendar className="w-6 h-6 text-blue-600 dark:text-blue-400" />
             </div>
@@ -492,7 +492,7 @@ export default function AppointmentsPage() {
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="p-5! flex items-center gap-4">
+          <CardContent className="!flex !items-center gap-4 !px-5 !py-6 sm:!px-6 sm:!py-7">
             <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-violet-100 dark:bg-violet-900/30">
               <Clock className="w-6 h-6 text-violet-600 dark:text-violet-400" />
             </div>
@@ -503,7 +503,7 @@ export default function AppointmentsPage() {
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="p-5! flex items-center gap-4">
+          <CardContent className="!flex !items-center gap-4 !px-5 !py-6 sm:!px-6 sm:!py-7">
             <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-emerald-100 dark:bg-emerald-900/30">
               <User className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
             </div>
@@ -703,7 +703,7 @@ export default function AppointmentsPage() {
               <CardTitle className="text-base">Upcoming bookings</CardTitle>
               <p className="text-xs text-muted-foreground mt-0.5">Chronological list with status and quick actions.</p>
             </CardHeader>
-            <CardContent className="p-0! divide-y divide-border">
+            <CardContent className="!p-0 divide-y divide-border">
               {upcomingAppointments.length === 0 ? (
                 <p className="text-center py-12 text-muted-foreground">No upcoming appointments</p>
               ) : (

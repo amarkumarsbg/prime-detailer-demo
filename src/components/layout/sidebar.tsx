@@ -125,7 +125,7 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     label: "Workshop",
     items: [
       { label: "Services", href: "/services", icon: Wrench, roles: ["ADMIN", "MANAGER"] },
-      { label: "Stock Console", href: "/inventory", icon: Package, roles: ["ADMIN", "MANAGER"] },
+      { label: "Inventory", href: "/inventory", icon: Package, roles: ["ADMIN", "MANAGER"] },
     ],
   },
   {

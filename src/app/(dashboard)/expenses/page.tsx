@@ -239,7 +239,7 @@ export default function ExpensesPage() {
       />
 
       <Card>
-        <CardContent className="p-5! flex items-center gap-4">
+        <CardContent className="!flex !items-center gap-4 !px-5 !py-6 sm:!px-6 sm:!py-7">
           <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-red-100 dark:bg-red-900/30">
             <TrendingDown className="w-6 h-6 text-red-600 dark:text-red-400" />
           </div>

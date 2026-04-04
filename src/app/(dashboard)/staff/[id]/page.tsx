@@ -194,7 +194,7 @@ export default function StaffDetailPage({ params }: { params: Promise<{ id: stri
       ]} />
 
       <Card>
-        <CardContent className="p-6!">
+        <CardContent className="!p-6">
           <div className="flex flex-col gap-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="flex flex-col sm:flex-row sm:items-center items-start gap-6 flex-1 min-w-0">
@@ -333,7 +333,7 @@ export default function StaffDetailPage({ params }: { params: Promise<{ id: stri
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card>
-          <CardContent className="p-5! flex items-center gap-4">
+          <CardContent className="!flex !items-center gap-4 !px-5 !py-6 sm:!px-6 sm:!py-7">
             <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-blue-100 dark:bg-blue-900/30">
               <ClipboardList className="w-6 h-6 text-blue-600 dark:text-blue-400" />
             </div>
@@ -344,7 +344,7 @@ export default function StaffDetailPage({ params }: { params: Promise<{ id: stri
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="p-5! flex items-center gap-4">
+          <CardContent className="!flex !items-center gap-4 !px-5 !py-6 sm:!px-6 sm:!py-7">
             <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-emerald-100 dark:bg-emerald-900/30">
               <CheckCircle2 className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
             </div>
@@ -355,7 +355,7 @@ export default function StaffDetailPage({ params }: { params: Promise<{ id: stri
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="p-5! flex items-center gap-4">
+          <CardContent className="!flex !items-center gap-4 !px-5 !py-6 sm:!px-6 sm:!py-7">
             <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-amber-100 dark:bg-amber-900/30">
               <Clock className="w-6 h-6 text-amber-600 dark:text-amber-400" />
             </div>
@@ -367,7 +367,7 @@ export default function StaffDetailPage({ params }: { params: Promise<{ id: stri
         </Card>
         {(member.totalIncentiveEarned != null && member.totalIncentiveEarned > 0) && (
           <Card>
-            <CardContent className="p-5! flex items-center gap-4">
+            <CardContent className="!flex !items-center gap-4 !px-5 !py-6 sm:!px-6 sm:!py-7">
               <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-violet-100 dark:bg-violet-900/30">
                 <IndianRupee className="w-6 h-6 text-violet-600 dark:text-violet-400" />
               </div>

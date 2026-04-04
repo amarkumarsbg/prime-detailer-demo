@@ -101,7 +101,7 @@ const ENTITY_LABELS: Record<ActivityEntityType, string> = {
   VEHICLE: "Vehicle",
   INVOICE: "Invoice",
   APPOINTMENT: "Appointment",
-  INVENTORY: "Stock Console",
+  INVENTORY: "Inventory",
   STAFF: "Staff",
   QUOTATION: "Quotation",
   EXPENSE: "Expense",
@@ -179,7 +179,7 @@ export default function ActivityPage() {
           <div key={date}>
             <h3 className="text-sm font-semibold text-muted-foreground mb-3">{date}</h3>
             <Card>
-              <CardContent className="p-0! divide-y divide-border">
+              <CardContent className="!p-0 divide-y divide-border">
                 {logs.map((log) => {
                   const actionStyle = ACTION_ICON_MAP[log.action];
                   const ActionIcon = actionStyle.icon;

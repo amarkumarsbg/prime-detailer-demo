@@ -1,15 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/auth-store";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
+import { ScrollToTopButton } from "@/components/layout/scroll-to-top-button";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const router = useRouter();
   const [authReady, setAuthReady] = useState(false);
+  const mainScrollRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     if (useAuthStore.persist.hasHydrated()) {
@@ -40,9 +42,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <Sidebar />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden pl-0 transition-[padding] duration-300 md:pl-[260px]">
         <Header />
-        <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain p-4 md:p-6 [scrollbar-gutter:stable]">
+        <main
+          ref={mainScrollRef}
+          className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain p-4 md:p-6 [scrollbar-gutter:stable]"
+        >
           {children}
         </main>
+        <ScrollToTopButton scrollContainerRef={mainScrollRef} />
       </div>
     </div>
   );

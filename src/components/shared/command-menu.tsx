@@ -51,7 +51,7 @@ const NAV_PAGES: NavPageItem[] = [
   { name: "Vehicles", href: "/vehicles", icon: Car },
   { name: "Staff", href: "/staff", icon: UserCog },
   { name: "Services", href: "/services", icon: Wrench },
-  { name: "Stock Console", href: "/inventory", icon: Package },
+  { name: "Inventory", href: "/inventory", icon: Package },
   { name: "Billing", href: "/billing", icon: Receipt },
   { name: "Appointments", href: "/appointments", icon: Calendar },
   { name: "Attendance", href: "/attendance", icon: QrCode, roles: ["ADMIN", "MANAGER"] },

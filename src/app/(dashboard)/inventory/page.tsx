@@ -377,7 +377,7 @@ export default function InventoryPage() {
   return (
     <div className="space-y-4 sm:space-y-6">
       <PageHeader
-        title="Stock Console"
+        title="Inventory"
         description="Spare parts, on-hand levels, and fluid tracking (stored in ml, displayed in litres)"
         actions={
           <div className="flex flex-wrap gap-2">
@@ -669,7 +669,7 @@ export default function InventoryPage() {
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <Card>
-          <CardContent className="p-5! flex items-center gap-4">
+          <CardContent className="!flex !items-center gap-4 !px-5 !py-6 sm:!px-6 sm:!py-7">
             <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-indigo-100 dark:bg-indigo-900/30">
               <Package className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
             </div>
@@ -680,7 +680,7 @@ export default function InventoryPage() {
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="p-5! flex items-center gap-4">
+          <CardContent className="!flex !items-center gap-4 !px-5 !py-6 sm:!px-6 sm:!py-7">
             <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-violet-100 dark:bg-violet-900/30">
               <TrendingUp className="w-6 h-6 text-violet-600 dark:text-violet-400" />
             </div>
@@ -691,7 +691,7 @@ export default function InventoryPage() {
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="p-5! flex items-center gap-4">
+          <CardContent className="!flex !items-center gap-4 !px-5 !py-6 sm:!px-6 sm:!py-7">
             <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-amber-100 dark:bg-amber-900/30">
               <AlertTriangle className="w-6 h-6 text-amber-600 dark:text-amber-400" />
             </div>
@@ -702,7 +702,7 @@ export default function InventoryPage() {
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="p-5! flex items-center gap-4">
+          <CardContent className="!flex !items-center gap-4 !px-5 !py-6 sm:!px-6 sm:!py-7">
             <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-red-100 dark:bg-red-900/30">
               <TrendingDown className="w-6 h-6 text-red-600 dark:text-red-400" />
             </div>
@@ -771,7 +771,7 @@ export default function InventoryPage() {
             <h2 className="text-base font-semibold tracking-tight">Recent stock activity</h2>
           </div>
           <Card>
-            <CardContent className="p-0!">
+            <CardContent className="!p-0">
               <div className="divide-y divide-border">
                 {recentMovements.map((m) => {
                   const part = parts.find((p) => p.id === m.partId);
@@ -815,7 +815,7 @@ export default function InventoryPage() {
             <h2 className="text-base font-semibold tracking-tight">Fluid purchases</h2>
           </div>
           <Card>
-            <CardContent className="p-0!">
+            <CardContent className="!p-0">
               <div className="divide-y divide-border">
                 {productPurchases.length === 0 ? (
                   <p className="p-6 text-sm text-muted-foreground">No intake logged yet.</p>

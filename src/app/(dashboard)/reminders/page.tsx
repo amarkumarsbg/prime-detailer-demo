@@ -162,7 +162,7 @@ export default function RemindersPage() {
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         <Card className="border-red-200 dark:border-red-900">
-          <CardContent className="p-4! flex items-center gap-3">
+          <CardContent className="!flex !items-center gap-3 !px-4 !py-5 sm:!px-5 sm:!py-6">
             <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-red-100 dark:bg-red-900/30">
               <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400" />
             </div>
@@ -173,7 +173,7 @@ export default function RemindersPage() {
           </CardContent>
         </Card>
         <Card className="border-amber-200 dark:border-amber-900">
-          <CardContent className="p-4! flex items-center gap-3">
+          <CardContent className="!flex !items-center gap-3 !px-4 !py-5 sm:!px-5 sm:!py-6">
             <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/30">
               <Clock className="w-5 h-5 text-amber-600 dark:text-amber-400" />
             </div>
@@ -184,7 +184,7 @@ export default function RemindersPage() {
           </CardContent>
         </Card>
         <Card className="border-blue-200 dark:border-blue-900">
-          <CardContent className="p-4! flex items-center gap-3">
+          <CardContent className="!flex !items-center gap-3 !px-4 !py-5 sm:!px-5 sm:!py-6">
             <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-900/30">
               <Calendar className="w-5 h-5 text-blue-600 dark:text-blue-400" />
             </div>
@@ -195,7 +195,7 @@ export default function RemindersPage() {
           </CardContent>
         </Card>
         <Card className="border-violet-200 dark:border-violet-900">
-          <CardContent className="p-4! flex items-center gap-3">
+          <CardContent className="!flex !items-center gap-3 !px-4 !py-5 sm:!px-5 sm:!py-6">
             <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-violet-100 dark:bg-violet-900/30">
               <Send className="w-5 h-5 text-violet-600 dark:text-violet-400" />
             </div>
@@ -206,7 +206,7 @@ export default function RemindersPage() {
           </CardContent>
         </Card>
         <Card className="border-green-200 dark:border-green-900">
-          <CardContent className="p-4! flex items-center gap-3">
+          <CardContent className="!flex !items-center gap-3 !px-4 !py-5 sm:!px-5 sm:!py-6">
             <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-green-100 dark:bg-green-900/30">
               <CheckCircle2 className="w-5 h-5 text-green-600 dark:text-green-400" />
             </div>
@@ -252,7 +252,7 @@ export default function RemindersPage() {
 
                     return (
                       <Card key={reminder.id} className={`border ${statusConfig.color} transition-all hover:shadow-md`}>
-                        <CardContent className="p-4!">
+                        <CardContent className="!p-4">
                           <div className="flex flex-col sm:flex-row sm:items-center gap-4">
                             <div className={`flex items-center justify-center w-12 h-12 rounded-xl shrink-0 ${typeConfig.color}`}>
                               <TypeIcon className="w-6 h-6" />
