@@ -31,6 +31,8 @@ import {
   QrCode,
   Wallet,
   Store,
+  TrendingUp,
+  FileBarChart,
 } from "lucide-react";
 
 type NavItem = {
@@ -116,8 +118,20 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
   {
     label: "Analytics & admin",
     items: [
+      {
+        label: "Performance",
+        href: "/performance",
+        icon: TrendingUp,
+        roles: ["ADMIN", "MANAGER", "BRANCH_MANAGER"],
+      },
       { label: "Mechanics", href: "/mechanics", icon: Gauge, roles: ["ADMIN", "MANAGER"] },
       { label: "Reports", href: "/reports", icon: BarChart3, roles: ["ADMIN", "MANAGER"] },
+      {
+        label: "Advanced Reports",
+        href: "/advanced-reports",
+        icon: FileBarChart,
+        roles: ["ADMIN", "MANAGER", "BRANCH_MANAGER"],
+      },
       { label: "Activity Log", href: "/activity", icon: History, roles: ["ADMIN"] },
       { label: "Settings", href: "/settings", icon: Settings, roles: ["ADMIN"] },
     ],
