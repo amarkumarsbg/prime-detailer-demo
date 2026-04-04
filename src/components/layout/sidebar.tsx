@@ -170,25 +170,22 @@ function SidebarContent({
         className
       )}
     >
-      {filteredGroups.map((group) => (
+      {filteredGroups.map((group, groupIndex) => (
         <section
           key={group.label}
-          className="rounded-xl border border-[var(--sidebar-border)] bg-[var(--sidebar-glow-dim)] shadow-[inset_0_1px_0_0_rgba(34,211,238,0.06)]"
+          className="space-y-1"
           aria-labelledby={`nav-section-${navSectionSlug(group.label)}`}
         >
-          <div className="flex items-stretch gap-2 px-2.5 pt-2.5 pb-1">
-            <span
-              className="w-0.5 shrink-0 rounded-full bg-gradient-to-b from-cyan-400 via-sky-500 to-blue-600 self-stretch min-h-[2rem] shadow-[0_0_8px_rgba(34,211,238,0.35)]"
-              aria-hidden
-            />
-            <h2
-              id={`nav-section-${navSectionSlug(group.label)}`}
-              className="text-[10px] font-bold uppercase tracking-[0.12em] text-cyan-100/40 leading-tight pt-0.5"
-            >
-              {group.label}
-            </h2>
-          </div>
-          <div className="space-y-px px-1.5 pb-1.5">
+          <h2
+            id={`nav-section-${navSectionSlug(group.label)}`}
+            className={cn(
+              "text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--sidebar-section-heading)] px-3 pb-1.5",
+              groupIndex === 0 ? "pt-0" : "pt-4"
+            )}
+          >
+            {group.label}
+          </h2>
+          <div className="space-y-0.5 px-1.5">
             {group.items.map((item) => {
               const isActive =
                 pathname === item.href || pathname.startsWith(item.href + "/");
@@ -201,13 +198,13 @@ function SidebarContent({
                     onNavClick?.();
                   }}
                   className={cn(
-                    "flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium transition-all duration-200 cursor-pointer",
+                    "flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-[13px] font-medium transition-colors duration-150 cursor-pointer",
                     isActive
-                      ? "bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-[0_4px_16px_-4px_rgba(6,182,212,0.55)]"
-                      : "text-[var(--sidebar-foreground)] hover:bg-cyan-400/[0.08] hover:text-[var(--sidebar-accent-foreground)]"
+                      ? "bg-[var(--sidebar-active)] text-[var(--sidebar-active-foreground)] shadow-sm"
+                      : "text-[var(--sidebar-foreground)] hover:bg-[var(--sidebar-accent)] hover:text-[var(--sidebar-accent-foreground)]"
                   )}
                 >
-                  <item.icon className={cn("w-4 h-4 shrink-0", isActive ? "opacity-100" : "opacity-80")} />
+                  <item.icon className={cn("w-4 h-4 shrink-0", isActive ? "opacity-100" : "opacity-90")} />
                   <span>{item.label}</span>
                 </Link>
               );
@@ -234,22 +231,22 @@ export function Sidebar() {
 
   const brandHeader = (
     <div className="flex items-center gap-3 min-w-0">
-      <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600 shrink-0 shadow-lg shadow-cyan-900/50 ring-1 ring-cyan-400/25">
-        <Wrench className="w-5 h-5 text-white" />
+      <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-[var(--sidebar-active)] shrink-0 shadow-sm">
+        <Wrench className="w-5 h-5 text-[var(--sidebar-active-foreground)]" />
       </div>
       <div className="overflow-hidden min-w-0">
         <h1 className="text-base font-bold text-[var(--sidebar-accent-foreground)] leading-tight truncate">
           {businessName}
         </h1>
-        <p className="text-[11px] text-cyan-100/35 truncate">Service management</p>
+        <p className="text-[11px] text-[var(--sidebar-foreground)] truncate opacity-80">Service management</p>
       </div>
     </div>
   );
 
   return (
     <>
-      <aside className="hidden md:flex fixed left-0 top-0 z-40 h-[100dvh] max-h-screen w-[260px] flex-col transition-all duration-300 min-h-0 bg-gradient-to-b from-[var(--sidebar)] via-[#080d18] to-[#0c1322] text-sidebar-foreground border-r border-[var(--sidebar-border)]">
-        <div className="flex items-center h-16 px-4 shrink-0 border-b border-[var(--sidebar-border)] bg-cyan-400/[0.04]">
+      <aside className="hidden md:flex fixed left-0 top-0 z-40 h-[100dvh] max-h-screen w-[260px] flex-col transition-all duration-300 min-h-0 bg-[var(--sidebar)] text-sidebar-foreground border-r border-[var(--sidebar-border)]">
+        <div className="flex items-center h-16 px-4 shrink-0 border-b border-[var(--sidebar-border)] bg-white/[0.03]">
           {brandHeader}
         </div>
 
@@ -267,16 +264,16 @@ export function Sidebar() {
 
       <aside
         className={cn(
-          "fixed left-0 top-0 z-50 h-[100dvh] max-h-screen min-h-0 w-[288px] flex flex-col transition-transform duration-300 md:hidden bg-gradient-to-b from-[var(--sidebar)] via-[#080d18] to-[#0c1322] text-sidebar-foreground border-r border-[var(--sidebar-border)]",
+          "fixed left-0 top-0 z-50 h-[100dvh] max-h-screen min-h-0 w-[288px] flex flex-col transition-transform duration-300 md:hidden bg-[var(--sidebar)] text-sidebar-foreground border-r border-[var(--sidebar-border)]",
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
-        <div className="flex items-center justify-between h-16 px-4 border-b border-[var(--sidebar-border)] shrink-0 bg-cyan-400/[0.04]">
+        <div className="flex items-center justify-between h-16 px-4 border-b border-[var(--sidebar-border)] shrink-0 bg-white/[0.03]">
           {brandHeader}
           <button
             type="button"
             onClick={() => setMobileOpen(false)}
-            className="flex items-center justify-center w-8 h-8 rounded-lg text-cyan-200/45 hover:bg-cyan-500/10 hover:text-cyan-100 transition-colors shrink-0"
+            className="flex items-center justify-center w-8 h-8 rounded-lg text-[var(--sidebar-foreground)] hover:bg-[var(--sidebar-accent)] hover:text-[var(--sidebar-accent-foreground)] transition-colors shrink-0"
           >
             <X className="w-4 h-4" />
           </button>
@@ -291,7 +288,7 @@ export function Sidebar() {
         </div>
 
         {user && (
-          <div className="shrink-0 border-t border-[var(--sidebar-border)] bg-cyan-400/[0.06] px-2.5 py-3 space-y-1">
+          <div className="shrink-0 border-t border-[var(--sidebar-border)] bg-white/[0.03] px-2.5 py-3 space-y-1">
             <button
               type="button"
               onClick={handleMobileLogout}
@@ -305,9 +302,9 @@ export function Sidebar() {
             <Link
               href="/profile"
               onClick={() => setMobileOpen(false)}
-              className="flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-[13px] font-medium text-[var(--sidebar-foreground)] hover:bg-cyan-400/[0.08] transition-colors"
+              className="flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-[13px] font-medium text-[var(--sidebar-foreground)] hover:bg-[var(--sidebar-accent)] hover:text-[var(--sidebar-accent-foreground)] transition-colors"
             >
-              <Avatar className="h-9 w-9 shrink-0 border border-cyan-500/20">
+              <Avatar className="h-9 w-9 shrink-0 border border-[var(--sidebar-border)]">
                 <AvatarFallback className="bg-primary text-primary-foreground text-xs font-semibold">
                   {getInitials(user.name)}
                 </AvatarFallback>

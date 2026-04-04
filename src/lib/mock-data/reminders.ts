@@ -19,6 +19,7 @@ export const serviceReminders: ServiceReminder[] = [
     status: "DUE",
     isHighEndService: false,
     whatsappSent: true,
+    lastMessageSentAt: "2026-03-01T10:30:00.000Z",
     notes: "Customer prefers weekend appointments",
   },
   {

@@ -93,6 +93,6 @@ export const useReminderStore = create<ReminderStore>()(
         set((state) => ({ reminders: [...state.reminders, ...newReminders] }));
       },
     }),
-    { name: "prime-detailers-reminders", version: 1 }
+    { name: "prime-detailers-reminders", version: 2 }
   )
 );

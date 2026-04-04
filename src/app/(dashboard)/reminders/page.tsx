@@ -32,7 +32,12 @@ import {
   X,
   MessageCircle,
   Sparkles,
+  Send,
 } from "lucide-react";
+
+function reminderWasSent(r: ServiceReminder): boolean {
+  return Boolean(r.lastMessageSentAt || r.whatsappSent);
+}
 
 const REMINDER_TYPE_CONFIG: Record<ReminderType, { label: string; icon: React.ElementType; color: string }> = {
   GENERAL_SERVICE: { label: "General Service", icon: Wrench, color: "text-blue-600 bg-blue-100 dark:text-blue-400 dark:bg-blue-900/30" },
@@ -96,10 +101,10 @@ function DueBadge({ dueDate }: { dueDate: string }) {
 }
 
 export default function RemindersPage() {
-  const { reminders: storeReminders } = useReminderStore();
+  const reminders = useReminderStore((s) => s.reminders);
+  const updateReminder = useReminderStore((s) => s.updateReminder);
   const activeFilter = useDashboardFilterStore((s) => s.activeFilter);
   const setActiveFilter = useDashboardFilterStore((s) => s.setActiveFilter);
-  const [reminders, setReminders] = useState(storeReminders);
   const [activeTab, setActiveTab] = useState("all");
 
   const counts = useMemo(() => ({
@@ -107,6 +112,7 @@ export default function RemindersPage() {
     overdue: reminders.filter((r) => r.status === "OVERDUE").length,
     due: reminders.filter((r) => r.status === "DUE").length,
     upcoming: reminders.filter((r) => r.status === "UPCOMING").length,
+    sent: reminders.filter(reminderWasSent).length,
     completed: reminders.filter((r) => r.status === "COMPLETED").length,
   }), [reminders]);
 
@@ -114,6 +120,7 @@ export default function RemindersPage() {
     let list: ServiceReminder[];
     if (activeTab === "all") list = reminders.filter((r) => r.status !== "COMPLETED" && r.status !== "DISMISSED");
     else if (activeTab === "completed") list = reminders.filter((r) => r.status === "COMPLETED");
+    else if (activeTab === "sent") list = reminders.filter(reminderWasSent);
     else list = reminders.filter((r) => r.status === activeTab.toUpperCase());
     if (activeFilter === DASHBOARD_FILTER.DUE_SOON) {
       list = list.filter(isDueSoonReminder);
@@ -122,16 +129,21 @@ export default function RemindersPage() {
   }, [reminders, activeTab, activeFilter]);
 
   const handleMarkComplete = (id: string) => {
-    setReminders((prev) => prev.map((r) => r.id === id ? { ...r, status: "COMPLETED" as ReminderStatus } : r));
+    updateReminder(id, { status: "COMPLETED" as ReminderStatus });
     toast.success("Reminder marked as completed");
   };
 
   const handleDismiss = (id: string) => {
-    setReminders((prev) => prev.map((r) => r.id === id ? { ...r, status: "DISMISSED" as ReminderStatus } : r));
+    updateReminder(id, { status: "DISMISSED" as ReminderStatus });
     toast.info("Reminder dismissed");
   };
 
   const handleSendWhatsAppReminder = (reminder: ServiceReminder) => {
+    const now = new Date().toISOString();
+    updateReminder(reminder.id, {
+      whatsappSent: true,
+      lastMessageSentAt: now,
+    });
     toast.success("WhatsApp reminder sent", {
       description: `Sent to ${reminder.customerName} at ${reminder.customerPhone}`,
     });
@@ -148,7 +160,7 @@ export default function RemindersPage() {
         />
       )}
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         <Card className="border-red-200 dark:border-red-900">
           <CardContent className="p-4! flex items-center gap-3">
             <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-red-100 dark:bg-red-900/30">
@@ -182,6 +194,17 @@ export default function RemindersPage() {
             </div>
           </CardContent>
         </Card>
+        <Card className="border-violet-200 dark:border-violet-900">
+          <CardContent className="p-4! flex items-center gap-3">
+            <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-violet-100 dark:bg-violet-900/30">
+              <Send className="w-5 h-5 text-violet-600 dark:text-violet-400" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold">{counts.sent}</p>
+              <p className="text-xs text-muted-foreground">Sent</p>
+            </div>
+          </CardContent>
+        </Card>
         <Card className="border-green-200 dark:border-green-900">
           <CardContent className="p-4! flex items-center gap-3">
             <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-green-100 dark:bg-green-900/30">
@@ -196,21 +219,26 @@ export default function RemindersPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList>
+        <TabsList className="flex h-auto min-h-10 w-full flex-wrap justify-start gap-1">
           <TabsTrigger value="all">All Active ({counts.all})</TabsTrigger>
           <TabsTrigger value="overdue">Overdue ({counts.overdue})</TabsTrigger>
           <TabsTrigger value="due">Due ({counts.due})</TabsTrigger>
           <TabsTrigger value="upcoming">Upcoming ({counts.upcoming})</TabsTrigger>
+          <TabsTrigger value="sent">Sent ({counts.sent})</TabsTrigger>
           <TabsTrigger value="completed">Completed ({counts.completed})</TabsTrigger>
         </TabsList>
 
-        {["all", "overdue", "due", "upcoming", "completed"].map((tab) => (
+        {(["all", "overdue", "due", "upcoming", "sent", "completed"] as const).map((tab) => (
           <TabsContent key={tab} value={tab} className="mt-4">
             {filtered.length === 0 ? (
               <Card>
                 <CardContent className="py-12 text-center">
                   <Bell className="w-10 h-10 mx-auto text-muted-foreground/40 mb-3" />
-                  <p className="text-muted-foreground">No {tab === "all" ? "active" : tab} reminders</p>
+                  <p className="text-muted-foreground">
+                    {tab === "sent"
+                      ? "No sent reminders yet. Send a WhatsApp reminder from an active row — it will appear here."
+                      : `No ${tab === "all" ? "active" : tab} reminders`}
+                  </p>
                 </CardContent>
               </Card>
             ) : (
@@ -241,6 +269,17 @@ export default function RemindersPage() {
                                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
                                     <Sparkles className="w-3 h-3" />
                                     High-end
+                                  </span>
+                                )}
+                                {reminderWasSent(reminder) && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-violet-100 text-violet-800 dark:bg-violet-900/35 dark:text-violet-300">
+                                    <Send className="w-3 h-3 shrink-0" />
+                                    Reminder sent
+                                    {reminder.lastMessageSentAt && (
+                                      <span className="tabular-nums opacity-90">
+                                        {formatDate(reminder.lastMessageSentAt)}
+                                      </span>
+                                    )}
                                   </span>
                                 )}
                               </div>

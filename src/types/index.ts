@@ -531,7 +531,10 @@ export interface ServiceReminder {
   totalDurationMonths?: number;
   intervalMonths?: number;
   notes?: string;
+  /** @deprecated use lastMessageSentAt; kept for persisted mock data */
   whatsappSent?: boolean;
+  /** ISO timestamp when a customer reminder message was last sent (e.g. WhatsApp). */
+  lastMessageSentAt?: string;
 }
 
 export interface Expense {
