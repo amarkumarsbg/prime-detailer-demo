@@ -2,6 +2,7 @@
 
 import { create } from "zustand";
 import type { User, Branch } from "@/types";
+import { ALL_BRANCHES_BRANCH } from "@/lib/all-branches";
 
 interface AuthState {
   user: User | null;
@@ -17,10 +18,11 @@ const mockUser: User = {
   name: "Rajesh Kumar",
   email: "rajesh@primedetailers.in",
   phone: "+91 98765 43210",
-  role: "ADMIN",
+  role: "SUPER_ADMIN",
   branchId: "br-001",
   isActive: true,
   attendancePin: "1001",
+  emailVerified: true,
 };
 
 const mockBranch: Branch = {
@@ -39,9 +41,13 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   login: (email: string, _password: string) => {
     if (email) {
+      const canOrgWide =
+        mockUser.role === "SUPER_ADMIN" ||
+        mockUser.role === "ADMIN" ||
+        mockUser.role === "MANAGER";
       set({
         user: mockUser,
-        currentBranch: mockBranch,
+        currentBranch: canOrgWide ? ALL_BRANCHES_BRANCH : mockBranch,
         isAuthenticated: true,
       });
       return true;

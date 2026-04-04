@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useSyncExternalStore } from "react";
 import QRCode from "react-qr-code";
-import { branches } from "@/lib/mock-data";
+import { useBranchStore } from "@/store/branch-store";
 import {
   Select,
   SelectContent,
@@ -55,7 +55,16 @@ type AttendanceQrPanelProps = {
 };
 
 export function AttendanceQrPanel({ defaultBranchId }: AttendanceQrPanelProps) {
+  const branches = useBranchStore((s) => s.branches);
   const [branchId, setBranchId] = useState(defaultBranchId);
+  const branchSelectOptions = useMemo(() => {
+    const active = branches.filter((b) => b.isActive);
+    const sel = branches.find((b) => b.id === branchId);
+    if (sel && !sel.isActive && !active.some((b) => b.id === sel.id)) {
+      return [sel, ...active];
+    }
+    return active;
+  }, [branches, branchId]);
   const windowOrigin = useWindowOrigin();
   const isLocalhost = isLocalhostOrigin(windowOrigin);
 
@@ -81,7 +90,7 @@ export function AttendanceQrPanel({ defaultBranchId }: AttendanceQrPanelProps) {
 
   const branch = useMemo(
     () => branches.find((b) => b.id === branchId),
-    [branchId]
+    [branches, branchId]
   );
 
   const punchUrl = useMemo(() => {
@@ -101,7 +110,7 @@ export function AttendanceQrPanel({ defaultBranchId }: AttendanceQrPanelProps) {
             <SelectValue placeholder="Branch" />
           </SelectTrigger>
           <SelectContent>
-            {branches.map((b) => (
+            {branchSelectOptions.map((b) => (
               <SelectItem key={b.id} value={b.id}>
                 {b.name}
               </SelectItem>

@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { branches } from "@/lib/mock-data";
+import { useBranchStore } from "@/store/branch-store";
 import { useAttendanceStore } from "@/store/attendance-store";
 import { useStaffStore } from "@/store/staff-store";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,7 @@ export function PunchForm() {
   const searchParams = useSearchParams();
   const branchId = searchParams.get("branchId") ?? "";
   const qrToken = searchParams.get("qr");
+  const branches = useBranchStore((s) => s.branches);
 
   const [pin, setPin] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
@@ -29,7 +30,7 @@ export function PunchForm() {
 
   const branch = useMemo(
     () => branches.find((b) => b.id === branchId),
-    [branchId]
+    [branches, branchId]
   );
 
   const qrValid =

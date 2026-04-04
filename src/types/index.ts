@@ -1,4 +1,12 @@
-export type UserRole = "ADMIN" | "MANAGER" | "RECEPTIONIST" | "MECHANIC";
+/** Org-level super user: full access including branch CRUD. */
+export type UserRole =
+  | "SUPER_ADMIN"
+  | "ADMIN"
+  | "BRANCH_MANAGER"
+  | "MANAGER"
+  | "SUPERVISOR"
+  | "RECEPTIONIST"
+  | "MECHANIC";
 
 export type VehicleSegment = "HATCHBACK" | "SEDAN" | "SUV" | "LUXURY" | "MUV" | "COMPACT_SUV";
 
@@ -49,10 +57,51 @@ export interface User {
   branchId: string;
   avatar?: string;
   isActive: boolean;
+  /** Demo flag for directory / “verified email” stats */
+  emailVerified?: boolean;
   /** Demo-only attendance PIN; production should store hashes and verify via API */
   attendancePin?: string;
   totalJobsCompleted?: number;
   totalIncentiveEarned?: number;
+  /** ISO date yyyy-mm-dd (demo / HR fields) */
+  birthday?: string;
+  /** Employment start or work anniversary, ISO yyyy-mm-dd */
+  anniversary?: string;
+}
+
+export type PayrollRecordStatus = "PENDING" | "PROCESSING" | "PAID";
+
+/** Experience band for salary structure tiers (role + band = pay rules). */
+export type ExperienceBand = "ENTRY" | "MID" | "SENIOR" | "LEAD";
+
+export interface PayrollRecord {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  branchId: string;
+  periodMonth: number;
+  periodYear: number;
+  attendanceDays: number;
+  presencePayment: number;
+  baseSalary: number;
+  absenceDeduction: number;
+  grossEarnings: number;
+  totalDeductions: number;
+  netSalary: number;
+  status: PayrollRecordStatus;
+  salaryStructureId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SalaryStructure {
+  id: string;
+  role: UserRole;
+  experienceBand: ExperienceBand;
+  label: string;
+  baseSalary: number;
+  attendanceBonusPerDay: number;
+  absenceDeductionPerDay: number;
 }
 
 export interface Customer {
@@ -68,6 +117,8 @@ export interface Customer {
   walletBalance: number;
   lastVisitDate?: string;
   isInactive?: boolean;
+  /** Demo: counts toward “verified email” on users overview */
+  emailVerified?: boolean;
   createdAt: string;
 }
 
@@ -272,6 +323,8 @@ export interface Invoice {
 }
 
 export interface DashboardStats {
+  /** Demo aggregate customer satisfaction (0–5). */
+  averageRating: number;
   carsReceivedToday: number;
   carsDeliveredToday: number;
   inProgressServices: number;

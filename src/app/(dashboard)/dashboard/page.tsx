@@ -6,7 +6,11 @@ import { KPICard } from "@/components/shared/kpi-card";
 import { JobCardStatusBadge } from "@/components/shared/status-badge";
 import { dashboardStats, serviceReminders } from "@/lib/mock-data";
 import { useJobCardStore } from "@/store/job-card-store";
+import { useBranchStore } from "@/store/branch-store";
+import { useAuthStore } from "@/store/auth-store";
+import { isAllBranchesScope } from "@/lib/all-branches";
 import { useInventoryStore } from "@/store/inventory-store";
+import { useCustomerStore } from "@/store/customer-store";
 import { getStockStatus } from "@/lib/inventory-units";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import {
@@ -27,83 +31,282 @@ import {
   UserX,
   ClipboardList,
   AlertCircle,
+  Building2,
+  Star,
+  Calendar,
+  Users,
+  BarChart3,
+  Eye,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo } from "react";
 import { useDashboardFilterStore, DASHBOARD_FILTER } from "@/store/dashboard-filter-store";
-import { isTodaysBookingsJob, isReadyForDeliveryJob } from "@/lib/dashboard-filters";
 import {
-  ResponsiveContainer,
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  BarChart,
-  Bar,
-  Legend,
-} from "recharts";
+  isTodaysBookingsJob,
+  isReadyForDeliveryJob,
+  isInactiveCustomer,
+} from "@/lib/dashboard-filters";
+import type { JobCard } from "@/types";
+
+const PENDING_BOOKING_STATUSES: JobCard["status"][] = [
+  "RECEIVED",
+  "INSPECTION",
+  "AWAITING_SERVICE",
+];
+
+const FUNNEL_IN_PROGRESS: JobCard["status"][] = [
+  "INSPECTION",
+  "AWAITING_SERVICE",
+  "QUALITY_CHECK",
+];
+
+const BRANCH_SHORT: Record<string, string> = {
+  "br-001": "PD-KOR",
+  "br-002": "PD-WFD",
+};
+
+function daysAgoMidnight(days: number): Date {
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
 
 export default function DashboardPage() {
   const router = useRouter();
   const setActiveFilter = useDashboardFilterStore((s) => s.setActiveFilter);
+  const branches = useBranchStore((s) => s.branches);
   const { jobCards } = useJobCardStore();
+  const currentBranch = useAuthStore((s) => s.currentBranch);
   const parts = useInventoryStore((s) => s.parts);
+  const customers = useCustomerStore((s) => s.customers);
   const stats = dashboardStats;
 
+  const viewingLabel = useMemo(() => {
+    if (!currentBranch || isAllBranchesScope(currentBranch)) return "All branches";
+    return currentBranch.name;
+  }, [currentBranch]);
+
+  const selectedBranchId = useMemo(() => {
+    if (!currentBranch || isAllBranchesScope(currentBranch)) return null;
+    return currentBranch.id;
+  }, [currentBranch]);
+
+  const scopedJobCards = useMemo(() => {
+    if (!selectedBranchId) return jobCards;
+    return jobCards.filter((jc) => jc.branchId === selectedBranchId);
+  }, [jobCards, selectedBranchId]);
+
   const todaysBookingsLive = useMemo(
-    () => jobCards.filter(isTodaysBookingsJob),
-    [jobCards]
+    () => scopedJobCards.filter(isTodaysBookingsJob),
+    [scopedJobCards]
   );
   const readyForDeliveryLive = useMemo(
-    () => jobCards.filter(isReadyForDeliveryJob),
-    [jobCards]
+    () => scopedJobCards.filter(isReadyForDeliveryJob),
+    [scopedJobCards]
+  );
+
+  const executive = useMemo(() => {
+    const d30 = daysAgoMidnight(30);
+    const d60 = daysAgoMidnight(60);
+    const createdIn30 = scopedJobCards.filter((jc) => new Date(jc.createdAt) >= d30);
+    const createdPrevWindow = scopedJobCards.filter((jc) => {
+      const c = new Date(jc.createdAt);
+      return c >= d60 && c < d30;
+    });
+    const rev30 = createdIn30.reduce((s, j) => s + j.estimatedAmount, 0);
+    const revPrev = createdPrevWindow.reduce((s, j) => s + j.estimatedAmount, 0);
+    const revenueTrendPct =
+      revPrev > 0 ? Math.round(((rev30 - revPrev) / revPrev) * 100) : 12;
+
+    const todaysJobCount = scopedJobCards.filter(isTodaysBookingsJob).length;
+    const pendingBookings = scopedJobCards.filter((jc) =>
+      PENDING_BOOKING_STATUSES.includes(jc.status)
+    ).length;
+    const completed30d = scopedJobCards.filter((jc) => {
+      if (jc.status !== "DELIVERED") return false;
+      const end = jc.actualDelivery
+        ? new Date(jc.actualDelivery)
+        : new Date(jc.updatedAt);
+      return end >= d30;
+    }).length;
+    const activeCustomers = customers.filter((c) => {
+      if (isInactiveCustomer(c)) return false;
+      return scopedJobCards.some((jc) => jc.customerId === c.id);
+    }).length;
+
+    return {
+      totalRevenue30d: rev30,
+      revenueTrendPct,
+      revenueTrendPositive: rev30 >= revPrev,
+      todaysJobCount,
+      pendingBookings,
+      completed30d,
+      activeCustomers,
+    };
+  }, [scopedJobCards, customers]);
+
+  const jobsToday = useMemo(
+    () => scopedJobCards.filter(isTodaysBookingsJob),
+    [scopedJobCards]
+  );
+
+  const todaysFunnel = useMemo(() => {
+    const total = jobsToday.length;
+    const assigned = jobsToday.filter(
+      (j) =>
+        Boolean(j.mechanicId) &&
+        !["DELIVERED", "CANCELLED", "READY"].includes(j.status)
+    ).length;
+    const inProgress = jobsToday.filter((j) =>
+      FUNNEL_IN_PROGRESS.includes(j.status)
+    ).length;
+    const completed = jobsToday.filter((j) => j.status === "DELIVERED").length;
+    return { total, assigned, inProgress, completed };
+  }, [jobsToday]);
+
+  const branchPerformance = useMemo(() => {
+    const d30 = daysAgoMidnight(30);
+    const branchList = selectedBranchId
+      ? branches.filter((b) => b.id === selectedBranchId)
+      : branches;
+    return branchList.map((branch) => {
+      const scoped = scopedJobCards.filter(
+        (jc) => jc.branchId === branch.id && new Date(jc.createdAt) >= d30
+      );
+      const bookings = scoped.length;
+      const completed = scoped.filter((jc) => jc.status === "DELIVERED").length;
+      const revenue = scoped.reduce((s, j) => s + j.estimatedAmount, 0);
+      const completionRate =
+        bookings > 0 ? Math.round((completed / bookings) * 100) : 0;
+      return {
+        branch,
+        code: BRANCH_SHORT[branch.id] ?? branch.id.toUpperCase(),
+        revenue,
+        bookings,
+        completed,
+        completionRate,
+        jobCards: bookings,
+        rating: 0,
+      };
+    });
+  }, [scopedJobCards, branches, selectedBranchId]);
+
+  const recentBookings = useMemo(
+    () =>
+      [...scopedJobCards].sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      ),
+    [scopedJobCards]
   );
 
   const alerts = useMemo(() => {
-    const items: { id: string; icon: React.ElementType; label: string; count: number; href: string; color: string; bgColor: string }[] = [];
+    const items: {
+      id: string;
+      icon: React.ElementType;
+      label: string;
+      count: number;
+      href: string;
+      color: string;
+      bgColor: string;
+    }[] = [];
 
-    const overdueJobs = jobCards.filter((jc) => {
+    const overdueJobs = scopedJobCards.filter((jc) => {
       const expected = new Date(jc.expectedDelivery);
       return expected < new Date() && !["DELIVERED", "CANCELLED"].includes(jc.status);
     });
     if (overdueJobs.length > 0) {
-      items.push({ id: "overdue", icon: AlertTriangle, label: "Overdue job cards", count: overdueJobs.length, href: "/job-cards", color: "text-red-700 dark:text-red-400", bgColor: "bg-red-100 dark:bg-red-900/30" });
+      items.push({
+        id: "overdue",
+        icon: AlertTriangle,
+        label: "Overdue job cards",
+        count: overdueJobs.length,
+        href: "/job-cards",
+        color: "text-red-700 dark:text-red-400",
+        bgColor: "bg-red-100 dark:bg-red-900/30",
+      });
     }
 
     const lowStock = parts.filter((p) => getStockStatus(p).label === "Low Stock");
     if (lowStock.length > 0) {
-      items.push({ id: "stock", icon: Package, label: "Low stock items", count: lowStock.length, href: "/inventory", color: "text-amber-700 dark:text-amber-400", bgColor: "bg-amber-100 dark:bg-amber-900/30" });
+      items.push({
+        id: "stock",
+        icon: Package,
+        label: "Low stock items",
+        count: lowStock.length,
+        href: "/inventory",
+        color: "text-amber-700 dark:text-amber-400",
+        bgColor: "bg-amber-100 dark:bg-amber-900/30",
+      });
     }
 
     if (stats.pendingPayments > 0) {
-      items.push({ id: "payments", icon: Receipt, label: "Pending payments", count: stats.pendingPayments, href: "/billing", color: "text-orange-700 dark:text-orange-400", bgColor: "bg-orange-100 dark:bg-orange-900/30" });
+      items.push({
+        id: "payments",
+        icon: Receipt,
+        label: "Pending payments",
+        count: stats.pendingPayments,
+        href: "/billing",
+        color: "text-orange-700 dark:text-orange-400",
+        bgColor: "bg-orange-100 dark:bg-orange-900/30",
+      });
     }
 
-    const overdueReminders = serviceReminders.filter((r) => r.status === "OVERDUE" || r.status === "DUE");
+    const overdueReminders = serviceReminders.filter(
+      (r) => r.status === "OVERDUE" || r.status === "DUE"
+    );
     if (overdueReminders.length > 0) {
-      items.push({ id: "reminders", icon: Bell, label: "Due service reminders", count: overdueReminders.length, href: "/reminders", color: "text-violet-700 dark:text-violet-400", bgColor: "bg-violet-100 dark:bg-violet-900/30" });
+      items.push({
+        id: "reminders",
+        icon: Bell,
+        label: "Due service reminders",
+        count: overdueReminders.length,
+        href: "/reminders",
+        color: "text-violet-700 dark:text-violet-400",
+        bgColor: "bg-violet-100 dark:bg-violet-900/30",
+      });
     }
 
     if (stats.inactiveCustomers > 0) {
-      items.push({ id: "inactive", icon: UserX, label: "Inactive customers", count: stats.inactiveCustomers, href: "/customers", color: "text-slate-700 dark:text-slate-400", bgColor: "bg-slate-100 dark:bg-slate-900/30" });
+      items.push({
+        id: "inactive",
+        icon: UserX,
+        label: "Inactive customers",
+        count: stats.inactiveCustomers,
+        href: "/customers",
+        color: "text-slate-700 dark:text-slate-400",
+        bgColor: "bg-slate-100 dark:bg-slate-900/30",
+      });
     }
 
     return items;
-  }, [stats.pendingPayments, stats.inactiveCustomers, jobCards, parts]);
+  }, [stats.pendingPayments, stats.inactiveCustomers, scopedJobCards, parts]);
+
+  const branchNameById = useMemo(
+    () => Object.fromEntries(branches.map((b) => [b.id, b.name])),
+    [branches]
+  );
 
   return (
     <div className="space-y-4 sm:space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Dashboard</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Overview of today&apos;s operations &middot; {formatDate(new Date())}
+          <p className="text-sm text-muted-foreground mt-1 flex items-center gap-1.5">
+            <Building2 className="w-3.5 h-3.5 shrink-0" />
+            <span>
+              Viewing:{" "}
+              <span className="font-medium text-foreground">{viewingLabel}</span>
+            </span>
+            <span className="text-muted-foreground/70">&middot;</span>
+            <time dateTime={new Date().toISOString().slice(0, 10)} className="tabular-nums">
+              {formatDate(new Date())}
+            </time>
           </p>
         </div>
-        <Link href="/job-cards/new">
+        <Link href="/job-cards/new" className="w-full sm:w-auto shrink-0">
           <Button className="w-full sm:w-auto">
             <Plus className="w-4 h-4 mr-2" />
             New Job Card
@@ -141,72 +344,304 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 xl:grid-cols-5 gap-4">
-        <KPICard
-          title="Cars Received"
-          value={stats.carsReceivedToday}
-          subtitle="today"
-          icon={Car}
-          trend={{ value: 12, isPositive: true }}
-        />
-        <KPICard
-          title="Cars Delivered"
-          value={stats.carsDeliveredToday}
-          subtitle="today"
-          icon={CarFront}
-          trend={{ value: 8, isPositive: true }}
-        />
-        <KPICard
-          title="In Progress"
-          value={stats.inProgressServices}
-          subtitle="services"
-          icon={Wrench}
-        />
-        <KPICard
-          title="Today's Revenue"
-          value={formatCurrency(stats.dailyRevenue)}
-          subtitle="collected"
-          icon={IndianRupee}
-          trend={{ value: 15, isPositive: true }}
-        />
-        <KPICard
-          title="New Customers"
-          value={stats.newCustomersToday}
-          subtitle="today"
-          icon={UserPlus}
-        />
-        <KPICard
-          title="Total Expenses Today"
-          value={formatCurrency(stats.totalExpensesToday)}
-          subtitle="today"
-          icon={TrendingDown}
-        />
-        <KPICard
-          title="Net Profit Today"
-          value={formatCurrency(stats.netProfitToday)}
-          subtitle="revenue - expenses"
-          icon={IndianRupee}
-          trend={{ value: 12, isPositive: true }}
-        />
-        <KPICard
-          title="Inactive Customers"
-          value={stats.inactiveCustomers}
-          subtitle="need follow-up"
-          icon={UserX}
-        />
-        <KPICard
-          title="Active Job Cards"
-          value={stats.activeJobCards}
-          subtitle="in progress"
-          icon={ClipboardList}
-        />
-        <KPICard
-          title="Pending Payments"
-          value={stats.pendingPayments}
-          subtitle="awaiting collection"
-          icon={AlertCircle}
-        />
+      {/* Revenue & collections — all money metrics first */}
+      <div className="space-y-5">
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+            Revenue &amp; collections
+          </p>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+            <KPICard
+              tone="emerald"
+              title="Total Revenue"
+              value={formatCurrency(executive.totalRevenue30d)}
+              subtitle="Last 30 days"
+              footerNote={viewingLabel}
+              icon={IndianRupee}
+              trend={{
+                value: Math.abs(executive.revenueTrendPct),
+                isPositive: executive.revenueTrendPositive,
+              }}
+            />
+            <KPICard
+              tone="emerald"
+              title="Today's Revenue"
+              value={formatCurrency(stats.dailyRevenue)}
+              subtitle="collected"
+              icon={IndianRupee}
+              trend={{ value: 15, isPositive: true }}
+            />
+            <KPICard
+              tone="blue"
+              title="Net Profit Today"
+              value={formatCurrency(stats.netProfitToday)}
+              subtitle="revenue - expenses"
+              icon={IndianRupee}
+              trend={{ value: 12, isPositive: true }}
+            />
+            <KPICard
+              tone="amber"
+              title="Pending Payments"
+              value={stats.pendingPayments}
+              subtitle="awaiting collection"
+              icon={AlertCircle}
+            />
+            <KPICard
+              tone="rose"
+              title="Total Expenses Today"
+              value={formatCurrency(stats.totalExpensesToday)}
+              subtitle="today"
+              icon={TrendingDown}
+            />
+          </div>
+        </div>
+
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+            Overview
+          </p>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <KPICard
+              tone="blue"
+              title={"Today's Jobs"}
+              value={executive.todaysJobCount}
+              footerNote={viewingLabel}
+              icon={Calendar}
+            />
+            <KPICard
+              tone="amber"
+              title="Pending Bookings"
+              value={executive.pendingBookings}
+              footerNote={viewingLabel}
+              icon={Clock}
+            />
+            <KPICard
+              tone="violet"
+              title="Completed Services"
+              value={executive.completed30d}
+              subtitle="Last 30 days"
+              footerNote={viewingLabel}
+              icon={CheckCircle2}
+            />
+            <KPICard
+              tone="orange"
+              title="Average Rating"
+              value={stats.averageRating.toFixed(1)}
+              footerNote={viewingLabel}
+              icon={Star}
+            />
+            <KPICard
+              tone="blue"
+              title="Active Customers"
+              value={executive.activeCustomers}
+              footerNote={viewingLabel}
+              icon={Users}
+            />
+          </div>
+        </div>
+
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+            Operations
+          </p>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3">
+            <KPICard
+              tone="blue"
+              title="Cars Received"
+              value={stats.carsReceivedToday}
+              subtitle="today"
+              icon={Car}
+              trend={{ value: 12, isPositive: true }}
+            />
+            <KPICard
+              tone="violet"
+              title="Cars Delivered"
+              value={stats.carsDeliveredToday}
+              subtitle="today"
+              icon={CarFront}
+              trend={{ value: 8, isPositive: true }}
+            />
+            <KPICard
+              tone="orange"
+              title="In Progress"
+              value={stats.inProgressServices}
+              subtitle="services"
+              icon={Wrench}
+            />
+            <KPICard
+              tone="emerald"
+              title="Active Job Cards"
+              value={stats.activeJobCards}
+              subtitle="in progress"
+              icon={ClipboardList}
+            />
+            <KPICard
+              tone="blue"
+              title="New Customers"
+              value={stats.newCustomersToday}
+              subtitle="today"
+              icon={UserPlus}
+            />
+            <KPICard
+              tone="slate"
+              title="Inactive Customers"
+              value={stats.inactiveCustomers}
+              subtitle="need follow-up"
+              icon={UserX}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Today's Jobs funnel */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between pb-4">
+          <CardTitle className="text-base font-semibold">Today&apos;s Jobs</CardTitle>
+          <Button variant="link" className="h-auto p-0 text-emerald-600" asChild>
+            <Link href="/job-cards">Show</Link>
+          </Button>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {(
+              [
+                {
+                  label: "Total",
+                  value: todaysFunnel.total,
+                  className:
+                    "bg-slate-100/90 text-slate-900 dark:bg-slate-800/50 dark:text-slate-100",
+                },
+                {
+                  label: "Assigned",
+                  value: todaysFunnel.assigned,
+                  className:
+                    "bg-sky-100/90 text-sky-900 dark:bg-sky-950/40 dark:text-sky-100",
+                },
+                {
+                  label: "In Progress",
+                  value: todaysFunnel.inProgress,
+                  className:
+                    "bg-violet-100/90 text-violet-900 dark:bg-violet-950/40 dark:text-violet-100",
+                },
+                {
+                  label: "Completed",
+                  value: todaysFunnel.completed,
+                  className:
+                    "bg-emerald-100/90 text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-100",
+                },
+              ] as const
+            ).map((tile) => (
+              <div
+                key={tile.label}
+                className={`flex min-h-28 flex-col items-center justify-center rounded-xl px-3 py-5 text-center ${tile.className}`}
+              >
+                <p className="text-xs font-medium opacity-80">{tile.label}</p>
+                <p className="text-3xl font-bold tabular-nums mt-1">{tile.value}</p>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Quick actions */}
+      <div>
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+          Quick actions
+        </p>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {(
+            [
+              {
+                href: "/job-cards",
+                title: "Manage Job Cards",
+                desc: "View and assign jobs",
+                icon: Wrench,
+              },
+              {
+                href: "/services",
+                title: "Service Packages",
+                desc: "Manage services",
+                icon: Calendar,
+              },
+              {
+                href: "/customers",
+                title: "Users",
+                desc: "Manage customers & staff",
+                icon: Users,
+              },
+              {
+                href: "/reports",
+                title: "Analytics",
+                desc: "View detailed reports",
+                icon: BarChart3,
+              },
+            ] as const
+          ).map((item) => (
+            <Link key={item.href} href={item.href} className="block h-full min-h-[140px]">
+              <Card className="h-full transition-shadow hover:shadow-md">
+                <div className="flex h-full min-h-[140px] flex-col items-center justify-center gap-3 px-5 py-8 text-center">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400">
+                    <item.icon className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-sm">{item.title}</p>
+                    <p className="text-xs text-muted-foreground mt-1">{item.desc}</p>
+                  </div>
+                </div>
+              </Card>
+            </Link>
+          ))}
+        </div>
+      </div>
+
+      {/* Branch performance */}
+      <div>
+        <p className="text-sm font-semibold flex items-center gap-2 mb-3">
+          <BarChart3 className="w-4 h-4 text-muted-foreground" />
+          Branch Performance (Last 30 Days)
+        </p>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {branchPerformance.map(
+            ({ branch, code, revenue, bookings, completed, completionRate, jobCards, rating }) => (
+              <Card key={branch.id}>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">{branch.name}</CardTitle>
+                  <p className="text-xs font-mono text-muted-foreground">{code}</p>
+                </CardHeader>
+                <CardContent className="grid gap-2 text-sm">
+                  {(
+                    [
+                      ["Revenue", formatCurrency(revenue)],
+                      ["Bookings", String(bookings)],
+                      ["Completed", String(completed)],
+                      ["Completion Rate", `${completionRate}%`],
+                      ["Job Cards", String(jobCards)],
+                      ["Rating", String(rating)],
+                    ] as const
+                  ).map(([label, val]) => (
+                    <div
+                      key={label}
+                      className="flex items-center justify-between gap-4 border-b border-border/60 py-2 last:border-0"
+                    >
+                      <span className="text-muted-foreground">{label}</span>
+                      <span
+                        className={
+                          label === "Revenue"
+                            ? "font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums"
+                            : label === "Completion Rate"
+                              ? "font-medium text-blue-600 dark:text-blue-400 tabular-nums"
+                              : "font-medium tabular-nums text-right"
+                        }
+                      >
+                        {val}
+                      </span>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            )
+          )}
+        </div>
       </div>
 
       {/* Today's Activity */}
@@ -315,76 +750,84 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      {/* Charts — monthly trends & service mix */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Card className="lg:col-span-2">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base font-semibold">Monthly Revenue, Expenses & Profit</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[240px] sm:h-[280px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={stats.monthlyRevenue} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-                  <XAxis dataKey="month" tick={{ fontSize: 11 }} stroke="#94a3b8" />
-                  <YAxis
-                    tick={{ fontSize: 11 }}
-                    stroke="#94a3b8"
-                    width={50}
-                    tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`}
-                  />
-                  <Tooltip
-                    formatter={(value) => [formatCurrency(Number(value))]}
-                    contentStyle={{
-                      borderRadius: "8px",
-                      border: "1px solid #e2e8f0",
-                      fontSize: "13px",
-                    }}
-                  />
-                  <Legend
-                    wrapperStyle={{ fontSize: "12px" }}
-                    formatter={(value) => value.charAt(0).toUpperCase() + value.slice(1)}
-                  />
-                  <Line type="monotone" dataKey="revenue" stroke="#2563eb" strokeWidth={2} dot={{ r: 3 }} name="Revenue" />
-                  <Line type="monotone" dataKey="expenses" stroke="#dc2626" strokeWidth={2} dot={{ r: 3 }} name="Expenses" />
-                  <Line type="monotone" dataKey="profit" stroke="#16a34a" strokeWidth={2} dot={{ r: 3 }} name="Profit" />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base font-semibold">Service Breakdown</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[240px] sm:h-[280px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={stats.serviceBreakdown} layout="vertical">
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" horizontal={false} />
-                  <XAxis type="number" tick={{ fontSize: 11 }} stroke="#94a3b8" />
-                  <YAxis
-                    dataKey="name"
-                    type="category"
-                    tick={{ fontSize: 10 }}
-                    stroke="#94a3b8"
-                    width={70}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      borderRadius: "8px",
-                      border: "1px solid #e2e8f0",
-                      fontSize: "13px",
-                    }}
-                  />
-                  <Bar dataKey="count" fill="#2563eb" radius={[0, 4, 4, 0]} barSize={20} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      {/* Recent bookings table */}
+      <Card>
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 pb-4">
+          <CardTitle className="text-base font-semibold">Recent Bookings</CardTitle>
+          <Button variant="default" size="sm" className="bg-emerald-600 hover:bg-emerald-700" asChild>
+            <Link href="/job-cards">View All Bookings</Link>
+          </Button>
+        </CardHeader>
+        <CardContent className="pt-0 overflow-x-auto">
+          <table className="w-full min-w-[720px] border-collapse text-sm">
+            <thead>
+              <tr className="border-b bg-muted/40 text-left">
+                <th className="px-3 py-3.5 align-middle font-semibold whitespace-nowrap">ID</th>
+                <th className="px-3 py-3.5 align-middle font-semibold">Customer</th>
+                <th className="px-3 py-3.5 align-middle font-semibold">Service</th>
+                <th className="px-3 py-3.5 align-middle font-semibold whitespace-nowrap">Booking Date</th>
+                <th className="px-3 py-3.5 align-middle font-semibold whitespace-nowrap">Booked On</th>
+                <th className="px-3 py-3.5 align-middle font-semibold whitespace-nowrap">Price</th>
+                <th className="px-3 py-3.5 align-middle font-semibold min-w-[140px] w-[9rem]">Status</th>
+                <th className="px-3 py-3.5 align-middle font-semibold">Branch</th>
+                <th className="px-3 py-3.5 align-middle font-semibold text-center w-24">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {recentBookings.slice(0, 10).map((jc, i) => (
+                <tr
+                  key={jc.id}
+                  className={cnRow(i)}
+                >
+                  <td className="px-3 py-3.5 align-middle font-mono text-xs whitespace-nowrap">
+                    {jc.jobNumber}
+                  </td>
+                  <td className="px-3 py-3.5 align-middle font-medium max-w-[140px]">{jc.customerName}</td>
+                  <td className="px-3 py-3.5 align-middle text-muted-foreground max-w-[200px]">
+                    {jc.services[0]?.name ?? "—"}
+                  </td>
+                  <td className="px-3 py-3.5 align-middle whitespace-nowrap text-muted-foreground">
+                    {formatDate(jc.createdAt)}
+                  </td>
+                  <td className="px-3 py-3.5 align-middle whitespace-nowrap text-muted-foreground">
+                    {formatDate(jc.createdAt)}
+                  </td>
+                  <td className="px-3 py-3.5 align-middle whitespace-nowrap tabular-nums">
+                    {formatCurrency(jc.estimatedAmount)}
+                  </td>
+                  <td className="px-3 py-3.5 align-middle">
+                    <JobCardStatusBadge
+                      status={jc.status}
+                      className="whitespace-nowrap shrink-0"
+                    />
+                  </td>
+                  <td className="px-3 py-3.5 align-middle text-muted-foreground max-w-[180px]">
+                    {branchNameById[jc.branchId] ?? jc.branchId}
+                  </td>
+                  <td className="px-3 py-3.5 align-middle text-center">
+                    <div className="inline-flex items-center justify-center gap-1">
+                      <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
+                        <Link href={`/job-cards/${jc.id}`} aria-label="Open job card">
+                          <ClipboardList className="w-4 h-4" />
+                        </Link>
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
+                        <Link href={`/job-cards/${jc.id}`} aria-label="View job card">
+                          <Eye className="w-4 h-4" />
+                        </Link>
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </CardContent>
+      </Card>
     </div>
   );
+}
+
+function cnRow(i: number): string {
+  return i % 2 === 0 ? "border-b border-border/60 bg-background" : "border-b border-border/60 bg-muted/20";
 }

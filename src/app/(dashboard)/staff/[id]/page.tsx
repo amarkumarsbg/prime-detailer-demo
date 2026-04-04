@@ -1,10 +1,16 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { use, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { branches, jobCards } from "@/lib/mock-data";
+import { jobCards } from "@/lib/mock-data";
 import { useStaffStore, generateRandomAttendancePin } from "@/store/staff-store";
 import { useAuthStore } from "@/store/auth-store";
+import { useBranchStore } from "@/store/branch-store";
+import {
+  canManageStaffUsers,
+  getAssignableStaffRoles,
+  roleDisplayLabel,
+} from "@/lib/rbac";
 import { Breadcrumbs } from "@/components/shared/breadcrumbs";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -37,19 +43,11 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import type { UserRole } from "@/types";
 
-const ROLE_LABELS: Record<UserRole, string> = {
-  ADMIN: "Admin",
-  MANAGER: "Manager",
-  RECEPTIONIST: "Receptionist",
-  MECHANIC: "Mechanic",
-};
-
-const ROLE_OPTIONS: UserRole[] = ["ADMIN", "MANAGER", "RECEPTIONIST", "MECHANIC"];
-
 export default function StaffDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
   const user = useAuthStore((s) => s.user);
+  const branches = useBranchStore((s) => s.branches);
   const member = useStaffStore((s) => s.staff.find((row) => row.id === id));
   const updateAttendancePin = useStaffStore((s) => s.updateAttendancePin);
   const updateStaff = useStaffStore((s) => s.updateStaff);
@@ -77,8 +75,27 @@ export default function StaffDetailPage({ params }: { params: Promise<{ id: stri
     setEditIsActive(member.isActive);
   };
 
-  const canEditStaff =
-    user?.role === "ADMIN" || user?.role === "MANAGER";
+  const assignableRoles = useMemo(
+    () => getAssignableStaffRoles(user?.role),
+    [user?.role]
+  );
+
+  const roleOptionsForSelect = useMemo(() => {
+    if (!member) return assignableRoles;
+    if (assignableRoles.includes(member.role)) return assignableRoles;
+    return [member.role, ...assignableRoles];
+  }, [member, assignableRoles]);
+
+  const branchOptionsForEdit = useMemo(() => {
+    const active = branches.filter((b) => b.isActive);
+    const cur = branches.find((b) => b.id === editBranchId);
+    if (cur && !cur.isActive && !active.some((b) => b.id === cur.id)) {
+      return [cur, ...active];
+    }
+    return active;
+  }, [branches, editBranchId]);
+
+  const canEditStaff = canManageStaffUsers(user?.role);
 
   const canEditAttendancePin = canEditStaff;
 
@@ -126,6 +143,11 @@ export default function StaffDetailPage({ params }: { params: Promise<{ id: stri
     const phone = editPhone.trim();
     if (!name || !email || !phone) {
       toast.error("Name, email, and phone are required.");
+      return;
+    }
+    const allowed = getAssignableStaffRoles(user?.role);
+    if (editRole !== member.role && !allowed.includes(editRole)) {
+      toast.error("You can't assign that role.");
       return;
     }
     const result = updateStaff(member.id, {
@@ -187,7 +209,7 @@ export default function StaffDetailPage({ params }: { params: Promise<{ id: stri
                       <h2 className="text-xl font-bold">{member.name}</h2>
                       <span className="inline-flex items-center gap-1.5 mt-1 px-2.5 py-1 rounded-full text-xs font-medium bg-primary/10 text-primary">
                         <Shield className="w-3 h-3" />
-                        {ROLE_LABELS[member.role]}
+                        {roleDisplayLabel(member.role)}
                       </span>
                       {!member.isActive && (
                         <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground">
@@ -248,9 +270,9 @@ export default function StaffDetailPage({ params }: { params: Promise<{ id: stri
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            {ROLE_OPTIONS.map((r) => (
+                            {roleOptionsForSelect.map((r) => (
                               <SelectItem key={r} value={r}>
-                                {ROLE_LABELS[r]}
+                                {roleDisplayLabel(r)}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -263,7 +285,7 @@ export default function StaffDetailPage({ params }: { params: Promise<{ id: stri
                             <SelectValue placeholder="Branch" />
                           </SelectTrigger>
                           <SelectContent>
-                            {branches.map((b) => (
+                            {branchOptionsForEdit.map((b) => (
                               <SelectItem key={b.id} value={b.id}>
                                 {b.name}
                               </SelectItem>

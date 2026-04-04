@@ -28,9 +28,19 @@ const QUOTATION_STATUS_CONFIG: Record<QuotationStatus, { label: string; variant:
   CONVERTED: { label: "Converted", variant: "default" },
 };
 
-export function JobCardStatusBadge({ status }: { status: JobCardStatus }) {
+export function JobCardStatusBadge({
+  status,
+  className,
+}: {
+  status: JobCardStatus;
+  className?: string;
+}) {
   const config = JOB_CARD_STATUS_CONFIG[status];
-  return <Badge variant={config.variant}>{config.label}</Badge>;
+  return (
+    <Badge variant={config.variant} className={className}>
+      {config.label}
+    </Badge>
+  );
 }
 
 export function InvoiceStatusBadge({ status }: { status: InvoiceStatus }) {

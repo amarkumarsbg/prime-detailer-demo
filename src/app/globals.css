@@ -55,11 +55,17 @@
   --input: #e2e8f0;
   --ring: #2563eb;
   --radius: 0.625rem;
-  --sidebar: #f8fafc;
-  --sidebar-foreground: #334155;
-  --sidebar-accent: #e2e8f0;
-  --sidebar-accent-foreground: #0f172a;
-  --sidebar-border: #e2e8f0;
+  /**
+   * App rail: deep ink + cyan/sapphire accent (unique vs default slate/emerald).
+   * Main content above still uses --background (light).
+   */
+  --sidebar: #070b14;
+  --sidebar-foreground: #9db4d6;
+  --sidebar-accent: #0f1628;
+  --sidebar-accent-foreground: #e8f0ff;
+  --sidebar-border: #162036;
+  --sidebar-glow: #22d3ee;
+  --sidebar-glow-dim: rgba(34, 211, 238, 0.12);
 }
 
 .dark {
@@ -82,11 +88,13 @@
   --border: #334155;
   --input: #334155;
   --ring: #3b82f6;
-  --sidebar: #0f172a;
-  --sidebar-foreground: #94a3b8;
-  --sidebar-accent: #1e293b;
-  --sidebar-accent-foreground: #f8fafc;
-  --sidebar-border: #334155;
+  --sidebar: #070b14;
+  --sidebar-foreground: #8ba3c4;
+  --sidebar-accent: #0f1628;
+  --sidebar-accent-foreground: #e8f0ff;
+  --sidebar-border: #1e2d47;
+  --sidebar-glow: #22d3ee;
+  --sidebar-glow-dim: rgba(34, 211, 238, 0.1);
 }
 
 body {

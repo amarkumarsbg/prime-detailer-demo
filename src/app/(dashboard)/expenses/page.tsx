@@ -27,6 +27,7 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 import { useExpenseStore } from "@/store/expense-store";
 import { useAuthStore } from "@/store/auth-store";
 import type { Expense, ExpenseCategory } from "@/types";
+import { resolveSessionBranchId } from "@/lib/all-branches";
 import { Plus, TrendingDown, BarChart3 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -120,7 +121,7 @@ export default function ExpensesPage() {
     }
     const createdBy = user?.id ?? "usr-001";
     const createdByName = user?.name ?? "User";
-    const branchId = currentBranch?.id ?? user?.branchId ?? "br-001";
+    const branchId = resolveSessionBranchId(currentBranch, user?.branchId);
 
     addExpense({
       category,

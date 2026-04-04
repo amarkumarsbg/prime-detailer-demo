@@ -10,6 +10,7 @@ const todaysBookings = jobCards.filter((jc) =>
 const readyForDelivery = jobCards.filter((jc) => jc.status === "READY");
 
 export const dashboardStats: DashboardStats = {
+  averageRating: 4.3,
   carsReceivedToday: 3,
   carsDeliveredToday: 2,
   inProgressServices: 12,

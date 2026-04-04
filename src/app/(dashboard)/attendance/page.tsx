@@ -19,7 +19,7 @@ import { useStaffStore } from "@/store/staff-store";
 import { useAuthStore } from "@/store/auth-store";
 import { AttendanceQrPanel } from "@/components/attendance/attendance-qr-panel";
 import { format } from "date-fns";
-import type { UserRole } from "@/types";
+import { roleDisplayLabel } from "@/lib/rbac";
 import {
   Clock,
   UserCheck,
@@ -29,13 +29,7 @@ import {
 } from "lucide-react";
 import { getShiftStatusDisplay } from "@/lib/attendance-display";
 import { canViewStaffAttendanceDashboard } from "@/lib/attendance-access";
-
-const ROLE_LABELS: Record<UserRole, string> = {
-  ADMIN: "Admin",
-  MANAGER: "Manager",
-  RECEPTIONIST: "Receptionist",
-  MECHANIC: "Mechanic",
-};
+import { resolveSessionBranchId } from "@/lib/all-branches";
 
 function formatDuration(minutes?: number): string {
   if (minutes == null) return "—";
@@ -57,7 +51,7 @@ export default function AttendancePage() {
   const attendanceRecords = useAttendanceStore((s) => s.records);
   const staff = useStaffStore((s) => s.staff);
 
-  const branchId = currentBranch?.id ?? user?.branchId ?? "br-001";
+  const branchId = resolveSessionBranchId(currentBranch, user?.branchId);
 
   useEffect(() => {
     if (user && !canViewStaffAttendanceDashboard(user.role)) {
@@ -446,11 +440,11 @@ export default function AttendancePage() {
                         <td className="py-3 px-4 align-middle font-medium text-foreground">
                           {s.name}
                           <span className="sm:hidden block text-xs font-normal text-muted-foreground mt-0.5">
-                            {ROLE_LABELS[s.role]}
+                            {roleDisplayLabel(s.role)}
                           </span>
                         </td>
                         <td className="py-3 px-3 align-middle text-muted-foreground hidden sm:table-cell">
-                          {ROLE_LABELS[s.role]}
+                          {roleDisplayLabel(s.role)}
                         </td>
                         <td className="py-3 px-3 text-right align-middle">{s.present}</td>
                         <td className="py-3 px-3 text-right align-middle">{s.absent}</td>

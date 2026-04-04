@@ -23,6 +23,9 @@ interface AddStaffInput {
   phone: string;
   role: UserRole;
   branchId: string;
+  isActive?: boolean;
+  birthday?: string;
+  anniversary?: string;
 }
 
 export type UpdateStaffResult =
@@ -75,6 +78,8 @@ export const useStaffStore = create<StaffStoreState>()(
 
       addStaff: (input) => {
         const list = get().staff;
+        const birthday = input.birthday?.trim();
+        const anniversary = input.anniversary?.trim();
         const newMember: User = {
           id: nextStaffId(list),
           name: input.name.trim(),
@@ -82,8 +87,10 @@ export const useStaffStore = create<StaffStoreState>()(
           phone: input.phone.trim(),
           role: input.role,
           branchId: input.branchId,
-          isActive: true,
+          isActive: input.isActive ?? true,
           attendancePin: allocateAttendancePin(() => get().staff),
+          ...(birthday ? { birthday } : {}),
+          ...(anniversary ? { anniversary } : {}),
         };
         set({ staff: [newMember, ...list] });
       },

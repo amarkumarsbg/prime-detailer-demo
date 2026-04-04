@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState, useMemo } from "react";
 import { useAuthStore } from "@/store/auth-store";
 import type { UserRole } from "@/types";
+import { canAccessNavItem } from "@/lib/rbac";
 import { invoices } from "@/lib/mock-data";
 import { useCustomerStore } from "@/store/customer-store";
 import { useVehicleStore } from "@/store/vehicle-store";
@@ -71,12 +72,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
   }, [open]);
 
   const visibleNavPages = useMemo(
-    () =>
-      NAV_PAGES.filter(
-        (p) =>
-          !p.roles ||
-          (userRole != null && p.roles.includes(userRole))
-      ),
+    () => NAV_PAGES.filter((p) => canAccessNavItem(p.roles, userRole)),
     [userRole]
   );
 

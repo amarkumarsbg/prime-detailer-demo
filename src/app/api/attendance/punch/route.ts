@@ -7,7 +7,15 @@ import type { UserRole } from "@/types";
 
 export const dynamic = "force-dynamic";
 
-const ROLES: UserRole[] = ["ADMIN", "MANAGER", "RECEPTIONIST", "MECHANIC"];
+const ROLES: UserRole[] = [
+  "SUPER_ADMIN",
+  "ADMIN",
+  "BRANCH_MANAGER",
+  "MANAGER",
+  "SUPERVISOR",
+  "RECEPTIONIST",
+  "MECHANIC",
+];
 
 export async function POST(request: Request) {
   try {

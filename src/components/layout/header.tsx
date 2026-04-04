@@ -1,6 +1,7 @@
 "use client";
 
 import { useAuthStore } from "@/store/auth-store";
+import { useBranchStore } from "@/store/branch-store";
 import { useSettingsStore } from "@/store/settings-store";
 import { useSidebarStore } from "@/store/sidebar-store";
 import { useNotificationStore } from "@/store/notification-store";
@@ -14,6 +15,7 @@ import { useAppointmentStore } from "@/store/appointment-store";
 import { useInventoryStore } from "@/store/inventory-store";
 import { useExpenseStore } from "@/store/expense-store";
 import { serviceCatalog } from "@/lib/mock-data";
+import { ALL_BRANCHES_BRANCH, isAllBranchesScope } from "@/lib/all-branches";
 import {
   GLOBAL_SEARCH_MIN_CHARS,
   runGlobalSearch,
@@ -23,6 +25,13 @@ import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import { getInitials } from "@/lib/utils";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -57,7 +66,8 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import Link from "next/link";
 
 export function Header() {
-  const { user, currentBranch, logout } = useAuthStore();
+  const { user, currentBranch, logout, setBranch } = useAuthStore();
+  const branchesFromStore = useBranchStore((s) => s.branches);
   const businessName = useSettingsStore((s) => s.businessName);
   const toggleMobileOpen = useSidebarStore((s) => s.toggleMobileOpen);
   const unreadCount = useNotificationStore((s) => s.unreadCount);
@@ -167,12 +177,43 @@ export function Header() {
     router.push("/login");
   };
 
+  const canSelectOrgWide = useMemo(
+    () =>
+      !!user &&
+      (user.role === "SUPER_ADMIN" ||
+        user.role === "ADMIN" ||
+        user.role === "MANAGER"),
+    [user]
+  );
+
+  const selectableBranches = useMemo(() => {
+    const active = branchesFromStore.filter((b) => b.isActive);
+    if (!user) return active;
+    if (canSelectOrgWide) return active;
+    return active.filter((b) => b.id === user.branchId);
+  }, [branchesFromStore, user, canSelectOrgWide]);
+
+  useEffect(() => {
+    if (!user) return;
+    if (canSelectOrgWide) return;
+    const mine =
+      selectableBranches.find((b) => b.id === user.branchId) ?? selectableBranches[0];
+    if (!mine) return;
+    if (
+      !currentBranch ||
+      isAllBranchesScope(currentBranch) ||
+      !selectableBranches.some((b) => b.id === currentBranch.id)
+    ) {
+      setBranch(mine);
+    }
+  }, [user, canSelectOrgWide, currentBranch, selectableBranches, setBranch]);
+
   if (!user) return null;
 
   const count = unreadCount();
 
   return (
-    <header className="shrink-0 z-30 h-16 border-b border-sidebar-border bg-background flex items-center gap-2 sm:gap-3 px-3 sm:px-4 md:px-6">
+    <header className="shrink-0 z-30 h-16 border-b border-border bg-background flex items-center gap-2 sm:gap-3 px-3 sm:px-4 md:px-6">
       {/* Mobile only — company logo (desktop branding lives in the sidebar) */}
       <Link
         href="/dashboard"
@@ -189,10 +230,34 @@ export function Header() {
         </div>
       </Link>
 
-      {/* Desktop / tablet — current branch only (matches pre-refactor header) */}
-      <div className="hidden md:flex items-center gap-2 text-sm text-muted-foreground shrink-0 min-w-0">
-        <Building2 className="w-4 h-4 shrink-0" />
-        <span className="font-medium text-foreground truncate max-w-[200px]">{currentBranch?.name}</span>
+      <div className="flex shrink-0">
+        <Select
+          value={currentBranch?.id ?? ALL_BRANCHES_BRANCH.id}
+          onValueChange={(id) => {
+            if (id === ALL_BRANCHES_BRANCH.id) {
+              setBranch(ALL_BRANCHES_BRANCH);
+              return;
+            }
+            const next = selectableBranches.find((b) => b.id === id);
+            if (next) setBranch(next);
+          }}
+          disabled={!canSelectOrgWide && selectableBranches.length === 0}
+        >
+          <SelectTrigger className="h-9 min-h-9 w-max max-w-[min(100vw-5rem,17.5rem)] justify-start gap-2 border-border bg-muted/50 px-3 text-left text-sm shadow-none [&>span]:line-clamp-none [&>span]:min-w-0 [&>span]:break-words [&>span]:whitespace-normal">
+            <Building2 className="w-4 h-4 text-muted-foreground shrink-0 self-center" />
+            <SelectValue placeholder="Branch" />
+          </SelectTrigger>
+          <SelectContent align="start" className="max-h-[min(24rem,70vh)] min-w-[var(--radix-select-trigger-width)]">
+            {canSelectOrgWide && (
+              <SelectItem value={ALL_BRANCHES_BRANCH.id}>{ALL_BRANCHES_BRANCH.name}</SelectItem>
+            )}
+            {selectableBranches.map((b) => (
+              <SelectItem key={b.id} value={b.id}>
+                {b.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Search — center, flexible */}
