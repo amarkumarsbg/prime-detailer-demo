@@ -59,7 +59,7 @@ const NAV_PAGES: NavPageItem[] = [
     icon: TrendingUp,
     roles: ["ADMIN", "MANAGER", "BRANCH_MANAGER"],
   },
-  { name: "Reports", href: "/reports", icon: BarChart3 },
+  { name: "Analytics", href: "/reports", icon: BarChart3 },
   {
     name: "Advanced Reports",
     href: "/advanced-reports",

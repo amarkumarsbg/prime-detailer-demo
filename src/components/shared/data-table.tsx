@@ -131,7 +131,7 @@ export function DataTable<T extends Record<string, any>>({
                         onRowClick(item);
                       }
                     }}
-                    className={`rounded-lg border border-border bg-card p-3 text-sm shadow-sm ${onRowClick ? "cursor-pointer hover:bg-muted/30 hover:border-primary/25 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring" : ""}`}
+                    className={`rounded-lg border border-border bg-card p-3 text-sm shadow-sm ${onRowClick ? "cursor-pointer outline-none transition-[background-color,border-color] duration-200 ease-out hover:bg-muted/40 hover:border-primary/30 focus-visible:ring-2 focus-visible:ring-ring" : ""}`}
                   >
                     {renderMobileCard(item)}
                   </div>
@@ -178,8 +178,8 @@ export function DataTable<T extends Record<string, any>>({
                       tabIndex={clickable ? 0 : undefined}
                       className={
                         clickable
-                          ? "border-b border-border last:border-0 cursor-pointer outline-none transition-colors hover:bg-muted/30 focus-visible:bg-muted/30 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
-                          : "border-b border-border last:border-0 hover:bg-muted/30 transition-colors"
+                          ? "border-b border-border last:border-0 cursor-pointer outline-none transition-colors duration-200 ease-out hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+                          : "border-b border-border last:border-0 transition-colors duration-200 ease-out hover:bg-muted/40"
                       }
                       onClick={() => onRowClick?.(item)}
                       onKeyDown={(e) => {

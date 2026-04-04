@@ -133,7 +133,7 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
         roles: ["ADMIN", "MANAGER", "BRANCH_MANAGER"],
       },
       { label: "Mechanics", href: "/mechanics", icon: Gauge, roles: ["ADMIN", "MANAGER"] },
-      { label: "Reports", href: "/reports", icon: BarChart3, roles: ["ADMIN", "MANAGER"] },
+      { label: "Analytics", href: "/reports", icon: BarChart3, roles: ["ADMIN", "MANAGER"] },
       {
         label: "Advanced Reports",
         href: "/advanced-reports",
@@ -253,16 +253,17 @@ function SidebarContent({
                         onNavClick?.();
                       }}
                       className={cn(
-                        "group flex cursor-pointer items-center gap-2.5 rounded-xl px-3 py-2.5 text-[13px] font-medium transition-[color,background-color,transform] duration-150",
+                        "group flex cursor-pointer items-center gap-2.5 rounded-xl px-3 py-2.5 text-[13px] font-medium",
+                        "translate-x-0 transform-gpu transition-[color,background-color,transform] duration-300 ease-in-out",
                         isActive
                           ? "bg-[var(--sidebar-active)] text-[var(--sidebar-active-foreground)] shadow-sm"
-                          : "text-[var(--sidebar-foreground)] hover:bg-[var(--sidebar-accent)] hover:text-[var(--sidebar-accent-foreground)] motion-safe:hover:translate-x-0.5"
+                          : "text-[var(--sidebar-foreground)] hover:bg-[var(--sidebar-accent)] hover:text-[var(--sidebar-accent-foreground)] motion-safe:hover:translate-x-1"
                       )}
                     >
                       <item.icon
                         className={cn(
-                          "h-4 w-4 shrink-0 transition-transform duration-150",
-                          isActive ? "opacity-100" : "opacity-90 motion-safe:group-hover:scale-105"
+                          "h-4 w-4 shrink-0 transition-transform duration-300 ease-in-out",
+                          isActive ? "opacity-100" : "opacity-90 motion-safe:group-hover:scale-110"
                         )}
                       />
                       <span>{item.label}</span>

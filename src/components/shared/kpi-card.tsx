@@ -75,7 +75,9 @@ export function KPICard({
   return (
     <Card
       className={cn(
-        "flex h-full min-h-0 flex-col transition-[box-shadow,transform] duration-200 ease-out motion-safe:hover:-translate-y-0.5 hover:shadow-lg dark:hover:shadow-md",
+        "flex h-full min-h-0 flex-col translate-y-0 transform-gpu backface-hidden will-change-transform",
+        "transition-[transform,box-shadow] duration-[12000ms] ease-[cubic-bezier(0.45,0,0.55,1)]",
+        "motion-safe:hover:-translate-y-1 hover:shadow-lg dark:hover:shadow-md",
         tone ? toneSurfaceClass[tone] : "hover:shadow-md dark:hover:shadow-md",
         isFeatured &&
           !tone &&

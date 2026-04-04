@@ -41,6 +41,13 @@ import {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo } from "react";
+import { motion, useReducedMotion } from "framer-motion";
+import { StaggerGrid } from "@/components/motion/stagger-grid";
+import {
+  alertStaggerContainer,
+  alertStaggerItem,
+  easeSmooth,
+} from "@/components/motion/dashboard-motion";
 import { useDashboardFilterStore, DASHBOARD_FILTER } from "@/store/dashboard-filter-store";
 import {
   isTodaysBookingsJob,
@@ -48,6 +55,8 @@ import {
   isInactiveCustomer,
 } from "@/lib/dashboard-filters";
 import type { JobCard } from "@/types";
+import { DashboardSkeleton } from "@/components/shared/skeleton-loader";
+import { useDashboardStoresReady } from "@/hooks/use-dashboard-stores-ready";
 
 const PENDING_BOOKING_STATUSES: JobCard["status"][] = [
   "RECEIVED",
@@ -289,6 +298,13 @@ export default function DashboardPage() {
     [branches]
   );
 
+  const dashboardStoresReady = useDashboardStoresReady();
+  const reduceMotion = useReducedMotion();
+
+  if (!dashboardStoresReady) {
+    return <DashboardSkeleton />;
+  }
+
   return (
     <div className="space-y-4 sm:space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -314,35 +330,75 @@ export default function DashboardPage() {
         </Link>
       </div>
 
-      {alerts.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {alerts.map((alert) => {
-            const filterMap: Record<string, string> = {
-              overdue: DASHBOARD_FILTER.OVERDUE,
-              stock: DASHBOARD_FILTER.LOW_STOCK,
-              payments: DASHBOARD_FILTER.PENDING_PAYMENT,
-              reminders: DASHBOARD_FILTER.DUE_SOON,
-              inactive: DASHBOARD_FILTER.INACTIVE,
-            };
-            const filter = filterMap[alert.id];
-            return (
-              <button
-                key={alert.id}
-                type="button"
-                onClick={() => {
-                  if (filter) setActiveFilter(filter);
-                  router.push(alert.href);
-                }}
-                className={`flex items-center gap-2 px-3 py-2 rounded-lg border border-border ${alert.bgColor} hover:shadow-sm transition-all text-left cursor-pointer`}
-              >
-                <alert.icon className={`w-4 h-4 ${alert.color}`} />
-                <span className={`text-sm font-semibold ${alert.color}`}>{alert.count}</span>
-                <span className="text-xs text-muted-foreground">{alert.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      )}
+      {alerts.length > 0 &&
+        (reduceMotion ? (
+          <div className="flex flex-wrap gap-2">
+            {alerts.map((alert) => {
+              const filterMap: Record<string, string> = {
+                overdue: DASHBOARD_FILTER.OVERDUE,
+                stock: DASHBOARD_FILTER.LOW_STOCK,
+                payments: DASHBOARD_FILTER.PENDING_PAYMENT,
+                reminders: DASHBOARD_FILTER.DUE_SOON,
+                inactive: DASHBOARD_FILTER.INACTIVE,
+              };
+              const filter = filterMap[alert.id];
+              return (
+                <button
+                  key={alert.id}
+                  type="button"
+                  onClick={() => {
+                    if (filter) setActiveFilter(filter);
+                    router.push(alert.href);
+                  }}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-lg border border-border ${alert.bgColor} cursor-pointer text-left`}
+                >
+                  <alert.icon className={`w-4 h-4 ${alert.color}`} />
+                  <span className={`text-sm font-semibold ${alert.color}`}>{alert.count}</span>
+                  <span className="text-xs text-muted-foreground">{alert.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <motion.div
+            variants={alertStaggerContainer}
+            initial="hidden"
+            animate="show"
+            className="flex flex-wrap gap-2"
+          >
+            {alerts.map((alert) => {
+              const filterMap: Record<string, string> = {
+                overdue: DASHBOARD_FILTER.OVERDUE,
+                stock: DASHBOARD_FILTER.LOW_STOCK,
+                payments: DASHBOARD_FILTER.PENDING_PAYMENT,
+                reminders: DASHBOARD_FILTER.DUE_SOON,
+                inactive: DASHBOARD_FILTER.INACTIVE,
+              };
+              const filter = filterMap[alert.id];
+              return (
+                <motion.button
+                  key={alert.id}
+                  type="button"
+                  variants={alertStaggerItem}
+                  onClick={() => {
+                    if (filter) setActiveFilter(filter);
+                    router.push(alert.href);
+                  }}
+                  whileHover={{
+                    y: -1,
+                    transition: { delay: 0.2, duration: 0.75, ease: easeSmooth },
+                  }}
+                  whileTap={{ scale: 0.99 }}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-lg border border-border ${alert.bgColor} cursor-pointer text-left hover:shadow-sm`}
+                >
+                  <alert.icon className={`w-4 h-4 ${alert.color}`} />
+                  <span className={`text-sm font-semibold ${alert.color}`}>{alert.count}</span>
+                  <span className="text-xs text-muted-foreground">{alert.label}</span>
+                </motion.button>
+              );
+            })}
+          </motion.div>
+        ))}
 
       {/* Revenue & collections — all money metrics first */}
       <div className="space-y-5">
@@ -350,7 +406,7 @@ export default function DashboardPage() {
           <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-3">
             Revenue &amp; collections
           </p>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+          <StaggerGrid className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
             <KPICard
               tone="emerald"
               title="Total Revenue"
@@ -393,14 +449,14 @@ export default function DashboardPage() {
               subtitle="today"
               icon={TrendingDown}
             />
-          </div>
+          </StaggerGrid>
         </div>
 
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-3">
             Overview
           </p>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <StaggerGrid className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <KPICard
               tone="blue"
               title={"Today's Jobs"}
@@ -437,14 +493,14 @@ export default function DashboardPage() {
               footerNote={viewingLabel}
               icon={Users}
             />
-          </div>
+          </StaggerGrid>
         </div>
 
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-3">
             Operations
           </p>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3">
+          <StaggerGrid className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3">
             <KPICard
               tone="blue"
               title="Cars Received"
@@ -489,7 +545,7 @@ export default function DashboardPage() {
               subtitle="need follow-up"
               icon={UserX}
             />
-          </div>
+          </StaggerGrid>
         </div>
       </div>
 
@@ -502,7 +558,7 @@ export default function DashboardPage() {
           </Button>
         </CardHeader>
         <CardContent className="pt-0">
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <StaggerGrid className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             {(
               [
                 {
@@ -539,7 +595,7 @@ export default function DashboardPage() {
                 <p className="text-3xl font-bold tabular-nums mt-1">{tile.value}</p>
               </div>
             ))}
-          </div>
+          </StaggerGrid>
         </CardContent>
       </Card>
 
@@ -548,7 +604,7 @@ export default function DashboardPage() {
         <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-3">
           Quick actions
         </p>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StaggerGrid className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {(
             [
               {
@@ -578,7 +634,7 @@ export default function DashboardPage() {
             ] as const
           ).map((item) => (
             <Link key={item.href} href={item.href} className="block h-full min-h-[140px]">
-              <Card className="h-full transition-shadow hover:shadow-md">
+              <Card className="h-full translate-y-0 transform-gpu will-change-transform transition-[transform,box-shadow] duration-[12000ms] ease-[cubic-bezier(0.45,0,0.55,1)] motion-safe:hover:-translate-y-1 hover:shadow-md">
                 <div className="flex h-full min-h-[140px] flex-col items-center justify-center gap-3 px-5 py-8 text-center">
                   <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400">
                     <item.icon className="h-5 w-5" />
@@ -591,7 +647,7 @@ export default function DashboardPage() {
               </Card>
             </Link>
           ))}
-        </div>
+        </StaggerGrid>
       </div>
 
       {/* Branch performance */}
@@ -600,7 +656,7 @@ export default function DashboardPage() {
           <BarChart3 className="w-4 h-4 text-muted-foreground" />
           Branch Performance (Last 30 Days)
         </p>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <StaggerGrid className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {branchPerformance.map(
             ({ branch, code, revenue, bookings, completed, completionRate, jobCards, rating }) => (
               <Card key={branch.id}>
@@ -641,7 +697,7 @@ export default function DashboardPage() {
               </Card>
             )
           )}
-        </div>
+        </StaggerGrid>
       </div>
 
       {/* Today's Activity */}
@@ -675,7 +731,7 @@ export default function DashboardPage() {
                   <Link
                     key={jc.id}
                     href={`/job-cards/${jc.id}`}
-                    className="flex items-center justify-between p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors shrink-0"
+                    className="flex shrink-0 items-center justify-between rounded-lg border border-border p-3 transition-[background-color,border-color] duration-[850ms] ease-[cubic-bezier(0.45,0,0.55,1)] hover:bg-muted/50"
                   >
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
@@ -727,7 +783,7 @@ export default function DashboardPage() {
                   <Link
                     key={jc.id}
                     href={`/job-cards/${jc.id}`}
-                    className="flex items-center justify-between p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors shrink-0"
+                    className="flex shrink-0 items-center justify-between rounded-lg border border-border p-3 transition-[background-color,border-color] duration-[850ms] ease-[cubic-bezier(0.45,0,0.55,1)] hover:bg-muted/50"
                   >
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
