@@ -1,5 +1,6 @@
 "use client";
 
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { cn, getInitials } from "@/lib/utils";
@@ -14,6 +15,7 @@ import {
   LayoutDashboard,
   Users,
   Car,
+  CarFront,
   ClipboardList,
   Receipt,
   Wrench,
@@ -36,6 +38,7 @@ import {
   Store,
   TrendingUp,
   FileBarChart,
+  ChevronDown,
 } from "lucide-react";
 
 type NavItem = {
@@ -161,58 +164,126 @@ function SidebarContent({
     items: group.items.filter((item) => canAccessNavItem(item.roles, userRole)),
   })).filter((group) => group.items.length > 0);
 
+  const navRef = useRef<HTMLElement>(null);
+  const navContentRef = useRef<HTMLDivElement>(null);
+  const [showScrollHint, setShowScrollHint] = useState(false);
+
+  const updateScrollHint = useCallback(() => {
+    const el = navRef.current;
+    if (!el || navOverflow !== "auto") {
+      setShowScrollHint(false);
+      return;
+    }
+    const { scrollTop, scrollHeight, clientHeight } = el;
+    const canScroll = scrollHeight > clientHeight + 2;
+    const atBottom = scrollTop + clientHeight >= scrollHeight - 6;
+    setShowScrollHint(canScroll && !atBottom);
+  }, [navOverflow]);
+
+  const navContentSignature = filteredGroups.map((g) => g.items.length).join(",");
+
+  const scrollNavDown = useCallback(() => {
+    const el = navRef.current;
+    if (!el) return;
+    const remaining = el.scrollHeight - el.scrollTop - el.clientHeight;
+    const step = Math.min(Math.max(el.clientHeight * 0.75, 72), Math.max(remaining, 0));
+    if (step <= 0) return;
+    el.scrollBy({ top: step, behavior: "smooth" });
+  }, []);
+
+  useLayoutEffect(() => {
+    updateScrollHint();
+  }, [pathname, userRole, navContentSignature, updateScrollHint]);
+
+  useEffect(() => {
+    const el = navRef.current;
+    const inner = navContentRef.current;
+    if (!el || navOverflow !== "auto") return;
+
+    updateScrollHint();
+    el.addEventListener("scroll", updateScrollHint, { passive: true });
+    const ro = new ResizeObserver(() => updateScrollHint());
+    ro.observe(el);
+    if (inner) ro.observe(inner);
+    window.addEventListener("resize", updateScrollHint);
+
+    return () => {
+      el.removeEventListener("scroll", updateScrollHint);
+      ro.disconnect();
+      window.removeEventListener("resize", updateScrollHint);
+    };
+  }, [navOverflow, updateScrollHint, navContentSignature]);
+
   return (
-    <nav
-      className={cn(
-        "flex-1 min-h-0 py-3 px-2.5 space-y-3 overflow-x-hidden",
-        navOverflow === "hidden" && "overflow-y-hidden overscroll-none",
-        navOverflow === "auto" && "overflow-y-auto overscroll-y-contain scrollbar-none",
-        className
-      )}
-    >
-      {filteredGroups.map((group, groupIndex) => (
-        <section
-          key={group.label}
-          className="space-y-1"
-          aria-labelledby={`nav-section-${navSectionSlug(group.label)}`}
-        >
-          <h2
-            id={`nav-section-${navSectionSlug(group.label)}`}
-            className={cn(
-              "text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--sidebar-section-heading)] px-3 pb-1.5",
-              groupIndex === 0 ? "pt-0" : "pt-4"
-            )}
+    <div className={cn("relative flex min-h-0 flex-1 flex-col", className)}>
+      <nav
+        ref={navRef}
+        className={cn(
+          "min-h-0 flex-1 overflow-x-hidden py-3 px-2.5",
+          navOverflow === "hidden" && "overflow-y-hidden overscroll-none",
+          navOverflow === "auto" && "overflow-y-auto overscroll-y-contain scrollbar-none"
+        )}
+      >
+        <div ref={navContentRef} className="space-y-3">
+          {filteredGroups.map((group, groupIndex) => (
+            <section
+              key={group.label}
+              className="space-y-1"
+              aria-labelledby={`nav-section-${navSectionSlug(group.label)}`}
+            >
+              <h2
+                id={`nav-section-${navSectionSlug(group.label)}`}
+                className={cn(
+                  "text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--sidebar-section-heading)] px-3 pb-1.5",
+                  groupIndex === 0 ? "pt-0" : "pt-4"
+                )}
+              >
+                {group.label}
+              </h2>
+              <div className="space-y-0.5 px-1.5">
+                {group.items.map((item) => {
+                  const isActive =
+                    pathname === item.href || pathname.startsWith(item.href + "/");
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      onClick={() => {
+                        if (SIDEBAR_CLEAR_FILTER_HREFS.has(item.href)) clearDashboardFilter(null);
+                        onNavClick?.();
+                      }}
+                      className={cn(
+                        "flex cursor-pointer items-center gap-2.5 rounded-xl px-3 py-2.5 text-[13px] font-medium transition-colors duration-150",
+                        isActive
+                          ? "bg-[var(--sidebar-active)] text-[var(--sidebar-active-foreground)] shadow-sm"
+                          : "text-[var(--sidebar-foreground)] hover:bg-[var(--sidebar-accent)] hover:text-[var(--sidebar-accent-foreground)]"
+                      )}
+                    >
+                      <item.icon className={cn("h-4 w-4 shrink-0", isActive ? "opacity-100" : "opacity-90")} />
+                      <span>{item.label}</span>
+                    </Link>
+                  );
+                })}
+              </div>
+            </section>
+          ))}
+        </div>
+      </nav>
+
+      {navOverflow === "auto" && showScrollHint && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center bg-gradient-to-t from-[var(--sidebar)] from-40% via-[var(--sidebar)]/85 to-transparent pb-2.5 pt-10">
+          <button
+            type="button"
+            onClick={scrollNavDown}
+            className="pointer-events-auto inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-white/10 bg-[var(--sidebar-scroll-hint-bg)] px-3 py-1.5 text-xs font-medium text-white shadow-sm transition-[transform,filter] hover:brightness-110 active:scale-[0.98]"
+            aria-label="Scroll down for more navigation options"
           >
-            {group.label}
-          </h2>
-          <div className="space-y-0.5 px-1.5">
-            {group.items.map((item) => {
-              const isActive =
-                pathname === item.href || pathname.startsWith(item.href + "/");
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={() => {
-                    if (SIDEBAR_CLEAR_FILTER_HREFS.has(item.href)) clearDashboardFilter(null);
-                    onNavClick?.();
-                  }}
-                  className={cn(
-                    "flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-[13px] font-medium transition-colors duration-150 cursor-pointer",
-                    isActive
-                      ? "bg-[var(--sidebar-active)] text-[var(--sidebar-active-foreground)] shadow-sm"
-                      : "text-[var(--sidebar-foreground)] hover:bg-[var(--sidebar-accent)] hover:text-[var(--sidebar-accent-foreground)]"
-                  )}
-                >
-                  <item.icon className={cn("w-4 h-4 shrink-0", isActive ? "opacity-100" : "opacity-90")} />
-                  <span>{item.label}</span>
-                </Link>
-              );
-            })}
-          </div>
-        </section>
-      ))}
-    </nav>
+            Scroll for more options
+            <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-95" strokeWidth={2.25} aria-hidden />
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -231,8 +302,12 @@ export function Sidebar() {
 
   const brandHeader = (
     <div className="flex items-center gap-3 min-w-0">
-      <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-[var(--sidebar-active)] shrink-0 shadow-sm">
-        <Wrench className="w-5 h-5 text-[var(--sidebar-active-foreground)]" />
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[var(--sidebar-active)] shadow-md shadow-black/25 ring-1 ring-white/15">
+        <CarFront
+          className="h-[22px] w-[22px] text-[var(--sidebar-active-foreground)]"
+          strokeWidth={1.65}
+          aria-hidden
+        />
       </div>
       <div className="overflow-hidden min-w-0">
         <h1 className="text-base font-bold text-[var(--sidebar-accent-foreground)] leading-tight truncate">

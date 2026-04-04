@@ -73,6 +73,8 @@
   --sidebar-active-foreground: #ffffff;
   --sidebar-glow: #3b82f6;
   --sidebar-glow-dim: rgba(37, 99, 235, 0.08);
+  /** Pill at bottom of scrollable nav (“Scroll for more options”) */
+  --sidebar-scroll-hint-bg: rgba(100, 116, 139, 0.42);
 }
 
 .dark {
@@ -106,6 +108,7 @@
   --sidebar-active-foreground: #ffffff;
   --sidebar-glow: #3b82f6;
   --sidebar-glow-dim: rgba(37, 99, 235, 0.1);
+  --sidebar-scroll-hint-bg: rgba(100, 116, 139, 0.42);
 }
 
 body {
