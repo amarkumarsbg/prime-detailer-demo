@@ -139,6 +139,7 @@ export default function SettingsPage() {
   const [newHesName, setNewHesName] = useState("");
   const [newHesTotalYears, setNewHesTotalYears] = useState("5");
   const [newHesIntervalMonths, setNewHesIntervalMonths] = useState("6");
+  const [newHesEstimate, setNewHesEstimate] = useState("0");
 
   const handleAddHighEndService = () => {
     if (!newHesName.trim()) { toast.error("Enter service name"); return; }
@@ -148,10 +149,17 @@ export default function SettingsPage() {
     for (let m = intervalMonths; m <= totalYears * 12; m += intervalMonths) {
       intervals.push(m);
     }
-    highEndStore.addService({ name: newHesName.trim(), reminderIntervals: intervals, totalYears });
+    const estimateAmountInr = Math.max(0, parseInt(newHesEstimate, 10) || 0);
+    highEndStore.addService({
+      name: newHesName.trim(),
+      reminderIntervals: intervals,
+      totalYears,
+      estimateAmountInr,
+    });
     setNewHesName("");
     setNewHesTotalYears("5");
     setNewHesIntervalMonths("6");
+    setNewHesEstimate("0");
     toast.success(`"${newHesName.trim()}" added as high-end service`);
   };
 
@@ -742,7 +750,8 @@ export default function SettingsPage() {
                 High-End Services
               </CardTitle>
               <p className="text-sm text-muted-foreground mt-1">
-                Manage premium services that require periodic maintenance reminders. When a job card with these services is delivered, reminders are automatically generated for the customer.
+                Manage premium programs: each can have an estimated amount (excl. GST) added on the job card when
+                selected, plus maintenance reminders after delivery.
               </p>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -754,7 +763,20 @@ export default function SettingsPage() {
                       <Sparkles className="w-4 h-4 text-amber-600 dark:text-amber-400" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="font-medium">{svc.name}</p>
+                      <div className="flex flex-wrap items-center gap-2 gap-y-1">
+                        <p className="font-medium">{svc.name}</p>
+                        <span className="text-[10px] text-muted-foreground">Est. (₹ excl. GST)</span>
+                        <Input
+                          type="number"
+                          min={0}
+                          className="h-8 w-24 text-xs"
+                          value={String(svc.estimateAmountInr ?? 0)}
+                          onChange={(e) => {
+                            const v = Math.max(0, parseInt(e.target.value, 10) || 0);
+                            highEndStore.updateService(svc.id, { estimateAmountInr: v });
+                          }}
+                        />
+                      </div>
                       <p className="text-xs text-muted-foreground mt-0.5">
                         Reminders for {svc.totalYears} year{svc.totalYears !== 1 ? "s" : ""}
                       </p>
@@ -792,13 +814,23 @@ export default function SettingsPage() {
               {/* Add new */}
               <div className="space-y-4">
                 <p className="text-sm font-medium">Add New High-End Service</p>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                   <div className="space-y-1.5">
                     <Label className="text-xs">Service Name *</Label>
                     <Input
                       placeholder="e.g. PPF Coating, Ceramic"
                       value={newHesName}
                       onChange={(e) => setNewHesName(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Est. amount (₹ excl. GST)</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      placeholder="0"
+                      value={newHesEstimate}
+                      onChange={(e) => setNewHesEstimate(e.target.value)}
                     />
                   </div>
                   <div className="space-y-1.5">

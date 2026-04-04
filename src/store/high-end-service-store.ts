@@ -8,14 +8,46 @@ export interface HighEndServiceConfig {
   name: string;
   reminderIntervals: number[];
   totalYears: number;
+  /** Flat amount (excl. GST) added to the job estimate when this program is selected on the job card. */
+  estimateAmountInr?: number;
 }
 
 const DEFAULT_HIGH_END_SERVICES: HighEndServiceConfig[] = [
-  { id: "hes-001", name: "PPF Coating", reminderIntervals: [6, 12, 18, 24, 30, 36, 42, 48, 54, 60], totalYears: 5 },
-  { id: "hes-002", name: "Ceramic Coating", reminderIntervals: [6, 12, 18, 24, 30, 36, 42, 48, 54, 60], totalYears: 5 },
-  { id: "hes-003", name: "Graphene Coating", reminderIntervals: [6, 12, 24, 36, 48, 60], totalYears: 5 },
-  { id: "hes-004", name: "Interior Detailing", reminderIntervals: [12, 24, 36, 48, 60], totalYears: 5 },
-  { id: "hes-005", name: "Paint Correction", reminderIntervals: [12, 24, 36], totalYears: 3 },
+  {
+    id: "hes-001",
+    name: "PPF Coating",
+    reminderIntervals: [6, 12, 18, 24, 30, 36, 42, 48, 54, 60],
+    totalYears: 5,
+    estimateAmountInr: 45_000,
+  },
+  {
+    id: "hes-002",
+    name: "Ceramic Coating",
+    reminderIntervals: [6, 12, 18, 24, 30, 36, 42, 48, 54, 60],
+    totalYears: 5,
+    estimateAmountInr: 35_000,
+  },
+  {
+    id: "hes-003",
+    name: "Graphene Coating",
+    reminderIntervals: [6, 12, 24, 36, 48, 60],
+    totalYears: 5,
+    estimateAmountInr: 40_000,
+  },
+  {
+    id: "hes-004",
+    name: "Interior Detailing",
+    reminderIntervals: [12, 24, 36, 48, 60],
+    totalYears: 5,
+    estimateAmountInr: 8_000,
+  },
+  {
+    id: "hes-005",
+    name: "Paint Correction",
+    reminderIntervals: [12, 24, 36],
+    totalYears: 3,
+    estimateAmountInr: 15_000,
+  },
 ];
 
 interface HighEndServiceStore {

@@ -64,6 +64,10 @@ import { useStaffStore } from "@/store/staff-store";
 import { useHighEndServiceStore } from "@/store/high-end-service-store";
 import { useReminderStore } from "@/store/reminder-store";
 import { createOrGetInvoiceForJob } from "@/lib/invoice-from-job-card";
+import {
+  buildHighEndReminderMonthIntervals,
+  defaultManualFirstFollowUpMonths,
+} from "@/lib/high-end-follow-up";
 import { formatDate, formatCurrency, cn } from "@/lib/utils";
 import { pushActivityLog } from "@/lib/activity-log-helper";
 import type { JobCard, JobCardStatus, ServiceItem, InspectionPhoto, MechanicSwitchLog } from "@/types";
@@ -382,7 +386,18 @@ export default function JobCardDetailPage() {
     { id: string; url: string; type: "BEFORE" | "AFTER"; label: string }[]
   >([]);
 
-  const photosToShow = displayPhotos.length > 0 ? displayPhotos : inspectionPhotos;
+  /** Server-persisted photos plus local session adds (so After uploads work when Before photos already exist). */
+  const photosToShow = useMemo(() => {
+    const seen = new Set<string>();
+    const out: { id: string; url: string; type: "BEFORE" | "AFTER"; label: string }[] = [];
+    for (const p of [...displayPhotos, ...inspectionPhotos]) {
+      if (!seen.has(p.id)) {
+        seen.add(p.id);
+        out.push(p);
+      }
+    }
+    return out;
+  }, [displayPhotos, inspectionPhotos]);
   const detailPhotoCount = photosToShow.length;
 
   const hasBeforePhoto = useMemo(
@@ -440,9 +455,7 @@ export default function JobCardDetailPage() {
       if (!cfg || cfg.reminderIntervals.length === 0) continue;
       const raw = storedFollowUp[hesId];
       followUpNext[hesId] =
-        raw != null && cfg.reminderIntervals.includes(raw)
-          ? raw
-          : cfg.reminderIntervals[0]!;
+        raw != null && raw > 0 ? raw : cfg.reminderIntervals[0]!;
     }
     setHighEndFollowUpById(followUpNext);
   }, [id, jobCard, highEndServiceConfigs]);
@@ -456,7 +469,7 @@ export default function JobCardDetailPage() {
   }, [photoTab, canCompare]);
 
   const appendInspectionPhotosFromFiles = (files: FileList | null, type: "BEFORE" | "AFTER"): boolean => {
-    if (!files || files.length === 0 || displayPhotos.length > 0) return false;
+    if (!files || files.length === 0) return false;
     if (type === "BEFORE" && !canUploadBefore) {
       toast.error("Before photos can only be uploaded during inspection / in service");
       return false;
@@ -505,7 +518,7 @@ export default function JobCardDetailPage() {
   const [viewingPhoto, setViewingPhoto] = useState<string | null>(null);
 
   const handleRemovePhoto = (photoId: string) => {
-    if (displayPhotos.length > 0) return;
+    if (!inspectionPhotos.some((p) => p.id === photoId)) return;
     setInspectionPhotos((prev) => prev.filter((p) => p.id !== photoId));
     if (viewingPhoto === photoId) setViewingPhoto(null);
   };
@@ -574,6 +587,16 @@ export default function JobCardDetailPage() {
     const next = serviceItems.map((s) =>
       s.id === serviceId ? { ...s, isCompleted: !s.isCompleted } : s
     );
+    setServiceItems(next);
+    updateJobCard(jobCard.id, {
+      services: next,
+      updatedAt: new Date().toISOString(),
+    });
+  };
+
+  const setAllServicesComplete = (completed: boolean) => {
+    if (!jobCard || serviceItems.length === 0) return;
+    const next = serviceItems.map((s) => ({ ...s, isCompleted: completed }));
     setServiceItems(next);
     updateJobCard(jobCard.id, {
       services: next,
@@ -680,10 +703,7 @@ export default function JobCardDetailPage() {
               jobCard.highEndFirstFollowUpMonthsByServiceId?.[hesId] ??
               config.reminderIntervals[0] ??
               0;
-            let intervals = config.reminderIntervals.filter((m) => m >= first);
-            if (intervals.length === 0) {
-              intervals = config.reminderIntervals;
-            }
+            const intervals = buildHighEndReminderMonthIntervals(config.reminderIntervals, first);
             generateHighEndReminders({
               jobCardId: jobCard.id,
               serviceName: config.name,
@@ -783,7 +803,7 @@ export default function JobCardDetailPage() {
   }
 
   return (
-    <div className="space-y-4 sm:space-y-6 pb-8 md:pb-0">
+    <div className="space-y-4 sm:space-y-6 pb-10 sm:pb-12">
       <Breadcrumbs items={[
         { label: "Job Cards", href: "/job-cards" },
         { label: jobCard.jobNumber },
@@ -1339,6 +1359,9 @@ export default function JobCardDetailPage() {
               const canEdit =
                 currentStatus !== "DELIVERED" && currentStatus !== "CANCELLED";
               const monthsVal = highEndFollowUpById[hesId] ?? cfg.reminderIntervals[0]!;
+              const followSelectValue = cfg.reminderIntervals.includes(monthsVal)
+                ? String(monthsVal)
+                : "__custom__";
               return (
                 <div
                   key={hesId}
@@ -1351,34 +1374,70 @@ export default function JobCardDetailPage() {
                       {cfg.reminderIntervals.map((m) => formatHighEndIntervalMonths(m)).join(", ")}
                     </p>
                   </div>
-                  <div className="shrink-0 w-full sm:w-48 space-y-1">
+                  <div className="shrink-0 w-full sm:w-48 space-y-1.5">
                     <Label htmlFor={`hes-follow-${hesId}`} className="text-xs text-muted-foreground">
                       Next follow-up
                     </Label>
                     {canEdit ? (
-                      <Select
-                        value={String(monthsVal)}
-                        onValueChange={(v) => {
-                          const months = Number.parseInt(v, 10);
-                          const next = { ...highEndFollowUpById, [hesId]: months };
-                          setHighEndFollowUpById(next);
-                          updateJobCard(jobCard.id, {
-                            highEndFirstFollowUpMonthsByServiceId: next,
-                            updatedAt: new Date().toISOString(),
-                          });
-                        }}
-                      >
-                        <SelectTrigger id={`hes-follow-${hesId}`} className="h-9">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {cfg.reminderIntervals.map((m) => (
-                            <SelectItem key={m} value={String(m)}>
-                              {formatHighEndIntervalMonths(m)} ({m} mo)
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <>
+                        <Select
+                          value={followSelectValue}
+                          onValueChange={(v) => {
+                            let months: number;
+                            if (v === "__custom__") {
+                              months = cfg.reminderIntervals.includes(monthsVal)
+                                ? defaultManualFirstFollowUpMonths(cfg.reminderIntervals)
+                                : monthsVal;
+                            } else {
+                              months = Number.parseInt(v, 10);
+                            }
+                            const next = { ...highEndFollowUpById, [hesId]: months };
+                            setHighEndFollowUpById(next);
+                            updateJobCard(jobCard.id, {
+                              highEndFirstFollowUpMonthsByServiceId: next,
+                              updatedAt: new Date().toISOString(),
+                            });
+                          }}
+                        >
+                          <SelectTrigger id={`hes-follow-${hesId}`} className="h-9">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {cfg.reminderIntervals.map((m) => (
+                              <SelectItem key={m} value={String(m)}>
+                                {formatHighEndIntervalMonths(m)} ({m} mo)
+                              </SelectItem>
+                            ))}
+                            <SelectItem value="__custom__">Custom (enter months)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        {followSelectValue === "__custom__" && (
+                          <div className="space-y-1">
+                            <Label htmlFor={`hes-follow-custom-${hesId}`} className="text-[10px] text-muted-foreground">
+                              Months until first reminder
+                            </Label>
+                            <Input
+                              id={`hes-follow-custom-${hesId}`}
+                              type="number"
+                              min={1}
+                              max={120}
+                              className="h-9"
+                              value={monthsVal === 0 ? "" : String(monthsVal)}
+                              onChange={(e) => {
+                                const raw = e.target.value;
+                                const n = raw === "" ? 0 : Math.min(120, Math.max(1, Number.parseInt(raw, 10)));
+                                if (n === 0) return;
+                                const next = { ...highEndFollowUpById, [hesId]: n };
+                                setHighEndFollowUpById(next);
+                                updateJobCard(jobCard.id, {
+                                  highEndFirstFollowUpMonthsByServiceId: next,
+                                  updatedAt: new Date().toISOString(),
+                                });
+                              }}
+                            />
+                          </div>
+                        )}
+                      </>
                     ) : (
                       <p className="text-sm font-medium py-2 tabular-nums">
                         {formatHighEndIntervalMonths(monthsVal)} ({monthsVal} mo)
@@ -1420,8 +1479,8 @@ export default function JobCardDetailPage() {
 
         </TabsContent>
 
-        <TabsContent value="photos" className="mt-4 space-y-4 outline-none">
-      <Card>
+        <TabsContent value="photos" className="mt-4 space-y-4 outline-none pb-4">
+      <Card className="overflow-visible">
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle className="text-base flex items-center gap-2">
@@ -1526,6 +1585,25 @@ export default function JobCardDetailPage() {
             <CompareView photos={photosToShow} />
           ) : (
             <>
+              {/* Inputs live outside the grid so sr-only positioning does not fight grid layout */}
+              <input
+                id="job-card-photo-tab-camera"
+                ref={photoTabCameraInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="sr-only"
+                onChange={handlePhotoTabCameraFiles}
+              />
+              <input
+                id="job-card-photo-tab-upload"
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                className="sr-only"
+                onChange={handleFileSelect}
+              />
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {filteredPhotos.map((photo) => (
                   <div
@@ -1546,7 +1624,7 @@ export default function JobCardDetailPage() {
                       >
                         Preview
                       </button>
-                      {displayPhotos.length === 0 && (
+                      {inspectionPhotos.some((p) => p.id === photo.id) && (
                         <button
                           onClick={() => handleRemovePhoto(photo.id)}
                           className="text-sm font-semibold text-destructive hover:text-destructive/80 transition-colors"
@@ -1557,54 +1635,36 @@ export default function JobCardDetailPage() {
                     </div>
                   </div>
                 ))}
-                {displayPhotos.length === 0 &&
-                  ((photoTab === "BEFORE" && canUploadBefore) ||
-                    (photoTab === "AFTER" && canUploadAfter)) && (
-                    <div className="col-span-full grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-xl mx-auto w-full">
-                      <button
-                        type="button"
-                        onClick={() => photoTabCameraInputRef.current?.click()}
-                        className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-border min-h-[180px] sm:min-h-[220px] hover:border-primary/50 hover:bg-primary/5 transition-colors text-muted-foreground hover:text-primary"
-                      >
-                        <Camera className="w-7 h-7 mb-2" />
-                        <span className="text-sm font-medium">Take photo</span>
-                        <span className="text-xs mt-1 text-center px-2">Opens camera on your phone</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => fileInputRef.current?.click()}
-                        className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-border min-h-[180px] sm:min-h-[220px] hover:border-primary/50 hover:bg-primary/5 transition-colors text-muted-foreground hover:text-primary"
-                      >
-                        <Upload className="w-7 h-7 mb-2" />
-                        <span className="text-sm font-medium">
-                          Upload {photoTab === "BEFORE" ? "Before" : "After"}
-                        </span>
-                        <span className="text-xs mt-1 text-center px-2">Gallery or multiple files</span>
-                      </button>
+                {((photoTab === "BEFORE" && canUploadBefore) ||
+                  (photoTab === "AFTER" && canUploadAfter)) && (
+                    <div className="col-span-full sm:col-span-2 lg:col-span-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-xl mx-auto w-full">
+                        <label
+                          htmlFor="job-card-photo-tab-camera"
+                          className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-border min-h-[180px] sm:min-h-[220px] hover:border-primary/50 hover:bg-primary/5 transition-colors text-muted-foreground hover:text-primary cursor-pointer"
+                        >
+                          <Camera className="w-7 h-7 mb-2" />
+                          <span className="text-sm font-medium">Take photo</span>
+                          <span className="text-xs mt-1 text-center px-2">Opens camera on your phone</span>
+                        </label>
+                        <label
+                          htmlFor="job-card-photo-tab-upload"
+                          className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-border min-h-[180px] sm:min-h-[220px] hover:border-primary/50 hover:bg-primary/5 transition-colors text-muted-foreground hover:text-primary cursor-pointer"
+                        >
+                          <Upload className="w-7 h-7 mb-2" />
+                          <span className="text-sm font-medium">
+                            Upload {photoTab === "BEFORE" ? "Before" : "After"}
+                          </span>
+                          <span className="text-xs mt-1 text-center px-2">Gallery or multiple files</span>
+                        </label>
+                      </div>
                     </div>
                   )}
-                <input
-                  ref={photoTabCameraInputRef}
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  className="hidden"
-                  onChange={handlePhotoTabCameraFiles}
-                />
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  className="hidden"
-                  onChange={handleFileSelect}
-                />
               </div>
               {filteredPhotos.length === 0 &&
                 !(
-                  displayPhotos.length === 0 &&
-                  ((photoTab === "BEFORE" && canUploadBefore) ||
-                    (photoTab === "AFTER" && canUploadAfter))
+                  (photoTab === "BEFORE" && canUploadBefore) ||
+                  (photoTab === "AFTER" && canUploadAfter)
                 ) && (
                   <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
                     <ImageIcon className="w-10 h-10 mb-2 opacity-40" />
@@ -1645,13 +1705,15 @@ export default function JobCardDetailPage() {
                   <p className="text-white text-sm font-medium">{viewingPhotoData.label}</p>
                   <div className="flex items-center gap-2">
                     <span className="text-white/60 text-xs">{viewingIndex + 1} / {filteredPhotos.length}</span>
-                    <button
-                      onClick={() => handleRemovePhoto(viewingPhotoData.id)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/80 text-white text-xs font-medium hover:bg-red-600 transition-colors"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      Delete
-                    </button>
+                    {inspectionPhotos.some((p) => p.id === viewingPhotoData.id) && (
+                      <button
+                        onClick={() => handleRemovePhoto(viewingPhotoData.id)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/80 text-white text-xs font-medium hover:bg-red-600 transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Delete
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1861,47 +1923,60 @@ export default function JobCardDetailPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="px-6 pb-4 min-h-0 flex-1 overflow-y-auto space-y-4">
-            <input
-              ref={beforePhotoModalCameraRef}
-              type="file"
-              accept="image/*"
-              capture="environment"
-              className="hidden"
-              onChange={(e) => {
-                appendInspectionPhotosFromFiles(e.target.files, "BEFORE");
-                if (beforePhotoModalCameraRef.current) beforePhotoModalCameraRef.current.value = "";
-              }}
-            />
-            <input
-              ref={beforePhotoModalInputRef}
-              type="file"
-              accept="image/*"
-              multiple
-              className="hidden"
-              onChange={(e) => {
-                appendInspectionPhotosFromFiles(e.target.files, "BEFORE");
-                if (beforePhotoModalInputRef.current) beforePhotoModalInputRef.current.value = "";
-              }}
-            />
             <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => beforePhotoModalCameraRef.current?.click()}
-                disabled={displayPhotos.length > 0 || !canUploadBefore}
-                className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-border min-h-[120px] px-2 py-4 text-muted-foreground hover:border-primary/50 hover:bg-primary/5 hover:text-primary transition-colors disabled:pointer-events-none disabled:opacity-50"
-              >
-                <Camera className="w-7 h-7 mb-2" />
-                <span className="text-xs font-medium text-center">Take photo</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => beforePhotoModalInputRef.current?.click()}
-                disabled={displayPhotos.length > 0 || !canUploadBefore}
-                className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-border min-h-[120px] px-2 py-4 text-muted-foreground hover:border-primary/50 hover:bg-primary/5 hover:text-primary transition-colors disabled:pointer-events-none disabled:opacity-50"
-              >
-                <Upload className="w-7 h-7 mb-2" />
-                <span className="text-xs font-medium text-center">Upload photos</span>
-              </button>
+              {canUploadBefore ? (
+                <>
+                  <input
+                    id="before-modal-camera"
+                    ref={beforePhotoModalCameraRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="sr-only"
+                    onChange={(e) => {
+                      appendInspectionPhotosFromFiles(e.target.files, "BEFORE");
+                      if (beforePhotoModalCameraRef.current) beforePhotoModalCameraRef.current.value = "";
+                    }}
+                  />
+                  <label
+                    htmlFor="before-modal-camera"
+                    className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-border min-h-[120px] px-2 py-4 text-muted-foreground hover:border-primary/50 hover:bg-primary/5 hover:text-primary transition-colors cursor-pointer"
+                  >
+                    <Camera className="w-7 h-7 mb-2" />
+                    <span className="text-xs font-medium text-center">Take photo</span>
+                  </label>
+                  <input
+                    id="before-modal-upload"
+                    ref={beforePhotoModalInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    className="sr-only"
+                    onChange={(e) => {
+                      appendInspectionPhotosFromFiles(e.target.files, "BEFORE");
+                      if (beforePhotoModalInputRef.current) beforePhotoModalInputRef.current.value = "";
+                    }}
+                  />
+                  <label
+                    htmlFor="before-modal-upload"
+                    className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-border min-h-[120px] px-2 py-4 text-muted-foreground hover:border-primary/50 hover:bg-primary/5 hover:text-primary transition-colors cursor-pointer"
+                  >
+                    <Upload className="w-7 h-7 mb-2" />
+                    <span className="text-xs font-medium text-center">Upload photos</span>
+                  </label>
+                </>
+              ) : (
+                <>
+                  <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-border min-h-[120px] px-2 py-4 text-muted-foreground opacity-50 pointer-events-none">
+                    <Camera className="w-7 h-7 mb-2" />
+                    <span className="text-xs font-medium text-center">Take photo</span>
+                  </div>
+                  <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-border min-h-[120px] px-2 py-4 text-muted-foreground opacity-50 pointer-events-none">
+                    <Upload className="w-7 h-7 mb-2" />
+                    <span className="text-xs font-medium text-center">Upload photos</span>
+                  </div>
+                </>
+              )}
             </div>
             {photosToShow.filter((p) => p.type === "BEFORE").length > 0 ? (
               <div className="grid grid-cols-2 gap-2">
@@ -1912,7 +1987,7 @@ export default function JobCardDetailPage() {
                       <img src={photo.url} alt={photo.label} className="w-full aspect-4/3 object-cover" />
                       <div className="flex items-center justify-between px-2 py-1.5 border-t text-xs">
                         <span className="truncate font-medium">{photo.label}</span>
-                        {displayPhotos.length === 0 && (
+                        {inspectionPhotos.some((p) => p.id === photo.id) && (
                           <button
                             type="button"
                             className="text-destructive font-medium shrink-0"
@@ -1970,47 +2045,60 @@ export default function JobCardDetailPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="px-6 pb-4 min-h-0 flex-1 overflow-y-auto space-y-4">
-            <input
-              ref={afterPhotoModalCameraRef}
-              type="file"
-              accept="image/*"
-              capture="environment"
-              className="hidden"
-              onChange={(e) => {
-                appendInspectionPhotosFromFiles(e.target.files, "AFTER");
-                if (afterPhotoModalCameraRef.current) afterPhotoModalCameraRef.current.value = "";
-              }}
-            />
-            <input
-              ref={afterPhotoModalInputRef}
-              type="file"
-              accept="image/*"
-              multiple
-              className="hidden"
-              onChange={(e) => {
-                appendInspectionPhotosFromFiles(e.target.files, "AFTER");
-                if (afterPhotoModalInputRef.current) afterPhotoModalInputRef.current.value = "";
-              }}
-            />
             <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => afterPhotoModalCameraRef.current?.click()}
-                disabled={displayPhotos.length > 0 || !canUploadAfter}
-                className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-border min-h-[120px] px-2 py-4 text-muted-foreground hover:border-primary/50 hover:bg-primary/5 hover:text-primary transition-colors disabled:pointer-events-none disabled:opacity-50"
-              >
-                <Camera className="w-7 h-7 mb-2" />
-                <span className="text-xs font-medium text-center">Take photo</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => afterPhotoModalInputRef.current?.click()}
-                disabled={displayPhotos.length > 0 || !canUploadAfter}
-                className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-border min-h-[120px] px-2 py-4 text-muted-foreground hover:border-primary/50 hover:bg-primary/5 hover:text-primary transition-colors disabled:pointer-events-none disabled:opacity-50"
-              >
-                <Upload className="w-7 h-7 mb-2" />
-                <span className="text-xs font-medium text-center">Upload photos</span>
-              </button>
+              {canUploadAfter ? (
+                <>
+                  <input
+                    id="after-modal-camera"
+                    ref={afterPhotoModalCameraRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="sr-only"
+                    onChange={(e) => {
+                      appendInspectionPhotosFromFiles(e.target.files, "AFTER");
+                      if (afterPhotoModalCameraRef.current) afterPhotoModalCameraRef.current.value = "";
+                    }}
+                  />
+                  <label
+                    htmlFor="after-modal-camera"
+                    className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-border min-h-[120px] px-2 py-4 text-muted-foreground hover:border-primary/50 hover:bg-primary/5 hover:text-primary transition-colors cursor-pointer"
+                  >
+                    <Camera className="w-7 h-7 mb-2" />
+                    <span className="text-xs font-medium text-center">Take photo</span>
+                  </label>
+                  <input
+                    id="after-modal-upload"
+                    ref={afterPhotoModalInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    className="sr-only"
+                    onChange={(e) => {
+                      appendInspectionPhotosFromFiles(e.target.files, "AFTER");
+                      if (afterPhotoModalInputRef.current) afterPhotoModalInputRef.current.value = "";
+                    }}
+                  />
+                  <label
+                    htmlFor="after-modal-upload"
+                    className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-border min-h-[120px] px-2 py-4 text-muted-foreground hover:border-primary/50 hover:bg-primary/5 hover:text-primary transition-colors cursor-pointer"
+                  >
+                    <Upload className="w-7 h-7 mb-2" />
+                    <span className="text-xs font-medium text-center">Upload photos</span>
+                  </label>
+                </>
+              ) : (
+                <>
+                  <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-border min-h-[120px] px-2 py-4 text-muted-foreground opacity-50 pointer-events-none">
+                    <Camera className="w-7 h-7 mb-2" />
+                    <span className="text-xs font-medium text-center">Take photo</span>
+                  </div>
+                  <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-border min-h-[120px] px-2 py-4 text-muted-foreground opacity-50 pointer-events-none">
+                    <Upload className="w-7 h-7 mb-2" />
+                    <span className="text-xs font-medium text-center">Upload photos</span>
+                  </div>
+                </>
+              )}
             </div>
             {!canUploadAfter && (
               <p className="text-xs text-amber-700 dark:text-amber-500 text-center">
@@ -2026,7 +2114,7 @@ export default function JobCardDetailPage() {
                       <img src={photo.url} alt={photo.label} className="w-full aspect-4/3 object-cover" />
                       <div className="flex items-center justify-between px-2 py-1.5 border-t text-xs">
                         <span className="truncate font-medium">{photo.label}</span>
-                        {displayPhotos.length === 0 && (
+                        {inspectionPhotos.some((p) => p.id === photo.id) && (
                           <button
                             type="button"
                             className="text-destructive font-medium shrink-0"
@@ -2085,6 +2173,23 @@ export default function JobCardDetailPage() {
               <p className="text-sm text-muted-foreground text-center py-4">No services on this job card.</p>
             ) : (
               <div className="space-y-2">
+                <div className="flex items-center gap-3 rounded-lg border border-dashed border-border bg-background/80 px-3 py-2">
+                  <Checkbox
+                    id="checklist-select-all"
+                    checked={
+                      completedCount > 0 && completedCount < totalCount
+                        ? "indeterminate"
+                        : completedCount === totalCount
+                    }
+                    onCheckedChange={(v) => setAllServicesComplete(v === true)}
+                  />
+                  <label
+                    htmlFor="checklist-select-all"
+                    className="text-sm font-medium cursor-pointer select-none"
+                  >
+                    Select all
+                  </label>
+                </div>
                 {serviceItems.map((item) => (
                   <div
                     key={item.id}

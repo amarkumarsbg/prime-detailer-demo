@@ -69,6 +69,7 @@ import {
   sanitizeVehicleRegistrationInput,
 } from "@/lib/vehicle-registration";
 import { pushActivityLog } from "@/lib/activity-log-helper";
+import { defaultManualFirstFollowUpMonths } from "@/lib/high-end-follow-up";
 import type { Customer, Vehicle, VehicleSegment, ServiceCatalogItem, InspectionPhoto } from "@/types";
 
 const GST_RATE = 0.18;
@@ -527,17 +528,38 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
     return serviceCatalog.filter((s) => ids.has(s.id));
   }, [serviceCatalog, selectedMainIds, selectedAddonIds]);
 
-  const subtotalExclGst = useMemo(() => {
+  const catalogSubtotalExclGst = useMemo(() => {
     if (!vehicleSegment) return 0;
     return selectedCatalogItems.reduce((sum, s) => sum + priceForService(s, vehicleSegment), 0);
   }, [selectedCatalogItems, vehicleSegment]);
 
+  const highEndSubtotalExclGst = useMemo(() => {
+    return selectedHighEndIds.reduce((sum, hid) => {
+      const h = highEndServices.find((x) => x.id === hid);
+      return sum + (h?.estimateAmountInr ?? 0);
+    }, 0);
+  }, [selectedHighEndIds, highEndServices]);
+
+  const highEndSummaryLines = useMemo(
+    () =>
+      selectedHighEndIds
+        .map((hid) => {
+          const h = highEndServices.find((x) => x.id === hid);
+          if (!h) return null;
+          return { id: hid, name: h.name, amount: h.estimateAmountInr ?? 0 };
+        })
+        .filter((x): x is { id: string; name: string; amount: number } => x != null),
+    [selectedHighEndIds, highEndServices]
+  );
+
   const discountAmount = useMemo(() => {
     if (!couponApplied) return 0;
-    return Math.round(subtotalExclGst * 0.1 * 100) / 100;
-  }, [couponApplied, subtotalExclGst]);
+    return Math.round(catalogSubtotalExclGst * 0.1 * 100) / 100;
+  }, [couponApplied, catalogSubtotalExclGst]);
 
-  const afterDiscount = Math.max(0, subtotalExclGst - discountAmount);
+  /** Catalog after coupon + high-end program amounts (all excl. GST). */
+  const afterDiscount =
+    Math.max(0, catalogSubtotalExclGst - discountAmount) + highEndSubtotalExclGst;
   const gstAmount = Math.round(afterDiscount * GST_RATE * 100) / 100;
   const totalPayable = Math.round((afterDiscount + gstAmount) * 100) / 100;
 
@@ -586,8 +608,11 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
       toast.error("Invalid registration", { description: INDIAN_VEHICLE_REG_HINT });
       return;
     }
-    if (selectedMainIds.length + selectedAddonIds.length === 0) {
-      toast.error("Select at least one service or add-on.");
+    if (
+      selectedMainIds.length + selectedAddonIds.length === 0 &&
+      selectedHighEndIds.length === 0
+    ) {
+      toast.error("Select at least one service, add-on, or high-end program.");
       return;
     }
 
@@ -675,7 +700,7 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
     const serviceItems = selectedCatalogItems.map((s) => {
       const base = priceForService(s, seg);
       const share =
-        subtotalExclGst > 0 ? base / subtotalExclGst : 1 / selectedCatalogItems.length;
+        catalogSubtotalExclGst > 0 ? base / catalogSubtotalExclGst : 1 / selectedCatalogItems.length;
       const discounted =
         Math.round(base - discountAmount * share + Number.EPSILON * 100) / 100;
       return {
@@ -688,7 +713,8 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
       };
     });
 
-    const estimatedAmount = serviceItems.reduce((s, x) => s + x.price, 0);
+    const estimatedAmount =
+      serviceItems.reduce((s, x) => s + x.price, 0) + highEndSubtotalExclGst;
     const avgIncentive =
       selectedCatalogItems.length > 0
         ? selectedCatalogItems.reduce((sum, s) => sum + s.incentivePercent, 0) /
@@ -1853,8 +1879,8 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
                   High-End Services
                 </CardTitle>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Select if this job includes premium services. Choose the first follow-up interval for each;
-                  further reminders use the rest of the schedule.
+                  Tag premium programs for maintenance reminders. Configured amounts (excl. GST) add to the job
+                  estimate on the right; actual line items still come from Service(s) above.
                 </p>
               </CardHeader>
               <CardContent>
@@ -1899,6 +1925,9 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
                               Schedule:{" "}
                               {hes.reminderIntervals.map((m) => formatHighEndIntervalMonths(m)).join(", ")}
                             </p>
+                            <p className="text-[10px] font-medium text-amber-800 dark:text-amber-300 mt-0.5 tabular-nums">
+                              +{formatCurrency(hes.estimateAmountInr ?? 0)} est. (excl. GST)
+                            </p>
                           </div>
                         </button>
                         {isSelected && hes.reminderIntervals.length > 0 && (
@@ -1906,24 +1935,84 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
                             <Label htmlFor={`hes-next-${hes.id}`} className="text-xs text-muted-foreground">
                               Next follow-up
                             </Label>
-                            <Select
-                              value={String(highEndFirstFollowUpById[hes.id] ?? hes.reminderIntervals[0])}
-                              onValueChange={(v) => {
-                                const months = Number.parseInt(v, 10);
-                                setHighEndFirstFollowUpById((prev) => ({ ...prev, [hes.id]: months }));
-                              }}
-                            >
-                              <SelectTrigger id={`hes-next-${hes.id}`} className="h-9 text-xs bg-background">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {hes.reminderIntervals.map((m) => (
-                                  <SelectItem key={m} value={String(m)}>
-                                    {formatHighEndIntervalMonths(m)} ({m} mo)
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
+                            {(() => {
+                              const monthsVal =
+                                highEndFirstFollowUpById[hes.id] ?? hes.reminderIntervals[0];
+                              const followSelectValue = hes.reminderIntervals.includes(monthsVal)
+                                ? String(monthsVal)
+                                : "__custom__";
+                              return (
+                                <>
+                                  <Select
+                                    value={followSelectValue}
+                                    onValueChange={(v) => {
+                                      if (v === "__custom__") {
+                                        const next =
+                                          hes.reminderIntervals.includes(monthsVal)
+                                            ? defaultManualFirstFollowUpMonths(hes.reminderIntervals)
+                                            : monthsVal;
+                                        setHighEndFirstFollowUpById((prev) => ({
+                                          ...prev,
+                                          [hes.id]: next,
+                                        }));
+                                      } else {
+                                        const months = Number.parseInt(v, 10);
+                                        setHighEndFirstFollowUpById((prev) => ({
+                                          ...prev,
+                                          [hes.id]: months,
+                                        }));
+                                      }
+                                    }}
+                                  >
+                                    <SelectTrigger
+                                      id={`hes-next-${hes.id}`}
+                                      className="h-9 text-xs bg-background"
+                                    >
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {hes.reminderIntervals.map((m) => (
+                                        <SelectItem key={m} value={String(m)}>
+                                          {formatHighEndIntervalMonths(m)} ({m} mo)
+                                        </SelectItem>
+                                      ))}
+                                      <SelectItem value="__custom__">Custom (enter months)</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                  {followSelectValue === "__custom__" && (
+                                    <div className="space-y-1">
+                                      <Label
+                                        htmlFor={`hes-next-custom-${hes.id}`}
+                                        className="text-[10px] text-muted-foreground"
+                                      >
+                                        Months until first reminder
+                                      </Label>
+                                      <Input
+                                        id={`hes-next-custom-${hes.id}`}
+                                        type="number"
+                                        min={1}
+                                        max={120}
+                                        className="h-9 text-xs"
+                                        value={monthsVal === 0 ? "" : String(monthsVal)}
+                                        onChange={(e) => {
+                                          const raw = e.target.value;
+                                          if (raw === "") return;
+                                          const n = Math.min(
+                                            120,
+                                            Math.max(1, Number.parseInt(raw, 10) || 0)
+                                          );
+                                          if (n < 1) return;
+                                          setHighEndFirstFollowUpById((prev) => ({
+                                            ...prev,
+                                            [hes.id]: n,
+                                          }));
+                                        }}
+                                      />
+                                    </div>
+                                  )}
+                                </>
+                              );
+                            })()}
                           </div>
                         )}
                       </div>
@@ -2178,6 +2267,19 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
                   <div className="flex justify-between gap-2 align-start">
                     <dt className="text-muted-foreground shrink-0">Add-ons</dt>
                     <dd className="text-right text-xs">{addonLabels.join(", ")}</dd>
+                  </div>
+                )}
+                {highEndSummaryLines.length > 0 && (
+                  <div className="flex justify-between gap-2 align-start border-t border-border/60 pt-2 mt-1">
+                    <dt className="text-muted-foreground shrink-0">High-end (est.)</dt>
+                    <dd className="text-right text-xs space-y-1 min-w-0">
+                      {highEndSummaryLines.map((line) => (
+                        <div key={line.id} className="flex justify-end gap-2 flex-wrap">
+                          <span className="truncate max-w-[140px]">{line.name}</span>
+                          <span className="tabular-nums shrink-0">{formatCurrency(line.amount)}</span>
+                        </div>
+                      ))}
+                    </dd>
                   </div>
                 )}
                 <div className="flex justify-between gap-2">
