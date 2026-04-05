@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { formatServiceDurationLabel } from "@/lib/service-duration";
 import { formatCurrency } from "@/lib/utils";
 import type { ServiceCatalogItem } from "@/types";
 import {
@@ -19,14 +20,6 @@ function gstDisplay(s: ServiceCatalogItem): string {
   if (s.gstApplicable === false) return "No GST";
   const p = s.gstPercent ?? 18;
   return `GST ${p.toFixed(2)}%`;
-}
-
-function durationLabel(s: ServiceCatalogItem): string {
-  const a = s.durationMinutes;
-  const b = s.maxDurationMinutes;
-  if (a != null && b != null && b > a) return `${a}–${b} min`;
-  if (a != null) return `${a} min`;
-  return "—";
 }
 
 export function ServicePackageCard({
@@ -81,7 +74,7 @@ export function ServicePackageCard({
           </Badge>
           <Badge variant="secondary" className="gap-1 text-[10px] font-normal">
             <Clock className="h-3 w-3" />
-            {durationLabel(service)}
+            {formatServiceDurationLabel(service)}
           </Badge>
         </div>
 

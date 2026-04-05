@@ -3,6 +3,7 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { formatServiceDurationLabel } from "@/lib/service-duration";
 import { formatCurrency } from "@/lib/utils";
 import type { ServiceCatalogItem } from "@/types";
 import { Globe, Building2, Clock, Pencil, Trash2 } from "lucide-react";
@@ -48,7 +49,7 @@ export function ServiceAddonCard({
         </p>
         <p className="text-sm text-muted-foreground mt-1 flex items-center gap-1.5">
           <Clock className="h-3.5 w-3.5" />
-          Duration: {service.durationMinutes != null ? `${service.durationMinutes} min` : "—"}
+          Duration: {formatServiceDurationLabel(service)}
         </p>
         <div className="mt-auto pt-4 flex gap-2">
           <Button

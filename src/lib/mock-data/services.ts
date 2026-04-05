@@ -20,6 +20,8 @@ export const serviceCatalog: ServiceCatalogItem[] = [
     isActive: true,
     isHighEnd: false,
     incentivePercent: 3,
+    durationMinutes: 30,
+    maxDurationMinutes: 45,
     consumptionProfile: [
       { partId: "prt-001", partName: "Engine Oil 5W-30 (1L)", quantityPerCar: 1, unit: "L" },
       { partId: "prt-003", partName: "Oil Filter - Universal", quantityPerCar: 1, unit: "NOS" },
@@ -43,6 +45,8 @@ export const serviceCatalog: ServiceCatalogItem[] = [
     isActive: true,
     isHighEnd: false,
     incentivePercent: 4,
+    durationMinutes: 120,
+    maxDurationMinutes: 180,
     consumptionProfile: [
       { partId: "prt-001", partName: "Engine Oil 5W-30 (1L)", quantityPerCar: 3, unit: "L" },
       { partId: "prt-003", partName: "Oil Filter - Universal", quantityPerCar: 1, unit: "NOS" },
@@ -69,6 +73,8 @@ export const serviceCatalog: ServiceCatalogItem[] = [
     isActive: true,
     isHighEnd: false,
     incentivePercent: 3,
+    durationMinutes: 60,
+    maxDurationMinutes: 90,
     consumptionProfile: [
       { partId: "prt-001", partName: "Engine Oil 5W-30 (1L)", quantityPerCar: 2, unit: "L" },
       { partId: "prt-003", partName: "Oil Filter - Universal", quantityPerCar: 1, unit: "NOS" },
@@ -93,6 +99,8 @@ export const serviceCatalog: ServiceCatalogItem[] = [
     isActive: true,
     isHighEnd: false,
     incentivePercent: 4,
+    durationMinutes: 45,
+    maxDurationMinutes: 60,
     consumptionProfile: [
       { partId: "prt-009", partName: "Spark Plug - Iridium", quantityPerCar: 4, unit: "NOS" },
     ],
@@ -116,6 +124,8 @@ export const serviceCatalog: ServiceCatalogItem[] = [
     isActive: true,
     isHighEnd: false,
     incentivePercent: 4,
+    durationMinutes: 90,
+    maxDurationMinutes: 120,
     consumptionProfile: [
       { partId: "prt-006", partName: "Brake Pad Set - Front", quantityPerCar: 1, unit: "NOS" },
       { partId: "prt-007", partName: "Brake Pad Set - Rear", quantityPerCar: 1, unit: "NOS" },
@@ -139,6 +149,8 @@ export const serviceCatalog: ServiceCatalogItem[] = [
     isActive: true,
     isHighEnd: false,
     incentivePercent: 3,
+    durationMinutes: 60,
+    maxDurationMinutes: 90,
   },
   // --- AC ---
   {
@@ -159,6 +171,8 @@ export const serviceCatalog: ServiceCatalogItem[] = [
     isActive: true,
     isHighEnd: false,
     incentivePercent: 3,
+    durationMinutes: 45,
+    maxDurationMinutes: 60,
     consumptionProfile: [
       { partId: "prt-014", partName: "R134a Refrigerant (500g)", quantityPerCar: 1, unit: "NOS" },
     ],
@@ -181,6 +195,8 @@ export const serviceCatalog: ServiceCatalogItem[] = [
     isActive: true,
     isHighEnd: false,
     incentivePercent: 5,
+    durationMinutes: 120,
+    maxDurationMinutes: 180,
     consumptionProfile: [
       { partId: "prt-013", partName: "AC Compressor Oil", quantityPerCar: 250, unit: "ML" },
     ],
@@ -204,6 +220,8 @@ export const serviceCatalog: ServiceCatalogItem[] = [
     isActive: true,
     isHighEnd: false,
     incentivePercent: 4,
+    durationMinutes: 30,
+    maxDurationMinutes: 45,
     consumptionProfile: [
       { partId: "prt-011", partName: "Car Battery 12V 65Ah", quantityPerCar: 1, unit: "NOS" },
     ],
@@ -226,6 +244,8 @@ export const serviceCatalog: ServiceCatalogItem[] = [
     isActive: true,
     isHighEnd: false,
     incentivePercent: 5,
+    durationMinutes: 90,
+    maxDurationMinutes: 120,
     consumptionProfile: [
       { partId: "prt-012", partName: "Alternator Belt", quantityPerCar: 1, unit: "NOS" },
     ],
@@ -249,6 +269,8 @@ export const serviceCatalog: ServiceCatalogItem[] = [
     isActive: true,
     isHighEnd: false,
     incentivePercent: 4,
+    durationMinutes: 120,
+    maxDurationMinutes: 240,
   },
   {
     id: "svc-012",
@@ -268,6 +290,8 @@ export const serviceCatalog: ServiceCatalogItem[] = [
     isActive: true,
     isHighEnd: false,
     incentivePercent: 3,
+    durationMinutes: 60,
+    maxDurationMinutes: 120,
   },
   // --- Tires ---
   {
@@ -288,6 +312,8 @@ export const serviceCatalog: ServiceCatalogItem[] = [
     isActive: true,
     isHighEnd: false,
     incentivePercent: 2,
+    durationMinutes: 30,
+    maxDurationMinutes: 45,
   },
   {
     id: "svc-014",
@@ -307,6 +333,8 @@ export const serviceCatalog: ServiceCatalogItem[] = [
     isActive: true,
     isHighEnd: false,
     incentivePercent: 3,
+    durationMinutes: 45,
+    maxDurationMinutes: 60,
   },
   {
     id: "svc-015",
@@ -326,6 +354,8 @@ export const serviceCatalog: ServiceCatalogItem[] = [
     isActive: true,
     isHighEnd: false,
     incentivePercent: 2,
+    durationMinutes: 45,
+    maxDurationMinutes: 90,
   },
   // --- Detailing (New) ---
   {
@@ -347,6 +377,8 @@ export const serviceCatalog: ServiceCatalogItem[] = [
     isActive: true,
     isHighEnd: false,
     incentivePercent: 2,
+    durationMinutes: 40,
+    maxDurationMinutes: 50,
     consumptionProfile: [
       { partId: "prt-021", partName: "Car Shampoo", quantityPerCar: 9, unit: "ML" },
     ],
@@ -370,6 +402,8 @@ export const serviceCatalog: ServiceCatalogItem[] = [
     isActive: true,
     isHighEnd: false,
     incentivePercent: 2,
+    durationMinutes: 50,
+    maxDurationMinutes: 65,
     consumptionProfile: [
       { partId: "prt-021", partName: "Car Shampoo", quantityPerCar: 15, unit: "ML" },
       { partId: "prt-022", partName: "Car Polish Wax (1L)", quantityPerCar: 5, unit: "ML" },
@@ -394,6 +428,8 @@ export const serviceCatalog: ServiceCatalogItem[] = [
     isActive: true,
     isHighEnd: false,
     incentivePercent: 3,
+    durationMinutes: 70,
+    maxDurationMinutes: 90,
     consumptionProfile: [
       { partId: "prt-021", partName: "Car Shampoo", quantityPerCar: 25, unit: "ML" },
       { partId: "prt-022", partName: "Car Polish Wax (1L)", quantityPerCar: 18, unit: "ML" },
@@ -418,6 +454,8 @@ export const serviceCatalog: ServiceCatalogItem[] = [
     isActive: true,
     isHighEnd: true,
     incentivePercent: 10,
+    durationMinutes: 180,
+    maxDurationMinutes: 240,
     reminderInterval: "6_MONTHS",
     reminderDurationMonths: 36,
     consumptionProfile: [
@@ -443,6 +481,8 @@ export const serviceCatalog: ServiceCatalogItem[] = [
     isActive: true,
     isHighEnd: true,
     incentivePercent: 10,
+    durationMinutes: 240,
+    maxDurationMinutes: 300,
     reminderInterval: "6_MONTHS",
     reminderDurationMonths: 24,
     consumptionProfile: [
@@ -468,6 +508,8 @@ export const serviceCatalog: ServiceCatalogItem[] = [
     isActive: true,
     isHighEnd: true,
     incentivePercent: 8,
+    durationMinutes: 90,
+    maxDurationMinutes: 120,
     reminderInterval: "YEARLY",
     reminderDurationMonths: 12,
     consumptionProfile: [

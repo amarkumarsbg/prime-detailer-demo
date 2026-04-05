@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useEffect, useRef } from "react";
+import { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -18,6 +18,7 @@ import {
   TrendingUp,
   Info,
   Plus,
+  Check,
   CheckCircle2,
   XCircle,
   Camera,
@@ -70,34 +71,13 @@ import {
 } from "@/lib/vehicle-registration";
 import { pushActivityLog } from "@/lib/activity-log-helper";
 import { defaultManualFirstFollowUpMonths } from "@/lib/high-end-follow-up";
+import { formatServiceDurationLabel } from "@/lib/service-duration";
 import type { Customer, Vehicle, VehicleSegment, ServiceCatalogItem, InspectionPhoto } from "@/types";
 
 const GST_RATE = 0.18;
 const TRENDING_IDS = ["svc-016", "svc-017", "svc-021", "svc-018"];
 /** Quick-pick add-ons in the optional section */
 const ADDON_IDS_PREFERRED = ["svc-016", "svc-017", "svc-020", "svc-021"];
-
-const SERVICE_DURATION: Record<string, string> = {
-  "svc-001": "30-45 min",
-  "svc-002": "120-180 min",
-  "svc-003": "60-90 min",
-  "svc-004": "45-60 min",
-  "svc-016": "40-50 min",
-  "svc-017": "50-65 min",
-  "svc-020": "90-120 min",
-  "svc-021": "70-90 min",
-  "svc-018": "180-240 min",
-  "svc-019": "240-300 min",
-};
-
-function durationLabel(s: ServiceCatalogItem): string {
-  if (SERVICE_DURATION[s.id]) return SERVICE_DURATION[s.id];
-  if (s.durationMinutes != null && s.maxDurationMinutes != null) {
-    return `${s.durationMinutes}–${s.maxDurationMinutes} min`;
-  }
-  if (s.durationMinutes != null) return `${s.durationMinutes} min`;
-  return "60-90 min";
-}
 
 function segmentBannerLabel(seg: VehicleSegment | ""): string {
   if (!seg) return "vehicle";
@@ -154,6 +134,35 @@ function resolveExpectedDeliveryIso(datetimeLocal: string, daysFromNowStr: strin
   }
   return new Date(Date.now() + 86400000).toISOString();
 }
+
+type JobWizardStepId =
+  | "customer"
+  | "vehicle"
+  | "schedule"
+  | "smartSuggestions"
+  | "membership"
+  | "serviceSelection"
+  | "highEndServices"
+  | "addons"
+  | "pickupDrop"
+  | "mechanic"
+  | "notes"
+  | "jobDetails";
+
+const JOB_WIZARD_LABEL: Record<JobWizardStepId, string> = {
+  customer: "Customer",
+  vehicle: "Vehicle details",
+  schedule: "Schedule",
+  smartSuggestions: "Smart suggestions",
+  membership: "Membership",
+  serviceSelection: "Service selection",
+  highEndServices: "High-end services",
+  addons: "Add-ons",
+  pickupDrop: "Pickup & drop",
+  mechanic: "Mechanic",
+  notes: "Notes",
+  jobDetails: "Job details",
+};
 
 export type CreateBookingVariant = "walk-in" | "job-card";
 
@@ -257,6 +266,16 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
   const checkInFileRef = useRef<HTMLInputElement>(null);
   const checkInCameraRef = useRef<HTMLInputElement>(null);
   const checkInJobIdRef = useRef<string | null>(null);
+
+  const [jobCreateStep, setJobCreateStep] = useState(0);
+  const [isDesktopWide, setIsDesktopWide] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 768px)");
+    const apply = () => setIsDesktopWide(mq.matches);
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, []);
 
   useEffect(() => {
     if (branchId) return;
@@ -373,58 +392,67 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
     setLookupPanelCustomers(null);
   };
 
-  const runLookup = () => {
-    const q = lookupQuery.trim();
-    if (!q) {
-      toast.message("Enter Mobile or Vehicle number");
-      return;
-    }
-    const ql = q.toLowerCase();
-    const digits = q.replace(/\D/g, "");
-    const compactDigitOnly = /^\d+$/.test(q.replace(/\s/g, ""));
-    const matches: Customer[] = [];
-    const seen = new Set<string>();
-    const push = (cust: Customer | undefined) => {
-      if (!cust || seen.has(cust.id)) return;
-      seen.add(cust.id);
-      matches.push(cust);
-    };
+  const computeLookupMatches = useCallback(
+    (qRaw: string): Customer[] => {
+      const q = qRaw.trim();
+      if (!q) return [];
+      const ql = q.toLowerCase();
+      const digits = q.replace(/\D/g, "");
+      const compactDigitOnly = /^\d+$/.test(q.replace(/\s/g, ""));
+      const matches: Customer[] = [];
+      const seen = new Set<string>();
+      const push = (cust: Customer | undefined) => {
+        if (!cust || seen.has(cust.id)) return;
+        seen.add(cust.id);
+        matches.push(cust);
+      };
 
-    if (digits.length >= 10) {
-      push(findByPhone(digits.slice(-10)));
-    } else if (compactDigitOnly && digits.length >= 4 && digits.length < 10) {
-      for (const c of customers) {
-        if (c.phone.replace(/\D/g, "").includes(digits)) push(c);
+      if (digits.length >= 10) {
+        push(findByPhone(digits.slice(-10)));
+      } else if (compactDigitOnly && digits.length >= 4 && digits.length < 10) {
+        for (const c of customers) {
+          if (c.phone.replace(/\D/g, "").includes(digits)) push(c);
+        }
       }
-    }
 
-    const hasLetters = /[a-zA-Z]/.test(q);
-    if (hasLetters && ql.length >= 2) {
-      for (const c of customers) {
-        if (c.name.toLowerCase().includes(ql)) push(c);
+      const hasLetters = /[a-zA-Z]/.test(q);
+      if (hasLetters && ql.length >= 2) {
+        for (const c of customers) {
+          if (c.name.toLowerCase().includes(ql)) push(c);
+        }
       }
-    }
 
-    const regSan = sanitizeVehicleRegistrationInput(q);
-    const regNorm = normalizeRegistrationNumber(regSan);
-    const regSearch = regNorm.length >= 3 || (hasLetters && regSan.replace(/\s/g, "").length >= 2);
-    if (regSearch) {
-      for (const v of vehicles) {
-        const vn = normalizeRegistrationNumber(v.registrationNumber);
-        const hitReg =
-          (regNorm.length >= 3 && vn.includes(regNorm)) || v.registrationNumber.toLowerCase().includes(ql);
-        if (hitReg) push(customers.find((x) => x.id === v.customerId));
+      const regSan = sanitizeVehicleRegistrationInput(q);
+      const regNorm = normalizeRegistrationNumber(regSan);
+      const regSearch =
+        regNorm.length >= 3 || (hasLetters && regSan.replace(/\s/g, "").length >= 2);
+      if (regSearch) {
+        for (const v of vehicles) {
+          const vn = normalizeRegistrationNumber(v.registrationNumber);
+          const hitReg =
+            (regNorm.length >= 3 && vn.includes(regNorm)) ||
+            v.registrationNumber.toLowerCase().includes(ql);
+          if (hitReg) push(customers.find((x) => x.id === v.customerId));
+        }
       }
-    }
 
-    const limited = matches.slice(0, 15);
-    if (limited.length === 0) {
-      toast.error("No match — enter details below");
+      return matches.slice(0, 15);
+    },
+    [customers, vehicles, findByPhone]
+  );
+
+  useEffect(() => {
+    const trimmed = lookupQuery.trim();
+    if (!trimmed) {
       setLookupPanelCustomers(null);
       return;
     }
-    setLookupPanelCustomers(limited);
-  };
+    const id = window.setTimeout(() => {
+      const limited = computeLookupMatches(lookupQuery);
+      setLookupPanelCustomers(limited.length > 0 ? limited : null);
+    }, 280);
+    return () => clearTimeout(id);
+  }, [lookupQuery, computeLookupMatches]);
 
   const selectVehicleFromGarage = (v: Vehicle) => {
     setSelectedVehicleId(v.id);
@@ -592,6 +620,14 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (
+      isJobCard &&
+      wizardSteps.length > 0 &&
+      jobCreateStep < wizardSteps.length - 1
+    ) {
+      toast.error("Complete all wizard steps before creating the job card.");
+      return;
+    }
     if (!branchId) {
       toast.error("Please select a branch to create the booking.");
       return;
@@ -965,33 +1001,156 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
     .filter((s) => selectedAddonIds.includes(s.id))
     .map((s) => s.name);
 
-  return (
-    <div className="space-y-4 sm:space-y-6 max-md:pb-[calc(6rem+env(safe-area-inset-bottom,0px))] md:pb-2">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <Button variant="ghost" size="sm" className="w-fit -ml-2" asChild>
-          <Link href={isJobCard ? "/job-cards" : "/bookings"}>
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            {isJobCard ? "Back to Job Cards" : "Back to Bookings"}
-          </Link>
-        </Button>
-      </div>
+  const wizardSteps = useMemo((): JobWizardStepId[] => {
+    const s: JobWizardStepId[] = [
+      "customer",
+      "vehicle",
+      "schedule",
+      "smartSuggestions",
+      "membership",
+      "serviceSelection",
+    ];
+    if (isJobCard && highEndServices.length > 0) s.push("highEndServices");
+    s.push("addons", "pickupDrop", "mechanic", "notes");
+    if (isJobCard) s.push("jobDetails");
+    return s;
+  }, [isJobCard, highEndServices.length]);
 
-      <div>
-        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
-          {isJobCard ? "New Job Card" : "Create Walk-In Booking"}
-        </h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          {isJobCard
-            ? "Same flow as walk-in booking: customer, vehicle, services, branch, then check-in."
-            : "Capture customer and vehicle, choose services, then confirm branch and totals."}
-        </p>
-      </div>
+  useEffect(() => {
+    if (!isJobCard) return;
+    setJobCreateStep((prev) => Math.min(prev, Math.max(0, wizardSteps.length - 1)));
+  }, [isJobCard, wizardSteps.length]);
 
+  const jobWizardStepId = wizardSteps[jobCreateStep] ?? "customer";
+  const jobWizardStepCount = wizardSteps.length;
+  const jobCardWizardIncomplete =
+    isJobCard && jobWizardStepCount > 0 && jobCreateStep < jobWizardStepCount - 1;
+
+  const showJobWizardStep = (id: JobWizardStepId) =>
+    !isJobCard || jobWizardStepId === id;
+
+  const goNextJobWizard = () => {
+    if (!isJobCard) return;
+    if (jobCreateStep >= jobWizardStepCount - 1) return;
+    if (jobWizardStepId === "customer") {
+      if (!customerName.trim() || customerPhone.replace(/\D/g, "").length < 10) {
+        toast.error("Enter customer name and a 10-digit phone to continue.");
+        return;
+      }
+    }
+    if (jobWizardStepId === "vehicle") {
+      if (!vehicleNumber.trim() || !vehicleBrand.trim() || !vehicleModel.trim() || !vehicleSegment) {
+        toast.error("Complete vehicle details to continue.");
+        return;
+      }
+      if (!isValidIndianVehicleRegistration(vehicleNumber)) {
+        toast.error("Invalid registration", { description: INDIAN_VEHICLE_REG_HINT });
+        return;
+      }
+    }
+    if (jobWizardStepId === "serviceSelection") {
+      if (!vehicleSegment) {
+        toast.error("Select a vehicle type for pricing.");
+        return;
+      }
+    }
+    if (jobWizardStepId === "addons") {
+      if (
+        selectedMainIds.length + selectedAddonIds.length === 0 &&
+        selectedHighEndIds.length === 0
+      ) {
+        toast.error("Select at least one service, add-on, or high-end program.");
+        return;
+      }
+    }
+    setJobCreateStep((i) => Math.min(jobWizardStepCount - 1, i + 1));
+  };
+
+  const bookingForm = (
       <form
         onSubmit={handleSubmit}
-        className="lg:flex lg:flex-row lg:items-start lg:gap-8"
+        className={cn(
+          isJobCard
+            ? "flex flex-1 flex-col min-h-0 overflow-hidden lg:flex-row lg:items-stretch lg:gap-0"
+            : "lg:flex lg:flex-row lg:items-start lg:gap-8"
+        )}
       >
-        <div className="min-w-0 flex-1 space-y-6 lg:min-w-0">
+        <div
+          className={cn(
+            "min-w-0 flex-1 space-y-6 lg:min-w-0",
+            isJobCard && "flex flex-col min-h-0 overflow-hidden px-4 sm:px-6 py-3"
+          )}
+        >
+          {isJobCard && (
+            <>
+              <div className="sm:hidden rounded-lg border border-border bg-muted/30 px-3 py-2.5 text-sm shrink-0">
+                <span className="font-semibold text-foreground">
+                  Step {jobCreateStep + 1} of {jobWizardStepCount}
+                </span>
+                <span className="text-muted-foreground">
+                  {" "}
+                  — {JOB_WIZARD_LABEL[jobWizardStepId]}
+                </span>
+              </div>
+              <div className="hidden sm:block overflow-x-auto overflow-y-visible pb-2 -mx-1 px-1 [scrollbar-width:thin] shrink-0">
+                <div className="flex items-center justify-start min-w-0 w-full gap-x-1 sm:gap-x-2">
+                  {wizardSteps.map((stepId, index) => {
+                    const label = JOB_WIZARD_LABEL[stepId];
+                    const isLast = index === jobWizardStepCount - 1;
+                    const isCompleted = index < jobCreateStep;
+                    const isCurrent = index === jobCreateStep;
+                    return (
+                      <div key={stepId} className="flex items-center shrink-0">
+                        <div className="flex flex-col items-center w-[4.5rem] sm:w-[5.25rem] px-0.5">
+                          <div
+                            className={cn(
+                              "w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center border-2 transition-colors",
+                              isCompleted
+                                ? "bg-primary border-primary text-primary-foreground"
+                                : isCurrent
+                                  ? "border-primary bg-primary/10 text-primary"
+                                  : "border-muted-foreground/30 bg-muted/50 text-muted-foreground"
+                            )}
+                          >
+                            {isCompleted ? (
+                              <Check className="w-4 h-4 sm:w-5 sm:h-5" />
+                            ) : (
+                              <span className="text-[10px] sm:text-xs font-medium">{index + 1}</span>
+                            )}
+                          </div>
+                          <span
+                            className={cn(
+                              "text-[10px] sm:text-xs mt-1.5 text-center leading-tight line-clamp-2",
+                              isCurrent ? "font-semibold text-foreground" : "text-muted-foreground"
+                            )}
+                          >
+                            {label}
+                          </span>
+                        </div>
+                        {!isLast && (
+                          <div
+                            className={cn(
+                              "h-0.5 w-3 sm:w-4 sm:flex-1 sm:min-w-2 sm:max-w-16 shrink-0 -mt-5 sm:-mt-6",
+                              isCompleted ? "bg-primary" : "bg-muted"
+                            )}
+                            aria-hidden
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </>
+          )}
+
+          <div
+            className={cn(
+              "space-y-6",
+              isJobCard && "flex-1 min-h-0 overflow-y-auto pr-1 -mr-1 pb-2"
+            )}
+          >
+          {showJobWizardStep("customer") && (
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">Customer Information</CardTitle>
@@ -999,25 +1158,23 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
             <CardContent className="space-y-6">
               <div>
                 <Label className="text-muted-foreground">Search Existing Customer</Label>
-                <div className="flex flex-col sm:flex-row sm:items-center gap-2 mt-2 w-full">
-                  <div className="relative w-full sm:w-[14rem] sm:max-w-[14rem] shrink-0">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <div className="mt-2 w-full max-w-md">
+                  <div className="relative w-full">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
                     <Input
                       className="pl-9"
                       placeholder="Enter Mobile or Vehicle number"
                       value={lookupQuery}
                       onChange={(e) => setLookupQuery(e.target.value)}
                       onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          runLookup();
-                        }
+                        if (e.key === "Enter") e.preventDefault();
                       }}
+                      autoComplete="off"
                     />
                   </div>
-                  <Button type="button" className="shrink-0" onClick={runLookup}>
-                    Search
-                  </Button>
+                  <p className="text-xs text-muted-foreground mt-1.5">
+                    Matches update as you type (phone, name, or registration).
+                  </p>
                 </div>
                 {lookupPanelCustomers && lookupPanelCustomers.length > 0 && (
                   <div className="space-y-2 rounded-lg border bg-muted/30 p-3 mt-3">
@@ -1141,7 +1298,10 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
               </div>
             </CardContent>
           </Card>
+          )}
 
+          {showJobWizardStep("vehicle") && (
+          <>
           <Card>
             <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 pb-4">
               <CardTitle className="text-lg font-semibold tracking-tight">Vehicle Details</CardTitle>
@@ -1461,7 +1621,10 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
               </div>
             </DialogContent>
           </Dialog>
+          </>
+          )}
 
+          {showJobWizardStep("schedule") && (
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">Schedule</CardTitle>
@@ -1540,7 +1703,9 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
               )}
             </CardContent>
           </Card>
+          )}
 
+          {showJobWizardStep("smartSuggestions") && (
           <Card className="border-amber-200/80 dark:border-amber-900/40 shadow-sm">
             <CardHeader className="flex flex-row items-center gap-2 border-b border-amber-100/80 dark:border-amber-900/30 bg-amber-50/40 dark:bg-amber-950/20">
               <Sparkles className="w-5 h-5 text-amber-600" />
@@ -1602,7 +1767,11 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
                       >
                         <p className="text-sm font-semibold line-clamp-2">{s.name}</p>
                         <p className="text-[10px] text-muted-foreground mt-1">{s.category.split(/[\s/]/)[0]}</p>
-                        <p className="text-[10px] text-muted-foreground mt-0.5">{bookings || 1} bookings</p>
+                        <p className="text-[10px] text-muted-foreground mt-0.5 flex items-center gap-1">
+                          <Clock className="w-3 h-3 shrink-0" />
+                          {formatServiceDurationLabel(s)}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground">{bookings || 1} bookings</p>
                         <p className="text-xs font-medium text-primary mt-2">{formatCurrency(pr)}</p>
                       </button>
                     );
@@ -1611,7 +1780,9 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
               </div>
             </CardContent>
           </Card>
+          )}
 
+          {showJobWizardStep("membership") && (
           <Card className="overflow-hidden border-violet-200/60 dark:border-violet-900/40">
             <div className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-3">
               <Ticket className="w-4 h-4 shrink-0 opacity-90" />
@@ -1623,7 +1794,9 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
               </p>
             </CardContent>
           </Card>
+          )}
 
+          {showJobWizardStep("serviceSelection") && (
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">Service Selection</CardTitle>
@@ -1840,7 +2013,7 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
                               </div>
                               <div className="flex items-center gap-1 text-xs text-muted-foreground">
                                 <Clock className="w-3.5 h-3.5" />
-                                {durationLabel(s)}
+                                {formatServiceDurationLabel(s)}
                               </div>
                             </div>
                             {!hasParts && (
@@ -1868,8 +2041,9 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
               )}
             </CardContent>
           </Card>
+          )}
 
-          {isJobCard && highEndServices.length > 0 && (
+          {isJobCard && highEndServices.length > 0 && showJobWizardStep("highEndServices") && (
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-lg">
@@ -2028,6 +2202,7 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
             </Card>
           )}
 
+          {showJobWizardStep("addons") && (
           <Card ref={addonsCardRef}>
             <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 py-4">
               <div className="flex flex-wrap items-center gap-2">
@@ -2082,7 +2257,7 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium">{s.name}</p>
                         <p className="text-xs text-muted-foreground">
-                          Duration: {durationLabel(s)} · + {formatCurrency(pr)}
+                          Duration: {formatServiceDurationLabel(s)} · + {formatCurrency(pr)}
                         </p>
                       </div>
                     </label>
@@ -2091,7 +2266,9 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
               </CardContent>
             )}
           </Card>
+          )}
 
+          {showJobWizardStep("pickupDrop") && (
           <Card>
             <CardHeader className="flex flex-row items-center justify-between py-4">
               <div className="flex flex-wrap items-center gap-2">
@@ -2133,7 +2310,9 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
               </CardContent>
             )}
           </Card>
+          )}
 
+          {showJobWizardStep("mechanic") && (
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">Assign mechanic (optional)</CardTitle>
@@ -2165,7 +2344,9 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
               )}
             </CardContent>
           </Card>
+          )}
 
+          {showJobWizardStep("notes") && (
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">Notes</CardTitle>
@@ -2191,8 +2372,9 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
               </div>
             </CardContent>
           </Card>
+          )}
 
-          {isJobCard && (
+          {isJobCard && showJobWizardStep("jobDetails") && (
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg">Job details</CardTitle>
@@ -2220,6 +2402,31 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
               </CardContent>
             </Card>
           )}
+        </div>
+
+        {isJobCard && (
+          <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-border pt-3 pb-1">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={jobCreateStep === 0}
+              onClick={() => setJobCreateStep((s) => Math.max(0, s - 1))}
+            >
+              Back
+            </Button>
+            {jobCreateStep < jobWizardStepCount - 1 ? (
+              <Button type="button" size="sm" onClick={goNextJobWizard}>
+                Next
+              </Button>
+            ) : (
+              <span className="text-xs text-muted-foreground text-right max-w-[14rem]">
+                Review the summary, select branch, then create the job.
+              </span>
+            )}
+          </div>
+        )}
+
         </div>
 
         <aside className="mt-6 w-full shrink-0 space-y-4 lg:sticky lg:top-6 lg:mt-0 lg:w-[min(100%,380px)] lg:self-start lg:overflow-visible">
@@ -2356,7 +2563,16 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
                 )}
               </div>
               <div className="hidden md:flex flex-col gap-2 pt-4 mt-2 border-t">
-                <Button type="submit" className="w-full">
+                <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={jobCardWizardIncomplete}
+                  title={
+                    jobCardWizardIncomplete
+                      ? "Complete all wizard steps first"
+                      : undefined
+                  }
+                >
                   {isJobCard ? "Create job card" : "Create booking"}
                 </Button>
                 <Button type="button" variant="outline" className="w-full" asChild>
@@ -2368,7 +2584,12 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
         </aside>
 
         {/* Mobile sticky actions */}
-        <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-border bg-background/95 backdrop-blur-md px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        <div
+          className={cn(
+            "md:hidden fixed bottom-0 left-0 right-0 border-t border-border bg-background/95 backdrop-blur-md px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]",
+            isJobCard ? "z-[100]" : "z-40"
+          )}
+        >
           <div className="flex items-center justify-between gap-3 max-w-lg mx-auto">
             <div className="min-w-0">
               <p className="text-[10px] text-muted-foreground uppercase">Total</p>
@@ -2380,13 +2601,81 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
               <Button type="button" variant="outline" size="sm" asChild>
                 <Link href={isJobCard ? "/job-cards" : "/bookings"}>Cancel</Link>
               </Button>
-              <Button type="submit" size="sm">
+              <Button
+                type="submit"
+                size="sm"
+                disabled={jobCardWizardIncomplete}
+                title={
+                  jobCardWizardIncomplete
+                    ? "Complete all wizard steps first"
+                    : undefined
+                }
+              >
                 Create
               </Button>
             </div>
           </div>
         </div>
       </form>
+  );
+
+  return (
+    <>
+      {isJobCard && isDesktopWide ? (
+        <div className="space-y-4 sm:space-y-6 max-md:pb-[calc(6rem+env(safe-area-inset-bottom,0px))] md:pb-2">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <Button variant="ghost" size="sm" className="w-fit -ml-2" asChild>
+              <Link href="/job-cards">
+                <ArrowLeft className="w-4 h-4 mr-2" />
+                Back to Job Cards
+              </Link>
+            </Button>
+          </div>
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">New Job Card</h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              Stepper and job summary stay in the main layout (no fullscreen modal). Use Next to move through
+              each section one at a time.
+            </p>
+          </div>
+          {bookingForm}
+        </div>
+      ) : isJobCard ? (
+        <Dialog
+          open
+          onOpenChange={(open) => {
+            if (!open) router.push("/job-cards");
+          }}
+        >
+          <DialogContent className="flex h-[min(92vh,880px)] w-[min(100vw-1rem,1200px)] max-w-[min(100vw-1rem,1200px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-5xl">
+            <DialogHeader className="shrink-0 space-y-1 border-b border-border px-4 pb-3 pt-4 text-left sm:px-6">
+              <DialogTitle className="text-xl">New Job Card</DialogTitle>
+              <DialogDescription>
+                Tap Next to move through each section — one screen at a time on mobile.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{bookingForm}</div>
+          </DialogContent>
+        </Dialog>
+      ) : (
+        <div className="space-y-4 sm:space-y-6 max-md:pb-[calc(6rem+env(safe-area-inset-bottom,0px))] md:pb-2">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <Button variant="ghost" size="sm" className="w-fit -ml-2" asChild>
+              <Link href="/bookings">
+                <ArrowLeft className="w-4 h-4 mr-2" />
+                Back to Bookings
+              </Link>
+            </Button>
+          </div>
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Create Walk-In Booking</h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              Capture customer and vehicle, choose services, then confirm branch and totals.
+            </p>
+          </div>
+          {bookingForm}
+        </div>
+      )}
 
       <Dialog open={pricingService !== null} onOpenChange={(open) => !open && setPricingService(null)}>
         <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
@@ -2546,6 +2835,6 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
           </DialogContent>
         </Dialog>
       )}
-    </div>
+    </>
   );
 }

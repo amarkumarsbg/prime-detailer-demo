@@ -12,6 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -30,6 +31,18 @@ import { isAllBranchesScope } from "@/lib/all-branches";
 import { cn, formatDateTime } from "@/lib/utils";
 import type { PickupDropStatus, PickupDropType } from "@/types";
 import { Plus, RefreshCw, Truck } from "lucide-react";
+import { toast } from "sonner";
+
+function formatDatetimeLocalInput(d: Date): string {
+  const z = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}T${z(d.getHours())}:${z(d.getMinutes())}`;
+}
+
+function defaultScheduledDatetimeLocal(): string {
+  const d = new Date();
+  d.setHours(d.getHours() + 2, 0, 0, 0);
+  return formatDatetimeLocalInput(d);
+}
 
 const STATUS_OPTIONS: { value: PickupDropStatus | "ALL"; label: string }[] = [
   { value: "ALL", label: "All Status" },
@@ -96,7 +109,13 @@ export default function PickupDropPage() {
   const [typeFilter, setTypeFilter] = useState<PickupDropType | "ALL">("ALL");
   const [createOpen, setCreateOpen] = useState(false);
 
+  const [createMode, setCreateMode] = useState<"existing" | "new">("existing");
   const [bookingId, setBookingId] = useState<string>("");
+  const [newCustomerName, setNewCustomerName] = useState("");
+  const [newCustomerPhone, setNewCustomerPhone] = useState("");
+  const [newAddress, setNewAddress] = useState("");
+  const [newBranchId, setNewBranchId] = useState<string>("");
+  const [newScheduledLocal, setNewScheduledLocal] = useState("");
   const [reqType, setReqType] = useState<PickupDropType>("PICKUP");
   const [driverId, setDriverId] = useState<string>("unassigned");
   const [notes, setNotes] = useState("");
@@ -105,6 +124,12 @@ export default function PickupDropPage() {
     if (!currentBranch || isAllBranchesScope(currentBranch)) return jobCards;
     return jobCards.filter((jc) => jc.branchId === currentBranch.id);
   }, [jobCards, currentBranch]);
+
+  const scopedBranches = useMemo(() => {
+    const active = branches.filter((b) => b.isActive);
+    if (!currentBranch || isAllBranchesScope(currentBranch)) return active;
+    return active.filter((b) => b.id === currentBranch.id);
+  }, [branches, currentBranch]);
 
   const drivers = useMemo(
     () =>
@@ -135,34 +160,98 @@ export default function PickupDropPage() {
   }, [requests]);
 
   const resetForm = () => {
+    setCreateMode("existing");
     setBookingId("");
+    setNewCustomerName("");
+    setNewCustomerPhone("");
+    setNewAddress("");
+    setNewBranchId("");
+    setNewScheduledLocal("");
     setReqType("PICKUP");
     setDriverId("unassigned");
     setNotes("");
   };
 
   const handleCreate = () => {
-    const jc = scopedJobCards.find((j) => j.id === bookingId);
-    if (!jc) return;
-    const br = branches.find((b) => b.id === jc.branchId);
-    const address = br ? `${br.name} — ${br.address}` : "—";
     const driver =
       driverId !== "unassigned" ? drivers.find((d) => d.id === driverId) : undefined;
+
+    if (createMode === "existing") {
+      const jc = scopedJobCards.find((j) => j.id === bookingId);
+      if (!jc) return;
+      const br = branches.find((b) => b.id === jc.branchId);
+      const address = br ? `${br.name} — ${br.address}` : "—";
+      addRequest({
+        jobCardId: jc.id,
+        jobNumber: jc.jobNumber,
+        branchId: jc.branchId,
+        customerName: jc.customerName,
+        address,
+        scheduledTime: jc.expectedDelivery,
+        type: reqType,
+        driverId: driver?.id,
+        driverName: driver?.name,
+        notes: notes.trim() || undefined,
+      });
+      setCreateOpen(false);
+      resetForm();
+      return;
+    }
+
+    const name = newCustomerName.trim();
+    const addr = newAddress.trim();
+    if (!name) {
+      toast.error("Enter the customer name.");
+      return;
+    }
+    if (!addr) {
+      toast.error("Enter the pickup or drop address.");
+      return;
+    }
+    if (!newBranchId) {
+      toast.error("Select a branch.");
+      return;
+    }
+    if (!newScheduledLocal) {
+      toast.error("Select a scheduled date and time.");
+      return;
+    }
+    const scheduled = new Date(newScheduledLocal);
+    if (Number.isNaN(scheduled.getTime())) {
+      toast.error("Invalid date and time.");
+      return;
+    }
+
+    const phoneLine = newCustomerPhone.trim()
+      ? `Phone: ${newCustomerPhone.trim()}`
+      : "";
+    const combinedNotes = [phoneLine, notes.trim()].filter(Boolean).join("\n\n");
+
     addRequest({
-      jobCardId: jc.id,
-      jobNumber: jc.jobNumber,
-      branchId: jc.branchId,
-      customerName: jc.customerName,
-      address,
-      scheduledTime: jc.expectedDelivery,
+      jobCardId: `new-${typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : String(Date.now())}`,
+      jobNumber: "NEW",
+      branchId: newBranchId,
+      customerName: name,
+      address: addr,
+      scheduledTime: scheduled.toISOString(),
       type: reqType,
       driverId: driver?.id,
       driverName: driver?.name,
-      notes: notes.trim() || undefined,
+      notes: combinedNotes || undefined,
     });
     setCreateOpen(false);
     resetForm();
   };
+
+  const canSubmitCreate =
+    createMode === "existing"
+      ? !!bookingId
+      : !!(
+          newCustomerName.trim() &&
+          newAddress.trim() &&
+          newBranchId &&
+          newScheduledLocal
+        );
 
   return (
     <div>
@@ -314,7 +403,7 @@ export default function PickupDropPage() {
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent
-          className={cn("sm:max-w-md", dialogSurfaceClass)}
+          className={cn("sm:max-w-lg", dialogSurfaceClass)}
           onOpenAutoFocus={(e) => e.preventDefault()}
         >
           <DialogHeader>
@@ -322,26 +411,130 @@ export default function PickupDropPage() {
               Create Pickup/Drop Request
             </DialogTitle>
           </DialogHeader>
-          <div className="grid gap-4 py-2">
+          <div className="grid gap-4 py-2 max-h-[min(70vh,28rem)] overflow-y-auto pr-1">
             <div className="grid gap-2">
-              <Label htmlFor="pd-booking">Select Booking</Label>
-              <Select value={bookingId} onValueChange={setBookingId}>
-                <SelectTrigger id="pd-booking" className={selectTriggerClass}>
-                  <SelectValue placeholder="Select a booking..." />
-                </SelectTrigger>
-                <SelectContent className={selectContentClass}>
-                  {scopedJobCards.map((jc) => (
-                    <SelectItem
-                      key={jc.id}
-                      value={jc.id}
-                      className="cursor-pointer data-[highlighted]:bg-[#1D61D1] data-[highlighted]:text-white"
-                    >
-                      {jc.jobNumber} · {jc.customerName}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label className="text-muted-foreground">Customer</Label>
+              <div className="flex rounded-lg border border-input bg-muted/30 p-1 gap-1">
+                <Button
+                  type="button"
+                  variant={createMode === "existing" ? "default" : "ghost"}
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => setCreateMode("existing")}
+                >
+                  Existing booking
+                </Button>
+                <Button
+                  type="button"
+                  variant={createMode === "new" ? "default" : "ghost"}
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => {
+                    setCreateMode("new");
+                    setNewBranchId((prev) => prev || scopedBranches[0]?.id || "");
+                    setNewScheduledLocal((prev) => prev || defaultScheduledDatetimeLocal());
+                  }}
+                >
+                  New customer
+                </Button>
+              </div>
             </div>
+
+            {createMode === "existing" ? (
+              <div className="grid gap-2">
+                <Label htmlFor="pd-booking">Select booking</Label>
+                {scopedJobCards.length === 0 ? (
+                  <p className="text-sm text-muted-foreground rounded-md border border-dashed border-border px-3 py-2.5">
+                    No job cards in this branch. Switch to <strong className="font-medium text-foreground">New customer</strong> to create a request without a job card.
+                  </p>
+                ) : (
+                  <Select value={bookingId} onValueChange={setBookingId}>
+                    <SelectTrigger id="pd-booking" className={selectTriggerClass}>
+                      <SelectValue placeholder="Select a job card…" />
+                    </SelectTrigger>
+                    <SelectContent className={selectContentClass}>
+                      {scopedJobCards.map((jc) => (
+                        <SelectItem
+                          key={jc.id}
+                          value={jc.id}
+                          className="cursor-pointer data-[highlighted]:bg-[#1D61D1] data-[highlighted]:text-white"
+                        >
+                          {jc.jobNumber} · {jc.customerName}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+            ) : (
+              <>
+                <div className="grid gap-2">
+                  <Label htmlFor="pd-new-name">Customer name</Label>
+                  <Input
+                    id="pd-new-name"
+                    value={newCustomerName}
+                    onChange={(e) => setNewCustomerName(e.target.value)}
+                    placeholder="Full name"
+                    className="border-input"
+                    autoComplete="name"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="pd-new-phone">Phone (optional)</Label>
+                  <Input
+                    id="pd-new-phone"
+                    type="tel"
+                    value={newCustomerPhone}
+                    onChange={(e) => setNewCustomerPhone(e.target.value)}
+                    placeholder="10-digit mobile"
+                    className="border-input"
+                    autoComplete="tel"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="pd-new-address">Pickup / drop address</Label>
+                  <Textarea
+                    id="pd-new-address"
+                    value={newAddress}
+                    onChange={(e) => setNewAddress(e.target.value)}
+                    rows={3}
+                    className="resize-none border-input"
+                    placeholder="Street, landmark, pincode…"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="pd-new-branch">Branch</Label>
+                  {scopedBranches.length === 0 ? (
+                    <p className="text-sm text-destructive rounded-md border border-dashed px-3 py-2.5">
+                      No active branch available for your scope.
+                    </p>
+                  ) : (
+                    <Select value={newBranchId || undefined} onValueChange={setNewBranchId}>
+                      <SelectTrigger id="pd-new-branch" className={selectTriggerClass}>
+                        <SelectValue placeholder="Select branch…" />
+                      </SelectTrigger>
+                      <SelectContent className={selectContentClass}>
+                        {scopedBranches.map((b) => (
+                          <SelectItem key={b.id} value={b.id}>
+                            {b.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="pd-new-when">Scheduled date &amp; time</Label>
+                  <Input
+                    id="pd-new-when"
+                    type="datetime-local"
+                    value={newScheduledLocal}
+                    onChange={(e) => setNewScheduledLocal(e.target.value)}
+                    className="border-input"
+                  />
+                </div>
+              </>
+            )}
             <div className="grid gap-2">
               <Label>Request Type</Label>
               <Select value={reqType} onValueChange={(v) => setReqType(v as PickupDropType)}>
@@ -386,10 +579,7 @@ export default function PickupDropPage() {
             <Button variant="outline" onClick={() => setCreateOpen(false)}>
               Cancel
             </Button>
-            <Button
-              disabled={!bookingId}
-              onClick={handleCreate}
-            >
+            <Button disabled={!canSubmitCreate} onClick={handleCreate}>
               Create Request
             </Button>
           </DialogFooter>
