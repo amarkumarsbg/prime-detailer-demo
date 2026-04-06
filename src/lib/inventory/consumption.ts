@@ -3,6 +3,7 @@ import type {
   Part,
   ServiceCatalogItem,
   ServiceConsumption,
+  VehicleSegment,
 } from "@/types";
 
 export type ConsumptionDeduction = {
@@ -26,24 +27,47 @@ function normalizeUnit(unit: string): string {
   return unit.trim().toUpperCase();
 }
 
+/** Quantity to use for a job on this line given the vehicle segment. */
+export function consumptionQuantityForSegment(
+  line: ServiceConsumption,
+  segment: VehicleSegment
+): number {
+  const o = line.segmentQuantities?.[segment];
+  if (o != null && Number.isFinite(o)) return o;
+  return line.quantityPerCar;
+}
+
+/** Worst-case quantity for stock planning (max of default and all segment overrides). */
+export function maxConsumptionQuantityForLine(line: ServiceConsumption): number {
+  let m = line.quantityPerCar;
+  const seg = line.segmentQuantities;
+  if (seg) {
+    for (const v of Object.values(seg)) {
+      if (typeof v === "number" && Number.isFinite(v)) m = Math.max(m, v);
+    }
+  }
+  return m;
+}
+
 /** Convert a single consumption line to ml and/or count deduction. */
 export function consumptionLineToDeduction(
-  line: ServiceConsumption
+  line: ServiceConsumption,
+  quantity: number = line.quantityPerCar
 ): ConsumptionDeduction {
   const u = normalizeUnit(line.unit);
   if (u === "L" || u === "LITRE" || u === "LITRES") {
     return {
       partId: line.partId,
-      ml: line.quantityPerCar * 1000,
+      ml: quantity * 1000,
     };
   }
   if (u === "ML") {
-    return { partId: line.partId, ml: line.quantityPerCar };
+    return { partId: line.partId, ml: quantity };
   }
   if (COUNT_UNITS.has(u) || !ML_UNITS.has(u)) {
-    return { partId: line.partId, count: line.quantityPerCar };
+    return { partId: line.partId, count: quantity };
   }
-  return { partId: line.partId, count: line.quantityPerCar };
+  return { partId: line.partId, count: quantity };
 }
 
 function mergeDeductions(lines: ConsumptionDeduction[]): ConsumptionDeduction[] {
@@ -72,11 +96,15 @@ export function deductionsForJob(
   const catalogById = new Map(catalog.map((c) => [c.id, c]));
   const raw: ConsumptionDeduction[] = [];
 
+  const segment = job.vehicleSegment;
+
   for (const svc of job.services) {
     const item = catalogById.get(svc.serviceCatalogId);
     if (!item?.consumptionProfile?.length) continue;
     for (const line of item.consumptionProfile) {
-      raw.push(consumptionLineToDeduction(line));
+      if (line.requiredPart === false) continue;
+      const qty = consumptionQuantityForSegment(line, segment);
+      raw.push(consumptionLineToDeduction(line, qty));
     }
   }
 
@@ -92,7 +120,7 @@ export function mlPerCarForPartOnService(
   let total = 0;
   for (const line of service.consumptionProfile) {
     if (line.partId !== partId) continue;
-    const d = consumptionLineToDeduction(line);
+    const d = consumptionLineToDeduction(line, maxConsumptionQuantityForLine(line));
     if (d.ml != null) total += d.ml;
   }
   return total;
@@ -118,7 +146,7 @@ export function carsPossibleBottleneck(
   if (!service.consumptionProfile?.length) return Infinity;
   let minCars = Infinity;
   for (const line of service.consumptionProfile) {
-    const d = consumptionLineToDeduction(line);
+    const d = consumptionLineToDeduction(line, maxConsumptionQuantityForLine(line));
     if (d.ml == null) continue;
     const p = partsById.get(line.partId);
     const ml = p?.stockQuantityMl;

@@ -185,6 +185,10 @@ export interface ServiceConsumption {
   partName: string;
   quantityPerCar: number;
   unit: string;
+  /** When false, omitted from automatic inventory deduction for a job (optional add-on part). Default true when omitted. */
+  requiredPart?: boolean;
+  /** Per vehicle segment overrides; falls back to quantityPerCar when not set. */
+  segmentQuantities?: Partial<Record<VehicleSegment, number>>;
 }
 
 /** Service category row (Service Management → Categories tab). */

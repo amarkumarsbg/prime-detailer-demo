@@ -8,11 +8,24 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useServiceCatalogStore } from "@/store/service-catalog-store";
 import { useInventoryStore } from "@/store/inventory-store";
-import type { Part, ServiceConsumption } from "@/types";
-import { ArrowLeft, Box, Plus, Search, Trash2 } from "lucide-react";
+import type { Part, ServiceConsumption, VehicleSegment } from "@/types";
+import { ArrowLeft, Box, ChevronDown, Plus, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
+
+const VEHICLE_QTY_SEGMENTS: { value: VehicleSegment; label: string }[] = [
+  { value: "HATCHBACK", label: "Hatchback" },
+  { value: "SEDAN", label: "Sedan" },
+  { value: "SUV", label: "SUV" },
+  { value: "COMPACT_SUV", label: "Compact SUV" },
+  { value: "MUV", label: "MUV" },
+  { value: "LUXURY", label: "Luxury" },
+  { value: "BIKE", label: "Bike" },
+];
 
 function stockLabel(p: Part): string {
   if (p.stockQuantityMl != null) {
@@ -31,6 +44,7 @@ export default function ConfigureServicePartsPage() {
 
   const service = useMemo(() => catalog.find((c) => c.id === id), [catalog, id]);
   const [search, setSearch] = useState("");
+  const [vehicleQtyOpen, setVehicleQtyOpen] = useState<Record<string, boolean>>({});
 
   const selected = useMemo(() => service?.consumptionProfile ?? [], [service]);
 
@@ -54,6 +68,7 @@ export default function ConfigureServicePartsPage() {
       partName: p.name,
       quantityPerCar: p.stockQuantityMl != null ? 0.05 : 1,
       unit: p.stockQuantityMl != null ? "L" : p.primaryUnit,
+      requiredPart: true,
     };
     setCatalog((prev) =>
       prev.map((s) =>
@@ -88,6 +103,44 @@ export default function ConfigureServicePartsPage() {
           ...s,
           consumptionProfile: (s.consumptionProfile ?? []).map((l) =>
             l.partId === partId ? { ...l, quantityPerCar } : l
+          ),
+        };
+      })
+    );
+  };
+
+  const updateSegmentQty = (partId: string, segment: VehicleSegment, value: number | null) => {
+    if (!service) return;
+    setCatalog((prev) =>
+      prev.map((s) => {
+        if (s.id !== service.id) return s;
+        return {
+          ...s,
+          consumptionProfile: (s.consumptionProfile ?? []).map((l) => {
+            if (l.partId !== partId) return l;
+            const next = { ...(l.segmentQuantities ?? {}) };
+            if (value == null || Number.isNaN(value)) {
+              delete next[segment];
+            } else {
+              next[segment] = value;
+            }
+            const segmentQuantities = Object.keys(next).length ? next : undefined;
+            return { ...l, segmentQuantities };
+          }),
+        };
+      })
+    );
+  };
+
+  const updateRequiredPart = (partId: string, required: boolean) => {
+    if (!service) return;
+    setCatalog((prev) =>
+      prev.map((s) => {
+        if (s.id !== service.id) return s;
+        return {
+          ...s,
+          consumptionProfile: (s.consumptionProfile ?? []).map((l) =>
+            l.partId === partId ? { ...l, requiredPart: required } : l
           ),
         };
       })
@@ -211,17 +264,91 @@ export default function ConfigureServicePartsPage() {
                         </p>
                       )}
                     </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">Default Quantity ({line.unit})</Label>
-                      <Input
-                        type="number"
-                        min={0}
-                        step={0.01}
-                        value={line.quantityPerCar}
-                        onChange={(e) =>
-                          updateQty(line.partId, parseFloat(e.target.value) || 0)
+                    <div className="space-y-2">
+                      <div className="space-y-1">
+                        <Label className="text-xs font-medium">Default Quantity ({line.unit})</Label>
+                        <Input
+                          type="number"
+                          min={0}
+                          step={0.01}
+                          value={line.quantityPerCar}
+                          onChange={(e) =>
+                            updateQty(line.partId, parseFloat(e.target.value) || 0)
+                          }
+                        />
+                      </div>
+
+                      <Collapsible
+                        open={Boolean(vehicleQtyOpen[line.partId])}
+                        onOpenChange={(open) =>
+                          setVehicleQtyOpen((prev) => ({ ...prev, [line.partId]: open }))
                         }
-                      />
+                      >
+                        <CollapsibleTrigger className="flex w-full items-center gap-1.5 rounded-md px-1 py-2 text-left text-sm font-medium text-blue-600 outline-none hover:bg-muted/50 hover:text-blue-700 focus-visible:ring-2 focus-visible:ring-ring dark:text-blue-400 dark:hover:text-blue-300">
+                          <ChevronDown
+                            className={cn(
+                              "size-4 shrink-0 transition-transform duration-200",
+                              vehicleQtyOpen[line.partId] && "-rotate-180"
+                            )}
+                            aria-hidden
+                          />
+                          Vehicle-Specific Quantities
+                        </CollapsibleTrigger>
+                        <CollapsibleContent>
+                          <div className="rounded-md border border-border bg-muted/30 p-3 space-y-2">
+                            <p className="text-[11px] text-muted-foreground">
+                              Override default for a segment; leave blank to use default quantity.
+                            </p>
+                            <div className="grid gap-3 sm:grid-cols-2">
+                              {VEHICLE_QTY_SEGMENTS.map(({ value: seg, label }) => (
+                                <div key={seg} className="space-y-1">
+                                  <Label className="text-xs text-muted-foreground">{label}</Label>
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    step={0.01}
+                                    placeholder="Use default"
+                                    value={
+                                      line.segmentQuantities?.[seg] != null
+                                        ? line.segmentQuantities[seg]
+                                        : ""
+                                    }
+                                    onChange={(e) => {
+                                      const raw = e.target.value.trim();
+                                      if (raw === "") {
+                                        updateSegmentQty(line.partId, seg, null);
+                                        return;
+                                      }
+                                      const n = parseFloat(raw);
+                                      updateSegmentQty(
+                                        line.partId,
+                                        seg,
+                                        Number.isNaN(n) ? null : n
+                                      );
+                                    }}
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </CollapsibleContent>
+                      </Collapsible>
+
+                      <div className="flex items-center gap-2 border-t border-border pt-3 mt-1">
+                        <Checkbox
+                          id={`required-${line.partId}`}
+                          checked={line.requiredPart !== false}
+                          onCheckedChange={(v) =>
+                            updateRequiredPart(line.partId, v === true)
+                          }
+                        />
+                        <Label
+                          htmlFor={`required-${line.partId}`}
+                          className="text-sm font-normal cursor-pointer leading-none"
+                        >
+                          Required part
+                        </Label>
+                      </div>
                     </div>
                   </div>
                 );
