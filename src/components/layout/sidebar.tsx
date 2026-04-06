@@ -42,6 +42,7 @@ import {
   ChevronDown,
   Gift,
   Building2,
+  Landmark,
 } from "lucide-react";
 
 type NavItem = {
@@ -97,6 +98,12 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
         label: "Accounting",
         href: "/accounting",
         icon: Receipt,
+        roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER", "MANAGER", "RECEPTIONIST"],
+      },
+      {
+        label: "Cash & Bank",
+        href: "/cash-bank",
+        icon: Landmark,
         roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER", "MANAGER", "RECEPTIONIST"],
       },
       {
