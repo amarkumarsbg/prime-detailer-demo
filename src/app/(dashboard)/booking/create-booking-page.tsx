@@ -27,7 +27,7 @@ import {
   Calendar,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -45,6 +45,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -65,6 +66,7 @@ import { isAllBranchesScope } from "@/lib/all-branches";
 import { formatCurrency, cn } from "@/lib/utils";
 import {
   INDIAN_VEHICLE_REG_HINT,
+  findVehicleByNormalizedReg,
   isValidIndianVehicleRegistration,
   normalizeRegistrationNumber,
   sanitizeVehicleRegistrationInput,
@@ -226,6 +228,9 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
   const [lookupPanelCustomers, setLookupPanelCustomers] = useState<Customer[] | null>(null);
   const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(null);
   const [addingNewVehicle, setAddingNewVehicle] = useState(false);
+  /** When adding a vehicle for an existing customer with a garage, form opens in a dialog */
+  const [addVehiclePopupOpen, setAddVehiclePopupOpen] = useState(false);
+  const skipAddVehicleCancelOnCloseRef = useRef(false);
   const [extraBrands, setExtraBrands] = useState<string[]>([]);
   const [extraModelsByBrand, setExtraModelsByBrand] = useState<Record<string, string[]>>({});
   const [newBrandOpen, setNewBrandOpen] = useState(false);
@@ -276,6 +281,9 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
     mq.addEventListener("change", apply);
     return () => mq.removeEventListener("change", apply);
   }, []);
+
+  /** Desktop job-card: fit dashboard main without page scroll; compact density */
+  const compactJobCardDesktop = isJobCard && isDesktopWide;
 
   useEffect(() => {
     if (branchId) return;
@@ -457,6 +465,7 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
   const selectVehicleFromGarage = (v: Vehicle) => {
     setSelectedVehicleId(v.id);
     setAddingNewVehicle(false);
+    setAddVehiclePopupOpen(false);
     setVehicleNumber(v.registrationNumber);
     const rb = brandNames.find((b) => b.toLowerCase() === v.make.toLowerCase()) ?? v.make;
     setVehicleBrand(rb);
@@ -471,6 +480,73 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
     setVehicleBrand("");
     setVehicleModel("");
     setVehicleSegment("");
+    setAddVehiclePopupOpen(true);
+  };
+
+  const cancelAddVehicleFromPopup = () => {
+    setAddVehiclePopupOpen(false);
+    setAddingNewVehicle(false);
+    setVehicleNumber("");
+    setVehicleBrand("");
+    setVehicleModel("");
+    setVehicleSegment("");
+  };
+
+  const doneAddVehiclePopup = () => {
+    if (!existingCustomerId) {
+      toast.error("Select a customer first.");
+      return;
+    }
+    const brandTrim = vehicleBrand.trim();
+    const modelTrim = vehicleModel.trim();
+    if (!vehicleNumber.trim() || !brandTrim || !modelTrim) {
+      toast.error("Registration, brand, and model are required.");
+      return;
+    }
+    if (!isValidIndianVehicleRegistration(vehicleNumber)) {
+      toast.error("Invalid registration", { description: INDIAN_VEHICLE_REG_HINT });
+      return;
+    }
+    const regStored = normalizeRegistrationNumber(vehicleNumber);
+    const dup = findVehicleByNormalizedReg(vehicles, vehicleNumber);
+    if (dup) {
+      if (dup.customerId === existingCustomerId) {
+        skipAddVehicleCancelOnCloseRef.current = true;
+        selectVehicleFromGarage(dup);
+        return;
+      }
+      toast.error("Registration belongs to another customer", {
+        description: `${dup.registrationNumber} — ${dup.customerName}`,
+      });
+      return;
+    }
+    const cust = customers.find((c) => c.id === existingCustomerId);
+    const inferredSeg = getModelSegment(vehicleBrand, vehicleModel);
+    const seg: VehicleSegment = inferredSeg ?? "HATCHBACK";
+    const rb = brandNames.find((b) => b.toLowerCase() === brandTrim.toLowerCase()) ?? brandTrim;
+    const newId = `veh-${Date.now()}`;
+    const newVehicle: Vehicle = {
+      id: newId,
+      customerId: existingCustomerId,
+      customerName: (cust?.name ?? customerName).trim(),
+      registrationNumber: regStored,
+      make: rb,
+      model: modelTrim,
+      segment: seg,
+      fuelType: "PETROL",
+      color: "—",
+      year: new Date().getFullYear(),
+    };
+    setVehicles((prev) => [newVehicle, ...prev]);
+    setVehicleBrand(rb);
+    setVehicleModel(modelTrim);
+    setVehicleNumber(regStored);
+    setVehicleSegment(seg);
+    setSelectedVehicleId(newId);
+    setAddingNewVehicle(false);
+    skipAddVehicleCancelOnCloseRef.current = true;
+    setAddVehiclePopupOpen(false);
+    toast.success("Vehicle saved", { description: "It appears in your garage above." });
   };
 
   const categories = useMemo(() => {
@@ -518,6 +594,11 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
 
   const showVehicleDetailsForm =
     !existingCustomerId || addingNewVehicle || ownedVehicles.length === 0;
+
+  /** Garage + "Add New Vehicle" uses a popup; other cases keep the form inline in the card */
+  const showInlineVehicleDetailsForm =
+    showVehicleDetailsForm &&
+    !(existingCustomerId && ownedVehicles.length > 0 && addingNewVehicle);
 
   const previousBooked = useMemo(() => {
     if (!existingCustomerId) return [];
@@ -1071,14 +1152,17 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
         onSubmit={handleSubmit}
         className={cn(
           isJobCard
-            ? "flex flex-1 flex-col min-h-0 overflow-hidden lg:flex-row lg:items-stretch lg:gap-0"
+            ? "flex h-full min-h-0 flex-1 flex-col overflow-hidden overflow-x-hidden lg:flex-row lg:items-stretch lg:gap-3 lg:overflow-hidden"
             : "lg:flex lg:flex-row lg:items-start lg:gap-8"
         )}
       >
         <div
           className={cn(
             "min-w-0 flex-1 space-y-6 lg:min-w-0",
-            isJobCard && "flex flex-col min-h-0 overflow-hidden px-4 sm:px-6 py-3"
+            isJobCard &&
+              "flex flex-col overflow-x-hidden px-4 sm:px-6 py-2 sm:py-3",
+            isJobCard && isDesktopWide && "min-h-0 flex-1 gap-2 overflow-hidden py-2 sm:px-4",
+            isJobCard && !isDesktopWide && "min-h-0"
           )}
         >
           {isJobCard && (
@@ -1092,7 +1176,12 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
                   — {JOB_WIZARD_LABEL[jobWizardStepId]}
                 </span>
               </div>
-              <div className="hidden sm:block overflow-x-auto overflow-y-visible pb-2 -mx-1 px-1 [scrollbar-width:thin] shrink-0">
+              <div
+                className={cn(
+                  "hidden sm:block overflow-x-auto overflow-y-visible pb-1.5 -mx-1 px-1 [scrollbar-width:thin] shrink-0",
+                  compactJobCardDesktop && "pb-1"
+                )}
+              >
                 <div className="flex items-center justify-start min-w-0 w-full gap-x-1 sm:gap-x-2">
                   {wizardSteps.map((stepId, index) => {
                     const label = JOB_WIZARD_LABEL[stepId];
@@ -1101,10 +1190,18 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
                     const isCurrent = index === jobCreateStep;
                     return (
                       <div key={stepId} className="flex items-center shrink-0">
-                        <div className="flex flex-col items-center w-[4.5rem] sm:w-[5.25rem] px-0.5">
+                        <div
+                          className={cn(
+                            "flex flex-col items-center px-0.5",
+                            compactJobCardDesktop ? "w-[4rem] sm:w-[4.25rem]" : "w-[4.5rem] sm:w-[5.25rem]"
+                          )}
+                        >
                           <div
                             className={cn(
-                              "w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center border-2 transition-colors",
+                              "rounded-full flex items-center justify-center border-2 transition-colors",
+                              compactJobCardDesktop
+                                ? "w-7 h-7 sm:w-8 sm:h-8"
+                                : "w-9 h-9 sm:w-10 sm:h-10",
                               isCompleted
                                 ? "bg-primary border-primary text-primary-foreground"
                                 : isCurrent
@@ -1120,7 +1217,10 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
                           </div>
                           <span
                             className={cn(
-                              "text-[10px] sm:text-xs mt-1.5 text-center leading-tight line-clamp-2",
+                              "text-center leading-tight line-clamp-2",
+                              compactJobCardDesktop
+                                ? "text-[9px] sm:text-[10px] mt-1"
+                                : "text-[10px] sm:text-xs mt-1.5",
                               isCurrent ? "font-semibold text-foreground" : "text-muted-foreground"
                             )}
                           >
@@ -1130,7 +1230,8 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
                         {!isLast && (
                           <div
                             className={cn(
-                              "h-0.5 w-3 sm:w-4 sm:flex-1 sm:min-w-2 sm:max-w-16 shrink-0 -mt-5 sm:-mt-6",
+                              "h-0.5 w-3 sm:w-4 sm:flex-1 sm:min-w-2 sm:max-w-16 shrink-0",
+                              compactJobCardDesktop ? "-mt-4 sm:-mt-5" : "-mt-5 sm:-mt-6",
                               isCompleted ? "bg-primary" : "bg-muted"
                             )}
                             aria-hidden
@@ -1147,22 +1248,32 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
           <div
             className={cn(
               "space-y-6",
-              isJobCard && "flex-1 min-h-0 overflow-y-auto pr-1 -mr-1 pb-2"
+              isJobCard &&
+                isDesktopWide &&
+                "flex min-h-0 flex-1 flex-col space-y-0 overflow-y-auto overflow-x-hidden pr-0.5 [-ms-overflow-style:none] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5",
+              isJobCard && isDesktopWide && "gap-3",
+              isJobCard && !isDesktopWide && "flex-1 min-h-0 overflow-y-auto pr-1 -mr-1 pb-2"
             )}
           >
           {showJobWizardStep("customer") && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Customer Information</CardTitle>
+          <Card
+            className={cn(
+              compactJobCardDesktop && "border-border/80 shadow-sm"
+            )}
+          >
+            <CardHeader className={cn(compactJobCardDesktop && "space-y-0 py-2 pb-1.5")}>
+              <CardTitle className={cn(compactJobCardDesktop ? "text-base" : "text-lg")}>
+                Customer Information
+              </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-6">
+            <CardContent className={cn(compactJobCardDesktop ? "space-y-3 pt-0" : "space-y-6")}>
               <div>
                 <Label className="text-muted-foreground">Search Existing Customer</Label>
-                <div className="mt-2 w-full max-w-md">
+                <div className={cn("mt-2 w-full max-w-md", compactJobCardDesktop && "mt-1.5 max-w-full")}>
                   <div className="relative w-full">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
                     <Input
-                      className="pl-9"
+                      className={cn("pl-9", compactJobCardDesktop && "h-9")}
                       placeholder="Enter Mobile or Vehicle number"
                       value={lookupQuery}
                       onChange={(e) => setLookupQuery(e.target.value)}
@@ -1172,9 +1283,11 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
                       autoComplete="off"
                     />
                   </div>
-                  <p className="text-xs text-muted-foreground mt-1.5">
-                    Matches update as you type (phone, name, or registration).
-                  </p>
+                  {!compactJobCardDesktop && (
+                    <p className="text-xs text-muted-foreground mt-1.5">
+                      Matches update as you type (phone, name, or registration).
+                    </p>
+                  )}
                 </div>
                 {lookupPanelCustomers && lookupPanelCustomers.length > 0 && (
                   <div className="space-y-2 rounded-lg border bg-muted/30 p-3 mt-3">
@@ -1208,8 +1321,10 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
               </div>
 
               <div>
-                <p className="text-sm font-medium mb-3">Customer Details</p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <p className={cn("font-medium", compactJobCardDesktop ? "mb-2 text-sm" : "mb-3 text-sm")}>
+                  Customer Details
+                </p>
+                <div className={cn("grid grid-cols-1 sm:grid-cols-2", compactJobCardDesktop ? "gap-3" : "gap-4")}>
                   <div className="space-y-2">
                     <Label>Full Name</Label>
                     <Input
@@ -1354,7 +1469,7 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
                 </div>
               )}
 
-              {showVehicleDetailsForm && (
+              {showInlineVehicleDetailsForm && (
                 <div className="space-y-5">
                   <div className="flex gap-3 rounded-lg border border-sky-200 bg-sky-50/90 px-4 py-3.5 dark:border-sky-800 dark:bg-sky-950/40">
                     <div
@@ -1492,11 +1607,166 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
               {ownedVehicles.length > 0 && (
                 <div className="flex gap-2 rounded-lg border border-sky-200/80 bg-sky-50/70 px-3 py-2.5 text-sm text-sky-900 dark:border-sky-900/50 dark:bg-sky-950/25 dark:text-sky-100">
                   <Info className="w-4 h-4 shrink-0 mt-0.5" />
-                  <span>Select a saved vehicle above, or use Add New Vehicle to enter another.</span>
+                  <span>
+                    {addingNewVehicle && addVehiclePopupOpen
+                      ? "Complete the popup to register the new vehicle, or cancel it to pick a saved vehicle."
+                      : "Select a saved vehicle above, or use Add New Vehicle to enter details in a popup."}
+                  </span>
                 </div>
               )}
             </CardContent>
           </Card>
+
+          <Dialog
+            open={addVehiclePopupOpen}
+            onOpenChange={(open) => {
+              if (open) {
+                setAddVehiclePopupOpen(true);
+                return;
+              }
+              if (skipAddVehicleCancelOnCloseRef.current) {
+                skipAddVehicleCancelOnCloseRef.current = false;
+                return;
+              }
+              cancelAddVehicleFromPopup();
+            }}
+          >
+            <DialogContent className="flex max-h-[min(90vh,720px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-lg">
+              <DialogHeader className="shrink-0 space-y-1 border-b border-border px-6 pb-4 pt-6 text-left">
+                <DialogTitle>Add New Vehicle</DialogTitle>
+                <DialogDescription>
+                  Enter registration, brand, and model. Use + New if a brand or model is not in the list.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+                <div className="space-y-5">
+                  <div className="space-y-2">
+                    <Label htmlFor="vehicle-reg-popup" className="text-foreground">
+                      Registration Number
+                    </Label>
+                    <Input
+                      id="vehicle-reg-popup"
+                      value={vehicleNumber}
+                      onChange={(e) => setVehicleNumber(sanitizeVehicleRegistrationInput(e.target.value))}
+                      placeholder="e.g. KA01AB1234"
+                      maxLength={16}
+                      className="h-10 rounded-md"
+                      required
+                      autoCapitalize="characters"
+                    />
+                    <p className="text-xs text-muted-foreground">{INDIAN_VEHICLE_REG_HINT}</p>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 sm:gap-6">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <Label htmlFor="vehicle-brand-popup" className="text-foreground">
+                          Brand <span className="text-destructive">*</span>
+                        </Label>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-7 shrink-0 border-sky-300 bg-white px-2.5 text-xs font-medium text-sky-700 hover:bg-sky-50 dark:border-sky-700 dark:bg-sky-950/50 dark:text-sky-300"
+                          onClick={() => {
+                            setNewBrandDraft("");
+                            setNewBrandOpen(true);
+                          }}
+                        >
+                          + New
+                        </Button>
+                      </div>
+                      <Select
+                        value={vehicleBrand || undefined}
+                        onValueChange={(v) => {
+                          setVehicleBrand(v);
+                          setVehicleModel("");
+                          setVehicleSegment("");
+                        }}
+                        required
+                      >
+                        <SelectTrigger id="vehicle-brand-popup" className="h-10 w-full">
+                          <SelectValue placeholder="Select brand" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {allBrandsSorted.map((b) => (
+                            <SelectItem key={b} value={b}>
+                              {b}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <Label
+                          htmlFor="vehicle-model-popup"
+                          className={cn(
+                            "text-foreground",
+                            !vehicleBrand.trim() && "text-muted-foreground"
+                          )}
+                        >
+                          Model <span className="text-destructive">*</span>
+                        </Label>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={!vehicleBrand.trim()}
+                          className="h-7 shrink-0 px-2.5 text-xs font-medium disabled:opacity-50"
+                          onClick={() => {
+                            if (!vehicleBrand.trim()) return;
+                            setNewModelDraft("");
+                            setNewModelOpen(true);
+                          }}
+                        >
+                          + New
+                        </Button>
+                      </div>
+                      <Select
+                        value={vehicleModel || undefined}
+                        onValueChange={(v) => {
+                          setVehicleModel(v);
+                          const seg = getModelSegment(vehicleBrand, v);
+                          if (seg) setVehicleSegment(seg);
+                        }}
+                        disabled={!vehicleBrand.trim()}
+                        required={!!vehicleBrand.trim()}
+                      >
+                        <SelectTrigger
+                          id="vehicle-model-popup"
+                          className={cn(
+                            "h-10 w-full",
+                            !vehicleBrand.trim() && "cursor-not-allowed opacity-60"
+                          )}
+                        >
+                          <SelectValue
+                            placeholder={vehicleBrand.trim() ? "Select model" : "Select brand first"}
+                          />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {allModelsSorted.map((m) => (
+                            <SelectItem key={m} value={m}>
+                              {m}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <DialogFooter className="shrink-0 gap-2 border-t border-border px-6 py-4 sm:flex-row sm:justify-end">
+                <Button type="button" variant="outline" onClick={cancelAddVehicleFromPopup}>
+                  Cancel
+                </Button>
+                <Button type="button" onClick={doneAddVehiclePopup}>
+                  Done
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
 
           <Dialog open={newBrandOpen} onOpenChange={setNewBrandOpen}>
             <DialogContent className="sm:max-w-md">
@@ -2405,7 +2675,12 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
         </div>
 
         {isJobCard && (
-          <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-border pt-3 pb-1">
+          <div
+            className={cn(
+              "flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-border",
+              compactJobCardDesktop ? "pt-2 pb-0.5" : "pt-2.5 pb-0.5"
+            )}
+          >
             <Button
               type="button"
               variant="outline"
@@ -2429,13 +2704,34 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
 
         </div>
 
-        <aside className="mt-6 w-full shrink-0 space-y-4 lg:sticky lg:top-6 lg:mt-0 lg:w-[min(100%,380px)] lg:self-start lg:overflow-visible">
-          <Card className="border-border/80 shadow-sm overflow-visible">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">{isJobCard ? "Job summary" : "Booking summary"}</CardTitle>
+        <aside
+          className={cn(
+            "mt-6 w-full shrink-0 lg:mt-0 lg:min-h-0 lg:w-[min(100%,340px)]",
+            compactJobCardDesktop
+              ? "lg:flex lg:h-full lg:flex-col lg:self-stretch"
+              : "lg:sticky lg:top-4 lg:z-20 lg:self-start"
+          )}
+        >
+          <Card
+            className={cn(
+              "border-border/80 shadow-sm",
+              compactJobCardDesktop && "flex h-full min-h-0 flex-col overflow-hidden"
+            )}
+          >
+            <CardHeader className={cn("pb-2", compactJobCardDesktop ? "px-4 pt-3 sm:px-4" : "pt-4 sm:pt-5")}>
+              <CardTitle className={cn(compactJobCardDesktop ? "text-sm" : "text-base")}>
+                {isJobCard ? "Job summary" : "Booking summary"}
+              </CardTitle>
             </CardHeader>
-            <CardContent className="text-sm space-y-3">
-              <dl className="space-y-1.5">
+            <CardContent
+              className={cn(
+                "pb-2 text-sm",
+                compactJobCardDesktop
+                  ? "min-h-0 flex-1 space-y-2.5 overflow-y-auto text-xs sm:px-4"
+                  : "space-y-3 sm:pb-4"
+              )}
+            >
+              <dl className={cn("space-y-1", compactJobCardDesktop && "space-y-0.5")}>
                 <div className="flex justify-between gap-2">
                   <dt className="text-muted-foreground">Customer</dt>
                   <dd className="font-medium text-right truncate max-w-[55%]">
@@ -2522,7 +2818,11 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
                   Apply
                 </Button>
               </div>
-              <p className="text-[10px] text-muted-foreground">Demo code: WELCOME10 (10% off services before tax)</p>
+              {!compactJobCardDesktop && (
+                <p className="text-[10px] text-muted-foreground">
+                  Demo code: WELCOME10 (10% off services before tax)
+                </p>
+              )}
               <Separator />
               <div className="space-y-1 text-sm">
                 <div className="flex justify-between">
@@ -2533,7 +2833,12 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
                   <span>GST (18%)</span>
                   <span className="tabular-nums">+{formatCurrency(gstAmount)}</span>
                 </div>
-                <div className="flex justify-between text-base font-bold text-primary pt-1">
+                <div
+                  className={cn(
+                    "flex justify-between font-bold text-primary pt-0.5",
+                    compactJobCardDesktop ? "text-sm" : "text-base pt-1"
+                  )}
+                >
                   <span>Total payable</span>
                   <span className="tabular-nums">{formatCurrency(totalPayable)}</span>
                 </div>
@@ -2562,24 +2867,29 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
                   </p>
                 )}
               </div>
-              <div className="hidden md:flex flex-col gap-2 pt-4 mt-2 border-t">
-                <Button
-                  type="submit"
-                  className="w-full"
-                  disabled={jobCardWizardIncomplete}
-                  title={
-                    jobCardWizardIncomplete
-                      ? "Complete all wizard steps first"
-                      : undefined
-                  }
-                >
-                  {isJobCard ? "Create job card" : "Create booking"}
-                </Button>
-                <Button type="button" variant="outline" className="w-full" asChild>
-                  <Link href={isJobCard ? "/job-cards" : "/bookings"}>Cancel</Link>
-                </Button>
-              </div>
             </CardContent>
+            <CardFooter
+              className={cn(
+                "hidden shrink-0 border-t border-border px-4 py-3 sm:px-6 md:flex md:flex-col md:gap-2",
+                compactJobCardDesktop && "py-2.5"
+              )}
+            >
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={isJobCard ? jobCardWizardIncomplete : false}
+                title={
+                  isJobCard && jobCardWizardIncomplete
+                    ? "Complete all wizard steps first"
+                    : undefined
+                }
+              >
+                {isJobCard ? "Create job card" : "Create booking"}
+              </Button>
+              <Button type="button" variant="outline" className="w-full" asChild>
+                <Link href={isJobCard ? "/job-cards" : "/bookings"}>Cancel</Link>
+              </Button>
+            </CardFooter>
           </Card>
         </aside>
 
@@ -2604,9 +2914,9 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
               <Button
                 type="submit"
                 size="sm"
-                disabled={jobCardWizardIncomplete}
+                disabled={isJobCard ? jobCardWizardIncomplete : false}
                 title={
-                  jobCardWizardIncomplete
+                  isJobCard && jobCardWizardIncomplete
                     ? "Complete all wizard steps first"
                     : undefined
                 }
@@ -2622,23 +2932,22 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
   return (
     <>
       {isJobCard && isDesktopWide ? (
-        <div className="space-y-4 sm:space-y-6 max-md:pb-[calc(6rem+env(safe-area-inset-bottom,0px))] md:pb-2">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <Button variant="ghost" size="sm" className="w-fit -ml-2" asChild>
+        <div className="flex h-[calc(100dvh-7rem)] max-h-[calc(100dvh-7rem)] flex-col gap-2 overflow-hidden md:gap-3">
+          <div className="flex shrink-0 flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+            <Button variant="ghost" size="sm" className="w-fit -ml-2 h-8" asChild>
               <Link href="/job-cards">
                 <ArrowLeft className="w-4 h-4 mr-2" />
                 Back to Job Cards
               </Link>
             </Button>
           </div>
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">New Job Card</h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              Stepper and job summary stay in the main layout (no fullscreen modal). Use Next to move through
-              each section one at a time.
+          <div className="shrink-0">
+            <h1 className="text-lg font-bold tracking-tight sm:text-xl">New Job Card</h1>
+            <p className="mt-0.5 line-clamp-1 text-[11px] text-muted-foreground sm:text-xs">
+              Use Next for each step — summary and Create stay on the right.
             </p>
           </div>
-          {bookingForm}
+          <div className="min-h-0 flex-1 overflow-hidden">{bookingForm}</div>
         </div>
       ) : isJobCard ? (
         <Dialog

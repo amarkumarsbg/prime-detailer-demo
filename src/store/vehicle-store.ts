@@ -22,3 +22,12 @@ export const useVehicleStore = create<VehicleStore>()(
     { name: "prime-detailers-vehicles" }
   )
 );
+
+/** Other tabs/windows update localStorage when vehicles change — pull latest into this session. */
+if (typeof window !== "undefined") {
+  window.addEventListener("storage", (e) => {
+    if (e.key === "prime-detailers-vehicles" && e.newValue != null) {
+      void useVehicleStore.persist.rehydrate();
+    }
+  });
+}

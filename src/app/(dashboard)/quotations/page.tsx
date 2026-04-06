@@ -129,6 +129,7 @@ export default function QuotationsPage() {
   const [newVehicleMake, setNewVehicleMake] = useState("");
   const [newVehicleModel, setNewVehicleModel] = useState("");
   const [formServiceIds, setFormServiceIds] = useState<Set<string>>(new Set());
+  const [formNotes, setFormNotes] = useState("");
   const [formTerms, setFormTerms] = useState("");
 
   const customerVehicles = useMemo(() => {
@@ -191,6 +192,7 @@ export default function QuotationsPage() {
     setNewVehicleMake("");
     setNewVehicleModel("");
     setFormServiceIds(new Set());
+    setFormNotes("");
     setFormTerms("");
   };
 
@@ -320,6 +322,7 @@ export default function QuotationsPage() {
       grandTotal: formCalculations.grandTotal,
       status: "DRAFT",
       sentViaWhatsApp: false,
+      notes: formNotes.trim() || undefined,
       termsAndConditions: formTerms || undefined,
       validUntil: format(
         new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
@@ -914,8 +917,24 @@ export default function QuotationsPage() {
             </div>
 
             <div className="space-y-2">
-              <Label>Terms & Conditions</Label>
+              <Label htmlFor="quot-notes">Notes</Label>
               <Textarea
+                id="quot-notes"
+                placeholder="e.g. customer requests, follow-up reminders, scope clarifications…"
+                value={formNotes}
+                onChange={(e) => setFormNotes(e.target.value)}
+                rows={3}
+                className="resize-y min-h-[80px]"
+              />
+              <p className="text-xs text-muted-foreground">
+                Optional. Shown on the quotation details and kept with the estimate record.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="quot-terms">Terms & Conditions</Label>
+              <Textarea
+                id="quot-terms"
                 placeholder="Payment terms, warranty, etc."
                 value={formTerms}
                 onChange={(e) => setFormTerms(e.target.value)}
@@ -982,6 +1001,14 @@ export default function QuotationsPage() {
                   ))}
                 </ul>
               </div>
+              {selectedQuotation.notes?.trim() && (
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Notes</p>
+                  <p className="text-sm whitespace-pre-wrap rounded-md border border-border bg-muted/30 px-3 py-2">
+                    {selectedQuotation.notes}
+                  </p>
+                </div>
+              )}
               <div className="pt-2 border-t border-border space-y-1">
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Subtotal</span>
