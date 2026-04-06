@@ -120,6 +120,29 @@ function formatHighEndIntervalMonths(m: number): string {
   return m >= 12 ? `${m / 12}yr` : `${m}mo`;
 }
 
+/** Split `YYYY-MM-DDTHH:mm` for narrow layouts (native datetime-local popover is often too wide on mobile). */
+function splitDatetimeLocal(value: string): { date: string; time: string } {
+  const t = value.trim();
+  if (!t) return { date: "", time: "12:00" };
+  const [d, rest] = t.split("T");
+  const timeSeg = rest?.slice(0, 5) ?? "12:00";
+  return {
+    date: d ?? "",
+    time: /^\d{2}:\d{2}$/.test(timeSeg) ? timeSeg : "12:00",
+  };
+}
+
+function joinDatetimeLocal(date: string, time: string): string {
+  const d = date.trim();
+  if (!d) return "";
+  const tm = time.trim() && /^\d{2}:\d{2}$/.test(time.trim()) ? time.trim() : "12:00";
+  return `${d}T${tm}`;
+}
+
+/** Pin native date/time picker icons to the trailing edge on mobile WebKit/Chromium. */
+const MOBILE_DATE_TIME_INPUT_ICON_END =
+  "relative pr-10 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:right-3 [&::-webkit-calendar-picker-indicator]:top-1/2 [&::-webkit-calendar-picker-indicator]:-translate-y-1/2 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-100";
+
 /** datetime-local value is interpreted in the user's local timezone. */
 function resolveExpectedDeliveryIso(datetimeLocal: string, daysFromNowStr: string): string {
   const trimmedDt = datetimeLocal.trim();
@@ -149,7 +172,9 @@ type JobWizardStepId =
   | "pickupDrop"
   | "mechanic"
   | "notes"
-  | "jobDetails";
+  | "notesAndJobDetails"
+  | "jobDetails"
+  | "jobSummary";
 
 const JOB_WIZARD_LABEL: Record<JobWizardStepId, string> = {
   customer: "Customer",
@@ -163,7 +188,9 @@ const JOB_WIZARD_LABEL: Record<JobWizardStepId, string> = {
   pickupDrop: "Pickup & drop",
   mechanic: "Mechanic",
   notes: "Notes",
+  notesAndJobDetails: "Notes & job details",
   jobDetails: "Job details",
+  jobSummary: "Job summary",
 };
 
 export type CreateBookingVariant = "walk-in" | "job-card";
@@ -172,6 +199,12 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
   const isWalkIn = variant === "walk-in";
   const isJobCard = variant === "job-card";
   const router = useRouter();
+  /** Prevents mobile New Job Card dialog `onOpenChange` from navigating to `/job-cards` when we already go to `/job-cards/[id]`. */
+  const skipJobCardListRedirectRef = useRef(false);
+  const navigateToCreatedJobCard = useCallback((jobId: string) => {
+    skipJobCardListRedirectRef.current = true;
+    router.replace(`/job-cards/${jobId}`);
+  }, [router]);
   const jobCards = useJobCardStore((s) => s.jobCards);
   const { addJobCard, getNextJobNumber, updateJobCard } = useJobCardStore();
   const { services: highEndServices } = useHighEndServiceStore();
@@ -1003,7 +1036,7 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
     checkInJobIdRef.current = null;
     setCheckInOpen(false);
     setCheckInJob(null);
-    if (jid) router.push(`/job-cards/${jid}`);
+    if (jid) navigateToCreatedJobCard(jid);
   };
 
   const handleCheckInFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1072,7 +1105,7 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
     checkInJobIdRef.current = null;
     setCheckInOpen(false);
     setCheckInJob(null);
-    router.push(`/job-cards/${jid}`);
+    navigateToCreatedJobCard(jid);
   };
 
   const mainLabels = selectedCatalogItems
@@ -1092,8 +1125,12 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
       "serviceSelection",
     ];
     if (isJobCard && highEndServices.length > 0) s.push("highEndServices");
-    s.push("addons", "pickupDrop", "mechanic", "notes");
-    if (isJobCard) s.push("jobDetails");
+    s.push("addons", "pickupDrop", "mechanic");
+    if (isJobCard) {
+      s.push("notesAndJobDetails", "jobSummary");
+    } else {
+      s.push("notes");
+    }
     return s;
   }, [isJobCard, highEndServices.length]);
 
@@ -1107,8 +1144,13 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
   const jobCardWizardIncomplete =
     isJobCard && jobWizardStepCount > 0 && jobCreateStep < jobWizardStepCount - 1;
 
-  const showJobWizardStep = (id: JobWizardStepId) =>
-    !isJobCard || jobWizardStepId === id;
+  const showJobWizardStep = (id: JobWizardStepId) => {
+    if (!isJobCard) return true;
+    if (id === "notes" || id === "jobDetails") {
+      return jobWizardStepId === "notesAndJobDetails";
+    }
+    return jobWizardStepId === id;
+  };
 
   const goNextJobWizard = () => {
     if (!isJobCard) return;
@@ -1147,35 +1189,218 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
     setJobCreateStep((i) => Math.min(jobWizardStepCount - 1, i + 1));
   };
 
+  const renderSummaryCard = (branchBlockId: string) => (
+    <Card
+      className={cn(
+        "border-border/80 shadow-sm",
+        compactJobCardDesktop && "flex h-full min-h-0 flex-col overflow-hidden"
+      )}
+    >
+      <CardHeader
+        className={cn(
+          "pb-2",
+          compactJobCardDesktop ? "px-4 pt-3 sm:px-4" : "px-4 pt-3 sm:px-6 sm:pt-5"
+        )}
+      >
+        <CardTitle className={cn(compactJobCardDesktop ? "text-sm" : "text-base")}>
+          {isJobCard ? "Job summary" : "Booking summary"}
+        </CardTitle>
+      </CardHeader>
+      <CardContent
+        className={cn(
+          "pb-2 text-sm",
+          compactJobCardDesktop
+            ? "min-h-0 flex-1 space-y-2.5 overflow-y-auto text-xs sm:px-4"
+            : "space-y-2 px-4 sm:space-y-3 sm:px-6 sm:pb-4"
+        )}
+      >
+        <dl className={cn("space-y-1", compactJobCardDesktop && "space-y-0.5")}>
+          <div className="flex justify-between gap-2">
+            <dt className="text-muted-foreground">Customer</dt>
+            <dd className="font-medium text-right truncate max-w-[55%]">
+              {customerName.trim() || "Not selected"}
+            </dd>
+          </div>
+          <div className="flex justify-between gap-2">
+            <dt className="text-muted-foreground">Phone</dt>
+            <dd className="text-right">{customerPhone.length >= 10 ? customerPhone : "N/A"}</dd>
+          </div>
+          <div className="flex justify-between gap-2">
+            <dt className="text-muted-foreground">Vehicle</dt>
+            <dd className="text-right truncate max-w-[55%]">
+              {vehicleBrand || "Not selected"} {vehicleModel}
+            </dd>
+          </div>
+          <div className="flex justify-between gap-2">
+            <dt className="text-muted-foreground">Type</dt>
+            <dd>{vehicleSegment || "—"}</dd>
+          </div>
+          <div className="flex justify-between gap-2">
+            <dt className="text-muted-foreground">Registration</dt>
+            <dd className="font-mono text-xs">{vehicleNumber || "Not selected"}</dd>
+          </div>
+          <div className="flex justify-between gap-2 align-start">
+            <dt className="text-muted-foreground shrink-0">Service(s)</dt>
+            <dd className="text-right text-xs">
+              {mainLabels.length ? mainLabels.join(", ") : "Not selected"}
+            </dd>
+          </div>
+          {addonLabels.length > 0 && (
+            <div className="flex justify-between gap-2 align-start">
+              <dt className="text-muted-foreground shrink-0">Add-ons</dt>
+              <dd className="text-right text-xs">{addonLabels.join(", ")}</dd>
+            </div>
+          )}
+          {highEndSummaryLines.length > 0 && (
+            <div className="flex justify-between gap-2 align-start border-t border-border/60 pt-2 mt-1">
+              <dt className="text-muted-foreground shrink-0">High-end (est.)</dt>
+              <dd className="text-right text-xs space-y-1 min-w-0">
+                {highEndSummaryLines.map((line) => (
+                  <div key={line.id} className="flex justify-end gap-2 flex-wrap">
+                    <span className="truncate max-w-[140px]">{line.name}</span>
+                    <span className="tabular-nums shrink-0">{formatCurrency(line.amount)}</span>
+                  </div>
+                ))}
+              </dd>
+            </div>
+          )}
+          <div className="flex justify-between gap-2">
+            <dt className="text-muted-foreground">
+              {isJobCard ? "Expected delivery" : "Date & time"}
+            </dt>
+            <dd className="text-right text-xs">
+              {isWalkIn
+                ? bookingWhen
+                  ? new Date(bookingWhen).toLocaleString(undefined, {
+                      dateStyle: "short",
+                      timeStyle: "short",
+                    })
+                  : "—"
+                : new Date(
+                    resolveExpectedDeliveryIso(expectedDelivery, deliveryDaysFromNow)
+                  ).toLocaleString(undefined, {
+                    dateStyle: "short",
+                    timeStyle: "short",
+                  })}
+            </dd>
+          </div>
+        </dl>
+        <Separator />
+        <div className="flex items-center gap-2">
+          <Ticket className="w-4 h-4 text-violet-500" />
+          <span className="font-medium text-sm">Discount coupon</span>
+        </div>
+        <div className="flex gap-2">
+          <Input
+            placeholder="ENTER CODE"
+            value={couponCode}
+            onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+            className="uppercase text-xs"
+          />
+          <Button type="button" variant="secondary" size="sm" onClick={applyCoupon}>
+            Apply
+          </Button>
+        </div>
+        {!compactJobCardDesktop && (
+          <p className="text-[10px] text-muted-foreground">
+            Demo code: WELCOME10 (10% off services before tax)
+          </p>
+        )}
+        <Separator />
+        <div className="space-y-1 text-sm">
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Subtotal (excl. GST)</span>
+            <span className="tabular-nums">{formatCurrency(afterDiscount)}</span>
+          </div>
+          <div className="flex justify-between text-amber-700 dark:text-amber-400">
+            <span>GST (18%)</span>
+            <span className="tabular-nums">+{formatCurrency(gstAmount)}</span>
+          </div>
+          <div
+            className={cn(
+              "flex justify-between font-bold text-primary pt-0.5",
+              compactJobCardDesktop ? "text-sm" : "text-base pt-1"
+            )}
+          >
+            <span>Total payable</span>
+            <span className="tabular-nums">{formatCurrency(totalPayable)}</span>
+          </div>
+        </div>
+        <Separator />
+        <div id={branchBlockId} className="space-y-2 scroll-mt-24">
+          <Label className="flex items-center gap-2">
+            <Building2 className="w-4 h-4" />
+            Select branch *
+          </Label>
+          <Select value={branchId} onValueChange={setBranchId} required>
+            <SelectTrigger>
+              <SelectValue placeholder="Please select a branch" />
+            </SelectTrigger>
+            <SelectContent>
+              {activeBranches.map((b) => (
+                <SelectItem key={b.id} value={b.id}>
+                  {b.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {!branchId && (
+            <p className="text-xs text-destructive">
+              Please select a branch to create the {isJobCard ? "job card" : "booking"}.
+            </p>
+          )}
+        </div>
+      </CardContent>
+      <CardFooter
+        className={cn(
+          "hidden shrink-0 border-t border-border px-4 py-3 sm:px-6 md:flex md:flex-col md:gap-2",
+          compactJobCardDesktop && "py-2.5"
+        )}
+      >
+        <Button
+          type="submit"
+          className="w-full"
+          disabled={isJobCard ? jobCardWizardIncomplete : false}
+          title={
+            isJobCard && jobCardWizardIncomplete
+              ? "Complete all wizard steps first"
+              : undefined
+          }
+        >
+          {isJobCard ? "Create job card" : "Create booking"}
+        </Button>
+        <Button type="button" variant="outline" className="w-full" asChild>
+          <Link href={isJobCard ? "/job-cards" : "/bookings"}>Cancel</Link>
+        </Button>
+      </CardFooter>
+    </Card>
+  );
+
   const bookingForm = (
       <form
         onSubmit={handleSubmit}
         className={cn(
           isJobCard
             ? "flex h-full min-h-0 flex-1 flex-col overflow-hidden overflow-x-hidden lg:flex-row lg:items-stretch lg:gap-3 lg:overflow-hidden"
-            : "lg:flex lg:flex-row lg:items-start lg:gap-8"
+            : "lg:flex lg:flex-row lg:items-start lg:gap-8",
+          isJobCard &&
+            !isDesktopWide &&
+            "pb-[calc(5.75rem+env(safe-area-inset-bottom,0px))] md:pb-0"
         )}
       >
         <div
           className={cn(
             "min-w-0 flex-1 space-y-6 lg:min-w-0",
             isJobCard &&
-              "flex flex-col overflow-x-hidden px-4 sm:px-6 py-2 sm:py-3",
-            isJobCard && isDesktopWide && "min-h-0 flex-1 gap-2 overflow-hidden py-2 sm:px-4",
-            isJobCard && !isDesktopWide && "min-h-0"
+              "flex flex-col overflow-x-hidden px-3 py-2 sm:px-6 sm:py-3",
+            isJobCard &&
+              isDesktopWide &&
+              "min-h-0 flex-1 gap-2 overflow-hidden py-2 sm:px-4 max-lg:overflow-y-auto max-lg:overflow-x-hidden",
+            isJobCard && !isDesktopWide && "min-h-0 flex-1 overflow-y-auto overflow-x-hidden"
           )}
         >
           {isJobCard && (
             <>
-              <div className="sm:hidden rounded-lg border border-border bg-muted/30 px-3 py-2.5 text-sm shrink-0">
-                <span className="font-semibold text-foreground">
-                  Step {jobCreateStep + 1} of {jobWizardStepCount}
-                </span>
-                <span className="text-muted-foreground">
-                  {" "}
-                  — {JOB_WIZARD_LABEL[jobWizardStepId]}
-                </span>
-              </div>
               <div
                 className={cn(
                   "hidden sm:block overflow-x-auto overflow-y-visible pb-1.5 -mx-1 px-1 [scrollbar-width:thin] shrink-0",
@@ -1250,9 +1475,8 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
               "space-y-6",
               isJobCard &&
                 isDesktopWide &&
-                "flex min-h-0 flex-1 flex-col space-y-0 overflow-y-auto overflow-x-hidden pr-0.5 [-ms-overflow-style:none] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5",
-              isJobCard && isDesktopWide && "gap-3",
-              isJobCard && !isDesktopWide && "flex-1 min-h-0 overflow-y-auto pr-1 -mr-1 pb-2"
+                "lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:space-y-0 lg:gap-3 lg:overflow-y-auto lg:overflow-x-hidden lg:pr-0.5 [-ms-overflow-style:none] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5",
+              isJobCard && "max-lg:shrink-0 max-lg:overflow-visible"
             )}
           >
           {showJobWizardStep("customer") && (
@@ -1901,9 +2125,47 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
             </CardHeader>
             <CardContent>
               {isWalkIn ? (
-                <div className="space-y-2 max-w-md">
-                  <Label htmlFor="schedule-booking-when">Booking Date & Time</Label>
-                  <div className="relative">
+                <div className="min-w-0 max-w-md space-y-2">
+                  <Label className="md:hidden">Booking Date & Time</Label>
+                  <Label htmlFor="schedule-booking-when" className="hidden md:inline-flex">
+                    Booking Date & Time
+                  </Label>
+                  <div className="min-w-0 space-y-3 md:hidden">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="schedule-booking-date" className="text-xs text-muted-foreground">
+                        Date
+                      </Label>
+                      <Input
+                        id="schedule-booking-date"
+                        type="date"
+                        value={splitDatetimeLocal(bookingWhen).date}
+                        onChange={(e) => {
+                          const { time } = splitDatetimeLocal(bookingWhen);
+                          setBookingWhen(joinDatetimeLocal(e.target.value, time));
+                        }}
+                        required
+                        className={cn("h-10 w-full min-w-0 max-w-full", MOBILE_DATE_TIME_INPUT_ICON_END)}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="schedule-booking-time" className="text-xs text-muted-foreground">
+                        Time
+                      </Label>
+                      <Input
+                        id="schedule-booking-time"
+                        type="time"
+                        value={splitDatetimeLocal(bookingWhen).time}
+                        onChange={(e) => {
+                          let { date } = splitDatetimeLocal(bookingWhen);
+                          if (!date) date = datetimeLocalValue(new Date()).slice(0, 10);
+                          setBookingWhen(joinDatetimeLocal(date, e.target.value));
+                        }}
+                        required
+                        className={cn("h-10 w-full min-w-0 max-w-full", MOBILE_DATE_TIME_INPUT_ICON_END)}
+                      />
+                    </div>
+                  </div>
+                  <div className="relative hidden md:block">
                     <Input
                       id="schedule-booking-when"
                       ref={scheduleDateInputRef}
@@ -1924,10 +2186,48 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
                   </div>
                 </div>
               ) : (
-                <div className="space-y-3 max-w-md">
+                <div className="min-w-0 max-w-md space-y-3">
                   <div className="space-y-2">
-                    <Label htmlFor="schedule-expected-delivery">Booking Date & Time</Label>
-                    <div className="relative">
+                    <Label className="md:hidden">Booking Date & Time</Label>
+                    <Label htmlFor="schedule-expected-delivery" className="hidden md:inline-flex">
+                      Booking Date & Time
+                    </Label>
+                    <div className="min-w-0 space-y-3 md:hidden">
+                      <div className="space-y-1.5">
+                        <Label htmlFor="schedule-expected-date" className="text-xs text-muted-foreground">
+                          Date
+                        </Label>
+                        <Input
+                          id="schedule-expected-date"
+                          type="date"
+                          value={splitDatetimeLocal(expectedDelivery).date}
+                          onChange={(e) => {
+                            const { time } = splitDatetimeLocal(expectedDelivery);
+                            setExpectedDelivery(joinDatetimeLocal(e.target.value, time));
+                            if (e.target.value) setDeliveryDaysFromNow("");
+                          }}
+                          className={cn("h-10 w-full min-w-0 max-w-full", MOBILE_DATE_TIME_INPUT_ICON_END)}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="schedule-expected-time" className="text-xs text-muted-foreground">
+                          Time
+                        </Label>
+                        <Input
+                          id="schedule-expected-time"
+                          type="time"
+                          value={splitDatetimeLocal(expectedDelivery).time}
+                          onChange={(e) => {
+                            let { date } = splitDatetimeLocal(expectedDelivery);
+                            if (!date) date = datetimeLocalValue(new Date()).slice(0, 10);
+                            setExpectedDelivery(joinDatetimeLocal(date, e.target.value));
+                            setDeliveryDaysFromNow("");
+                          }}
+                          className={cn("h-10 w-full min-w-0 max-w-full", MOBILE_DATE_TIME_INPUT_ICON_END)}
+                        />
+                      </div>
+                    </div>
+                    <div className="relative hidden md:block">
                       <Input
                         id="schedule-expected-delivery"
                         ref={scheduleDateInputRef}
@@ -2216,11 +2516,18 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
                     <button
                       type="button"
                       className="mt-3 text-sm font-medium text-sky-700 underline underline-offset-4 hover:text-sky-900 dark:text-sky-300 dark:hover:text-sky-100"
-                      onClick={() =>
-                        document
-                          .getElementById("booking-branch-select-block")
-                          ?.scrollIntoView({ behavior: "smooth", block: "center" })
-                      }
+                      onClick={() => {
+                        for (const id of [
+                          "booking-branch-select-block-mobile",
+                          "booking-branch-select-block",
+                        ] as const) {
+                          const el = document.getElementById(id);
+                          if (el && el.offsetParent !== null) {
+                            el.scrollIntoView({ behavior: "smooth", block: "center" });
+                            return;
+                          }
+                        }
+                      }}
                     >
                       Select branch from the summary panel or global header
                     </button>
@@ -2672,12 +2979,23 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
               </CardContent>
             </Card>
           )}
+
+          {isJobCard && showJobWizardStep("jobSummary") && (
+            <Card className="hidden lg:block border-dashed border-primary/25 bg-muted/30">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">Review &amp; create</CardTitle>
+              </CardHeader>
+              <CardContent className="text-sm text-muted-foreground">
+                Use the job summary on the right to apply a coupon, select a branch, then create the job card.
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         {isJobCard && (
           <div
             className={cn(
-              "flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-border",
+              "hidden shrink-0 flex-wrap items-center justify-between gap-2 border-t border-border md:flex",
               compactJobCardDesktop ? "pt-2 pb-0.5" : "pt-2.5 pb-0.5"
             )}
           >
@@ -2702,229 +3020,106 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
           </div>
         )}
 
+        {isJobCard && jobWizardStepId === "jobSummary" && (
+          <div className="mt-4 w-full shrink-0 pb-2 lg:hidden">
+            {renderSummaryCard("booking-branch-select-block-mobile")}
+          </div>
+        )}
+
         </div>
 
         <aside
           className={cn(
-            "mt-6 w-full shrink-0 lg:mt-0 lg:min-h-0 lg:w-[min(100%,340px)]",
+            "mt-4 w-full shrink-0 sm:mt-6 lg:mt-0 lg:min-h-0 lg:w-[min(100%,340px)]",
+            isJobCard &&
+              (jobWizardStepId === "jobSummary" ? "hidden lg:block" : "hidden"),
             compactJobCardDesktop
               ? "lg:flex lg:h-full lg:flex-col lg:self-stretch"
               : "lg:sticky lg:top-4 lg:z-20 lg:self-start"
           )}
         >
-          <Card
-            className={cn(
-              "border-border/80 shadow-sm",
-              compactJobCardDesktop && "flex h-full min-h-0 flex-col overflow-hidden"
-            )}
-          >
-            <CardHeader className={cn("pb-2", compactJobCardDesktop ? "px-4 pt-3 sm:px-4" : "pt-4 sm:pt-5")}>
-              <CardTitle className={cn(compactJobCardDesktop ? "text-sm" : "text-base")}>
-                {isJobCard ? "Job summary" : "Booking summary"}
-              </CardTitle>
-            </CardHeader>
-            <CardContent
-              className={cn(
-                "pb-2 text-sm",
-                compactJobCardDesktop
-                  ? "min-h-0 flex-1 space-y-2.5 overflow-y-auto text-xs sm:px-4"
-                  : "space-y-3 sm:pb-4"
-              )}
-            >
-              <dl className={cn("space-y-1", compactJobCardDesktop && "space-y-0.5")}>
-                <div className="flex justify-between gap-2">
-                  <dt className="text-muted-foreground">Customer</dt>
-                  <dd className="font-medium text-right truncate max-w-[55%]">
-                    {customerName.trim() || "Not selected"}
-                  </dd>
-                </div>
-                <div className="flex justify-between gap-2">
-                  <dt className="text-muted-foreground">Phone</dt>
-                  <dd className="text-right">{customerPhone.length >= 10 ? customerPhone : "N/A"}</dd>
-                </div>
-                <div className="flex justify-between gap-2">
-                  <dt className="text-muted-foreground">Vehicle</dt>
-                  <dd className="text-right truncate max-w-[55%]">
-                    {vehicleBrand || "Not selected"} {vehicleModel}
-                  </dd>
-                </div>
-                <div className="flex justify-between gap-2">
-                  <dt className="text-muted-foreground">Type</dt>
-                  <dd>{vehicleSegment || "—"}</dd>
-                </div>
-                <div className="flex justify-between gap-2">
-                  <dt className="text-muted-foreground">Registration</dt>
-                  <dd className="font-mono text-xs">{vehicleNumber || "Not selected"}</dd>
-                </div>
-                <div className="flex justify-between gap-2 align-start">
-                  <dt className="text-muted-foreground shrink-0">Service(s)</dt>
-                  <dd className="text-right text-xs">
-                    {mainLabels.length ? mainLabels.join(", ") : "Not selected"}
-                  </dd>
-                </div>
-                {addonLabels.length > 0 && (
-                  <div className="flex justify-between gap-2 align-start">
-                    <dt className="text-muted-foreground shrink-0">Add-ons</dt>
-                    <dd className="text-right text-xs">{addonLabels.join(", ")}</dd>
-                  </div>
-                )}
-                {highEndSummaryLines.length > 0 && (
-                  <div className="flex justify-between gap-2 align-start border-t border-border/60 pt-2 mt-1">
-                    <dt className="text-muted-foreground shrink-0">High-end (est.)</dt>
-                    <dd className="text-right text-xs space-y-1 min-w-0">
-                      {highEndSummaryLines.map((line) => (
-                        <div key={line.id} className="flex justify-end gap-2 flex-wrap">
-                          <span className="truncate max-w-[140px]">{line.name}</span>
-                          <span className="tabular-nums shrink-0">{formatCurrency(line.amount)}</span>
-                        </div>
-                      ))}
-                    </dd>
-                  </div>
-                )}
-                <div className="flex justify-between gap-2">
-                  <dt className="text-muted-foreground">
-                    {isJobCard ? "Expected delivery" : "Date & time"}
-                  </dt>
-                  <dd className="text-right text-xs">
-                    {isWalkIn
-                      ? bookingWhen
-                        ? new Date(bookingWhen).toLocaleString(undefined, {
-                            dateStyle: "short",
-                            timeStyle: "short",
-                          })
-                        : "—"
-                      : new Date(
-                          resolveExpectedDeliveryIso(expectedDelivery, deliveryDaysFromNow)
-                        ).toLocaleString(undefined, {
-                          dateStyle: "short",
-                          timeStyle: "short",
-                        })}
-                  </dd>
-                </div>
-              </dl>
-              <Separator />
-              <div className="flex items-center gap-2">
-                <Ticket className="w-4 h-4 text-violet-500" />
-                <span className="font-medium text-sm">Discount coupon</span>
-              </div>
-              <div className="flex gap-2">
-                <Input
-                  placeholder="ENTER CODE"
-                  value={couponCode}
-                  onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
-                  className="uppercase text-xs"
-                />
-                <Button type="button" variant="secondary" size="sm" onClick={applyCoupon}>
-                  Apply
-                </Button>
-              </div>
-              {!compactJobCardDesktop && (
-                <p className="text-[10px] text-muted-foreground">
-                  Demo code: WELCOME10 (10% off services before tax)
-                </p>
-              )}
-              <Separator />
-              <div className="space-y-1 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Subtotal (excl. GST)</span>
-                  <span className="tabular-nums">{formatCurrency(afterDiscount)}</span>
-                </div>
-                <div className="flex justify-between text-amber-700 dark:text-amber-400">
-                  <span>GST (18%)</span>
-                  <span className="tabular-nums">+{formatCurrency(gstAmount)}</span>
-                </div>
-                <div
-                  className={cn(
-                    "flex justify-between font-bold text-primary pt-0.5",
-                    compactJobCardDesktop ? "text-sm" : "text-base pt-1"
-                  )}
-                >
-                  <span>Total payable</span>
-                  <span className="tabular-nums">{formatCurrency(totalPayable)}</span>
-                </div>
-              </div>
-              <Separator />
-              <div id="booking-branch-select-block" className="space-y-2 scroll-mt-24">
-                <Label className="flex items-center gap-2">
-                  <Building2 className="w-4 h-4" />
-                  Select branch *
-                </Label>
-                <Select value={branchId} onValueChange={setBranchId} required>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Please select a branch" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {activeBranches.map((b) => (
-                      <SelectItem key={b.id} value={b.id}>
-                        {b.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {!branchId && (
-                  <p className="text-xs text-destructive">
-                    Please select a branch to create the {isJobCard ? "job card" : "booking"}.
-                  </p>
-                )}
-              </div>
-            </CardContent>
-            <CardFooter
-              className={cn(
-                "hidden shrink-0 border-t border-border px-4 py-3 sm:px-6 md:flex md:flex-col md:gap-2",
-                compactJobCardDesktop && "py-2.5"
-              )}
-            >
-              <Button
-                type="submit"
-                className="w-full"
-                disabled={isJobCard ? jobCardWizardIncomplete : false}
-                title={
-                  isJobCard && jobCardWizardIncomplete
-                    ? "Complete all wizard steps first"
-                    : undefined
-                }
-              >
-                {isJobCard ? "Create job card" : "Create booking"}
-              </Button>
-              <Button type="button" variant="outline" className="w-full" asChild>
-                <Link href={isJobCard ? "/job-cards" : "/bookings"}>Cancel</Link>
-              </Button>
-            </CardFooter>
-          </Card>
+          {renderSummaryCard("booking-branch-select-block")}
         </aside>
 
         {/* Mobile sticky actions */}
         <div
           className={cn(
-            "md:hidden fixed bottom-0 left-0 right-0 border-t border-border bg-background/95 backdrop-blur-md px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]",
-            isJobCard ? "z-[100]" : "z-40"
+            "md:hidden fixed bottom-0 left-0 right-0 border-t border-border px-3 py-2.5 pb-[max(0.5rem,env(safe-area-inset-bottom))]",
+            isJobCard
+              ? "z-[100] bg-background shadow-[0_-6px_24px_rgba(15,23,42,0.08)]"
+              : "z-40 bg-background/95 backdrop-blur-md shadow-[0_-4px_24px_rgba(0,0,0,0.06)]"
           )}
         >
-          <div className="flex items-center justify-between gap-3 max-w-lg mx-auto">
-            <div className="min-w-0">
-              <p className="text-[10px] text-muted-foreground uppercase">Total</p>
-              <p className="text-lg font-bold text-primary tabular-nums leading-tight">
-                {formatCurrency(totalPayable)}
-              </p>
+          {isJobCard ? (
+            <div className="mx-auto flex max-w-lg flex-col gap-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                    Total
+                  </p>
+                  <p className="text-base font-bold text-primary tabular-nums leading-tight sm:text-lg">
+                    {formatCurrency(totalPayable)}
+                  </p>
+                </div>
+                <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                  {jobCreateStep > 0 && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-9"
+                      onClick={() => setJobCreateStep((s) => Math.max(0, s - 1))}
+                    >
+                      Back
+                    </Button>
+                  )}
+                  {jobCreateStep < jobWizardStepCount - 1 ? (
+                    <Button type="button" className="min-w-[5rem] font-semibold shadow-sm" onClick={goNextJobWizard}>
+                      Next
+                    </Button>
+                  ) : (
+                    <>
+                      <Button type="button" variant="outline" size="sm" className="h-9" asChild>
+                        <Link href="/job-cards">Cancel</Link>
+                      </Button>
+                      <Button
+                        type="submit"
+                        className="min-w-[5rem] font-semibold shadow-sm"
+                        disabled={jobCardWizardIncomplete}
+                        title={
+                          jobCardWizardIncomplete ? "Complete all wizard steps first" : undefined
+                        }
+                      >
+                        Create
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </div>
+              {jobCreateStep >= jobWizardStepCount - 1 && (
+                <p className="text-[10px] leading-snug text-muted-foreground">
+                  Select branch in the summary above, then tap Create.
+                </p>
+              )}
             </div>
-            <div className="flex gap-2 shrink-0">
-              <Button type="button" variant="outline" size="sm" asChild>
-                <Link href={isJobCard ? "/job-cards" : "/bookings"}>Cancel</Link>
-              </Button>
-              <Button
-                type="submit"
-                size="sm"
-                disabled={isJobCard ? jobCardWizardIncomplete : false}
-                title={
-                  isJobCard && jobCardWizardIncomplete
-                    ? "Complete all wizard steps first"
-                    : undefined
-                }
-              >
-                Create
-              </Button>
+          ) : (
+            <div className="mx-auto flex max-w-lg items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[10px] text-muted-foreground uppercase">Total</p>
+                <p className="text-lg font-bold text-primary tabular-nums leading-tight">
+                  {formatCurrency(totalPayable)}
+                </p>
+              </div>
+              <div className="flex shrink-0 gap-2">
+                <Button type="button" variant="outline" size="sm" asChild>
+                  <Link href="/bookings">Cancel</Link>
+                </Button>
+                <Button type="submit" size="sm">
+                  Create
+                </Button>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </form>
   );
@@ -2953,17 +3148,35 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
         <Dialog
           open
           onOpenChange={(open) => {
-            if (!open) router.push("/job-cards");
+            if (!open) {
+              if (skipJobCardListRedirectRef.current) {
+                skipJobCardListRedirectRef.current = false;
+                return;
+              }
+              router.push("/job-cards");
+            }
           }}
         >
-          <DialogContent className="flex h-[min(92vh,880px)] w-[min(100vw-1rem,1200px)] max-w-[min(100vw-1rem,1200px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-5xl">
-            <DialogHeader className="shrink-0 space-y-1 border-b border-border px-4 pb-3 pt-4 text-left sm:px-6">
-              <DialogTitle className="text-xl">New Job Card</DialogTitle>
-              <DialogDescription>
+          <DialogContent
+            className={cn(
+              "flex h-[min(92vh,880px)] w-[min(100vw-1rem,1200px)] max-w-[min(100vw-1rem,1200px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-5xl",
+              "max-sm:fixed max-sm:inset-0 max-sm:left-0 max-sm:top-0 max-sm:h-[100dvh] max-sm:max-h-[100dvh] max-sm:w-full max-sm:max-w-full max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none max-sm:border-0"
+            )}
+          >
+            <DialogHeader className="shrink-0 space-y-1 border-b border-border px-4 pb-2.5 pt-3 text-left sm:space-y-1.5 sm:px-6 sm:pb-3 sm:pt-4">
+              <DialogTitle className="pr-10 text-base leading-tight sm:pr-8 sm:text-xl">
+                New Job Card
+              </DialogTitle>
+              <p className="text-xs font-medium text-foreground sm:hidden">
+                Step {jobCreateStep + 1} of {jobWizardStepCount} — {JOB_WIZARD_LABEL[jobWizardStepId]}
+              </p>
+              <DialogDescription className="max-md:sr-only md:block md:text-sm text-muted-foreground">
                 Tap Next to move through each section — one screen at a time on mobile.
               </DialogDescription>
             </DialogHeader>
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{bookingForm}</div>
+            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden overscroll-y-contain [-webkit-overflow-scrolling:touch] md:overflow-hidden">
+              {bookingForm}
+            </div>
           </DialogContent>
         </Dialog>
       ) : (
