@@ -495,6 +495,77 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
     return () => clearTimeout(id);
   }, [lookupQuery, computeLookupMatches]);
 
+  /** Copy search into phone/reg for new customers; clear selection when search no longer matches selected customer. */
+  useEffect(() => {
+    const q = lookupQuery.trim();
+    const digits = q.replace(/\D/g, "");
+    const hasLetter = /[a-zA-Z]/i.test(q);
+    const ql = q.toLowerCase();
+
+    let canSyncFromLookup = !existingCustomerId;
+
+    if (existingCustomerId && q.length > 0) {
+      const cust = customers.find((c) => c.id === existingCustomerId);
+      if (cust) {
+        const owned = vehicles.filter((v) => v.customerId === existingCustomerId);
+        const p10 = cust.phone.replace(/\D/g, "").slice(-10);
+
+        let stillMatches = false;
+        if (!hasLetter) {
+          if (digits.length === 0) stillMatches = true;
+          else if (digits.length < 10) stillMatches = true;
+          else stillMatches = digits.slice(-10) === p10;
+        } else {
+          if (ql.length >= 2 && cust.name.toLowerCase().includes(ql)) stillMatches = true;
+          else {
+            const regSan = sanitizeVehicleRegistrationInput(q);
+            const regCompact = normalizeRegistrationNumber(regSan).replace(/-/g, "");
+            if (hasLetter && /\d/.test(q) && regCompact.length >= 6) {
+              stillMatches = owned.some((v) =>
+                normalizeRegistrationNumber(v.registrationNumber).includes(regCompact)
+              );
+            } else if (ql.length < 2) stillMatches = true;
+          }
+        }
+
+        if (!stillMatches) {
+          prevMatchRef.current = null;
+          setExistingCustomerId(null);
+          setCustomerName("");
+          setCustomerEmail("");
+          setCustomerAddress("");
+          setSelectedVehicleId(null);
+          setAddingNewVehicle(false);
+          setVehicleNumber("");
+          setVehicleBrand("");
+          setVehicleModel("");
+          setVehicleSegment("");
+          canSyncFromLookup = true;
+        }
+      }
+    }
+
+    if (!canSyncFromLookup) return;
+    if (!q) return;
+
+    const regSan = sanitizeVehicleRegistrationInput(q);
+    const regCompact = normalizeRegistrationNumber(regSan).replace(/-/g, "");
+    const looksLikePlate =
+      hasLetter && /\d/.test(q) && regCompact.length >= 6;
+
+    if (looksLikePlate) {
+      setVehicleNumber((prev) => (prev === regSan ? prev : regSan));
+      return;
+    }
+
+    if (!hasLetter && digits.length >= 10) {
+      const p10 = digits.slice(-10);
+      setCustomerPhone((prev) => (prev === p10 ? prev : p10));
+    } else if (!hasLetter && digits.length > 0 && digits.length < 10) {
+      setCustomerPhone((prev) => (prev === "" ? digits : prev));
+    }
+  }, [lookupQuery, existingCustomerId, customers, vehicles]);
+
   const selectVehicleFromGarage = (v: Vehicle) => {
     setSelectedVehicleId(v.id);
     setAddingNewVehicle(false);
