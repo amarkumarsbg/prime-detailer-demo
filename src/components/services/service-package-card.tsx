@@ -14,6 +14,7 @@ import {
   Pencil,
   Trash2,
   Boxes,
+  Sparkles,
 } from "lucide-react";
 
 function gstDisplay(s: ServiceCatalogItem): string {
@@ -58,6 +59,15 @@ export function ServicePackageCard({
         </div>
 
         <div className="flex flex-wrap gap-1.5 mb-3">
+          {service.isHighEnd && (
+            <Badge
+              variant="outline"
+              className="gap-1 border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-700/60 dark:bg-amber-950/50 dark:text-amber-200"
+            >
+              <Sparkles className="h-3 w-3 shrink-0" />
+              High-end
+            </Badge>
+          )}
           <Badge
             variant="outline"
             className={

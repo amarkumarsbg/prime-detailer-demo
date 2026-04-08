@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { formatServiceDurationLabel } from "@/lib/service-duration";
 import { formatCurrency } from "@/lib/utils";
 import type { ServiceCatalogItem } from "@/types";
-import { Globe, Building2, Clock, Pencil, Trash2 } from "lucide-react";
+import { Globe, Building2, Clock, Pencil, Trash2, Sparkles } from "lucide-react";
 
 export function ServiceAddonCard({
   service,
@@ -28,7 +28,13 @@ export function ServiceAddonCard({
             {service.isActive ? "Active" : "Inactive"}
           </Badge>
         </div>
-        <div className="mb-3">
+        <div className="mb-3 flex flex-wrap gap-1.5">
+          {service.isHighEnd && (
+            <Badge className="gap-1 border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-700/60 dark:bg-amber-950/50 dark:text-amber-200">
+              <Sparkles className="h-3 w-3 shrink-0" />
+              High-end
+            </Badge>
+          )}
           {scope === "GLOBAL" ? (
             <Badge className="gap-1 border-0 bg-blue-100 text-blue-800 dark:bg-blue-950/50 dark:text-blue-300">
               <Globe className="h-3 w-3" />

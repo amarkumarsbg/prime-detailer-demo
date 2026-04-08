@@ -24,12 +24,17 @@ import {
   AlertTriangle,
   Sparkles,
   DollarSign,
+  IndianRupee,
   LayoutGrid,
   ListChecks,
   Phone,
   Mail,
   CalendarDays,
 } from "lucide-react";
+import { TimerControlsBufferCard } from "@/components/job-cards/timer-controls-buffer-card";
+import { ServiceTimerDeliverySummary } from "@/components/job-cards/service-timer-delivery-summary";
+import { useJobTimer } from "@/hooks/use-job-timer";
+import { computeServiceTimerSnapshot, getServiceTimerSummaryForJob, initialServiceTimerPatch } from "@/lib/job-timer";
 import { PageHeader } from "@/components/shared/page-header";
 import { Breadcrumbs } from "@/components/shared/breadcrumbs";
 import { JobCardStatusBadge } from "@/components/shared/status-badge";
@@ -62,7 +67,10 @@ import { useInvoiceStore } from "@/store/invoice-store";
 import { useInventoryStore } from "@/store/inventory-store";
 import { useStaffStore } from "@/store/staff-store";
 import { useHighEndServiceStore } from "@/store/high-end-service-store";
+import { useServiceCatalogStore } from "@/store/service-catalog-store";
 import { useReminderStore } from "@/store/reminder-store";
+import { useAuthStore } from "@/store/auth-store";
+import { useSettingsStore } from "@/store/settings-store";
 import { createOrGetInvoiceForJob } from "@/lib/invoice-from-job-card";
 import {
   buildHighEndReminderMonthIntervals,
@@ -70,7 +78,15 @@ import {
 } from "@/lib/high-end-follow-up";
 import { formatDate, formatCurrency, cn } from "@/lib/utils";
 import { pushActivityLog } from "@/lib/activity-log-helper";
-import type { JobCard, JobCardStatus, ServiceItem, InspectionPhoto, MechanicSwitchLog } from "@/types";
+import type {
+  JobCard,
+  JobCardStatus,
+  ServiceItem,
+  InspectionPhoto,
+  MechanicSwitchLog,
+  TimerAdjustment,
+  PaymentMethod,
+} from "@/types";
 
 const WORKFLOW_STATUSES: JobCardStatus[] = [
   "RECEIVED",
@@ -141,8 +157,62 @@ export default function JobCardDetailPage() {
     () => staff.filter((s) => s.role === "MECHANIC"),
     [staff]
   );
+  const authUser = useAuthStore((s) => s.user);
+  const canAdjustBuffer = useMemo(() => {
+    const r = authUser?.role;
+    if (!r) return false;
+    return (
+      r === "SUPERVISOR" ||
+      r === "ADMIN" ||
+      r === "BRANCH_MANAGER" ||
+      r === "MANAGER" ||
+      r === "SUPER_ADMIN"
+    );
+  }, [authUser?.role]);
+
+  const canPauseResume = useMemo(() => {
+    const r = authUser?.role;
+    if (!r) return false;
+    return (
+      canAdjustBuffer ||
+      r === "MECHANIC" ||
+      r === "RECEPTIONIST"
+    );
+  }, [authUser?.role, canAdjustBuffer]);
+
   const { services: highEndServiceConfigs } = useHighEndServiceStore();
   const { generateHighEndReminders } = useReminderStore();
+  const highEndAdvanceSuggestedPercent =
+    useSettingsStore((s) => s.highEndAdvanceSuggestedPercent) ?? 30;
+  const effectiveAdvanceHintPercent =
+    jobCard?.highEndAdvanceHintPercent ?? highEndAdvanceSuggestedPercent;
+  const serviceCatalog = useServiceCatalogStore((s) => s.catalog);
+
+  /** Advance UI: premium programs and/or any catalog line marked high-end (not only the PPF wizard step). */
+  const jobQualifiesForHighEndAdvance = useMemo(() => {
+    if (!jobCard) return false;
+    if (jobCard.highEndServiceIds && jobCard.highEndServiceIds.length > 0) return true;
+    for (const line of jobCard.services) {
+      const cat = serviceCatalog.find((c) => c.id === line.serviceCatalogId);
+      if (cat?.isHighEnd) return true;
+    }
+    return false;
+  }, [jobCard, serviceCatalog]);
+
+  const jobTicker = useJobTimer({
+    serviceTimerStartedAt: jobCard?.serviceTimerStartedAt,
+    serviceAllocatedMinutes: jobCard?.serviceAllocatedMinutes,
+    bufferTotalMinutes: jobCard?.bufferTotalMinutes,
+    bufferRemainingMinutes: jobCard?.bufferRemainingMinutes,
+    timerIsPaused: jobCard?.timerIsPaused,
+    timerPausedAt: jobCard?.timerPausedAt,
+    totalPausedMs: jobCard?.totalPausedMs,
+  });
+
+  const serviceTimerDeliverySummary = useMemo(
+    () => (jobCard ? getServiceTimerSummaryForJob(jobCard) : null),
+    [jobCard]
+  );
 
   const [currentStatus, setCurrentStatus] = useState<JobCardStatus>(
     () => jobCard?.status ?? "RECEIVED"
@@ -174,6 +244,10 @@ export default function JobCardDetailPage() {
   );
   const [detailTab, setDetailTab] = useState("overview");
   const [highEndFollowUpById, setHighEndFollowUpById] = useState<Record<string, number>>({});
+
+  const [highEndAdvAmount, setHighEndAdvAmount] = useState("");
+  const [highEndAdvMethod, setHighEndAdvMethod] = useState<PaymentMethod>("CASH");
+  const [highEndAdvRef, setHighEndAdvRef] = useState("");
 
   const prevJobIdRef = useRef<string | null>(null);
 
@@ -445,6 +519,10 @@ export default function JobCardDetailPage() {
       setNotes(jobCard.notes ?? "");
       setInspectionPhotos([]);
       setPhotoTab(normalized === "READY" || normalized === "DELIVERED" ? "AFTER" : "BEFORE");
+      const adv = jobCard.highEndAdvanceAmountInr;
+      setHighEndAdvAmount(adv != null && adv > 0 ? String(adv) : "");
+      setHighEndAdvMethod(jobCard.highEndAdvanceMethod ?? "CASH");
+      setHighEndAdvRef(jobCard.highEndAdvanceReference ?? "");
     }
 
     const hesIds = jobCard.highEndServiceIds ?? [];
@@ -459,6 +537,25 @@ export default function JobCardDetailPage() {
     }
     setHighEndFollowUpById(followUpNext);
   }, [id, jobCard, highEndServiceConfigs]);
+
+  useEffect(() => {
+    if (!jobCard) return;
+    if (jobCard.serviceTimerStartedAt) return;
+    if (normalizeJobCardStatus(jobCard.status) !== "AWAITING_SERVICE") return;
+    if (!jobCard.mechanicId) return;
+    const nowIso = new Date().toISOString();
+    updateJobCard(jobCard.id, {
+      ...initialServiceTimerPatch(jobCard.services, nowIso),
+      updatedAt: nowIso,
+    });
+  }, [
+    jobCard?.id,
+    jobCard?.status,
+    jobCard?.mechanicId,
+    jobCard?.serviceTimerStartedAt,
+    jobCard?.services,
+    updateJobCard,
+  ]);
 
   useEffect(() => {
     if (photoTab === "AFTER" && !canUploadAfter) setPhotoTab("BEFORE");
@@ -614,6 +711,95 @@ export default function JobCardDetailPage() {
     }
   };
 
+  const highEndAdvanceReadOnly =
+    Boolean(invoiceForJob) ||
+    currentStatus === "DELIVERED" ||
+    currentStatus === "CANCELLED";
+
+  const clearHighEndAdvance = () => {
+    if (!jobCard) return;
+    const nowIso = new Date().toISOString();
+    setHighEndAdvAmount("");
+    setHighEndAdvMethod("CASH");
+    setHighEndAdvRef("");
+    updateJobCard(jobCard.id, {
+      highEndAdvanceAmountInr: undefined,
+      highEndAdvanceCollectedAt: undefined,
+      highEndAdvanceMethod: undefined,
+      highEndAdvanceReference: undefined,
+      updatedAt: nowIso,
+    });
+    toast.success("Advance cleared");
+  };
+
+  const saveHighEndAdvance = () => {
+    if (!jobCard) return;
+    const raw = highEndAdvAmount.trim();
+    const num = raw === "" ? NaN : Number.parseFloat(raw);
+    const nowIso = new Date().toISOString();
+    if (!Number.isFinite(num) || num <= 0) {
+      clearHighEndAdvance();
+      return;
+    }
+    updateJobCard(jobCard.id, {
+      highEndAdvanceAmountInr: num,
+      highEndAdvanceCollectedAt: jobCard.highEndAdvanceCollectedAt ?? nowIso,
+      highEndAdvanceMethod: highEndAdvMethod,
+      highEndAdvanceReference: highEndAdvRef.trim() || undefined,
+      updatedAt: nowIso,
+    });
+    toast.success("Advance saved");
+  };
+
+  const handleTimerPause = () => {
+    if (!jobCard || jobCard.timerIsPaused) return;
+    const nowIso = new Date().toISOString();
+    updateJobCard(jobCard.id, {
+      timerIsPaused: true,
+      timerPausedAt: nowIso,
+      updatedAt: nowIso,
+    });
+  };
+
+  const handleTimerResume = () => {
+    if (!jobCard?.timerIsPaused || !jobCard.timerPausedAt) return;
+    const add = Math.max(0, Date.now() - new Date(jobCard.timerPausedAt).getTime());
+    const nowIso = new Date().toISOString();
+    updateJobCard(jobCard.id, {
+      timerIsPaused: false,
+      timerPausedAt: undefined,
+      totalPausedMs: (jobCard.totalPausedMs ?? 0) + add,
+      updatedAt: nowIso,
+    });
+  };
+
+  const handleBufferDelta = (delta: number) => {
+    if (!jobCard || !authUser) return;
+    const total = jobCard.bufferTotalMinutes ?? 0;
+    const remaining = jobCard.bufferRemainingMinutes ?? 0;
+    let newTotal: number;
+    let newRem: number;
+    if (delta > 0) {
+      newTotal = total + delta;
+      newRem = remaining + delta;
+    } else {
+      newTotal = Math.max(0, total + delta);
+      newRem = Math.min(remaining, newTotal);
+    }
+    const entry: TimerAdjustment = {
+      adjustedBy: authUser.name,
+      adjustedAt: new Date().toISOString(),
+      deltaMinutes: delta,
+    };
+    const nowIso = new Date().toISOString();
+    updateJobCard(jobCard.id, {
+      bufferTotalMinutes: newTotal,
+      bufferRemainingMinutes: newRem,
+      bufferAdjustments: [...(jobCard.bufferAdjustments ?? []), entry],
+      updatedAt: nowIso,
+    });
+  };
+
   const addNote = () => {
     if (newNote.trim()) {
       setNotes((prev) => prev + (prev ? "\n\n" : "") + newNote.trim());
@@ -672,6 +858,14 @@ export default function JobCardDetailPage() {
         services: serviceItems,
       };
 
+      if (
+        nextStatus === "AWAITING_SERVICE" &&
+        !jobCard.serviceTimerStartedAt &&
+        hasMechanicAssigned
+      ) {
+        Object.assign(patch, initialServiceTimerPatch(serviceItems, nowIso));
+      }
+
       if (nextStatus === "READY" && !jobCard.inventoryConsumedAt) {
         const jobForStock = {
           ...jobCard,
@@ -692,6 +886,15 @@ export default function JobCardDetailPage() {
 
       if (nextStatus === "DELIVERED") {
         patch.actualDelivery = nowIso;
+        if (jobCard.serviceTimerStartedAt) {
+          const snap = computeServiceTimerSnapshot(jobCard, nowIso);
+          if (snap) {
+            patch.serviceTimerDeliverySnapshot = snap;
+            patch.totalPausedMs = snap.totalPauseMs;
+            patch.timerIsPaused = false;
+            patch.timerPausedAt = undefined;
+          }
+        }
       }
 
       if (nextStatus === "DELIVERED" && jobCard.highEndServiceIds && jobCard.highEndServiceIds.length > 0) {
@@ -971,6 +1174,26 @@ export default function JobCardDetailPage() {
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {jobCard.serviceTimerStartedAt &&
+        currentStatus !== "CANCELLED" &&
+        currentStatus !== "DELIVERED" && (
+          <TimerControlsBufferCard
+            timer={jobTicker}
+            timerIsPaused={Boolean(jobCard.timerIsPaused)}
+            allocatedMinutes={jobCard.serviceAllocatedMinutes ?? 0}
+            canPauseResume={canPauseResume}
+            canAdjustBuffer={canAdjustBuffer}
+            onPause={handleTimerPause}
+            onResume={handleTimerResume}
+            onBufferDelta={handleBufferDelta}
+            bufferAdjustments={jobCard.bufferAdjustments}
+          />
+        )}
+
+      {currentStatus === "DELIVERED" && serviceTimerDeliverySummary && (
+        <ServiceTimerDeliverySummary snapshot={serviceTimerDeliverySummary} />
       )}
 
       {/* Job header — competitor-style context row */}
@@ -1321,6 +1544,11 @@ export default function JobCardDetailPage() {
                         currency: "INR",
                       }).format(item.price)}
                     </p>
+                    {item.durationMinutes != null && (
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Est. {item.durationMinutes} min
+                      </p>
+                    )}
                   </div>
                 </div>
                 {item.isCompleted && (
@@ -1333,6 +1561,131 @@ export default function JobCardDetailPage() {
           </div>
         </CardContent>
       </Card>
+
+      {jobQualifiesForHighEndAdvance && jobCard.waiveHighEndAdvance && (
+        <Card className="border-dashed">
+          <CardContent className="py-4 text-sm text-muted-foreground">
+            <p className="font-medium text-foreground">Optional advance not offered on this job</p>
+            <p className="mt-1 text-xs leading-relaxed">
+              This was turned off when the job card was created (e.g. no advance for this customer). Use normal billing
+              when the work is done.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {jobQualifiesForHighEndAdvance && !jobCard.waiveHighEndAdvance && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <IndianRupee className="w-4 h-4 text-amber-600" />
+                Optional advance (high-end)
+              </CardTitle>
+              <p className="text-sm text-muted-foreground mt-1">
+                Record a partial advance if the customer pays toward this job. Suggested:{" "}
+                {formatCurrency(
+                  Math.round((jobCard.estimatedAmount * effectiveAdvanceHintPercent) / 100)
+                )}{" "}
+                ({effectiveAdvanceHintPercent}% of estimate — hint
+                {jobCard.highEndAdvanceHintPercent != null ? ", from job creation" : ""}). If you save an amount
+                here, that value is used on the tax invoice; otherwise the % applies to the invoice total when
+                generated.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {highEndAdvanceReadOnly ? (
+                <div className="space-y-2 text-sm">
+                  {jobCard.highEndAdvanceAmountInr != null && jobCard.highEndAdvanceAmountInr > 0 ? (
+                    <>
+                      <p>
+                        <span className="text-muted-foreground">Amount collected:</span>{" "}
+                        <span className="font-semibold tabular-nums">
+                          {formatCurrency(jobCard.highEndAdvanceAmountInr)}
+                        </span>
+                      </p>
+                      {jobCard.highEndAdvanceMethod && (
+                        <p>
+                          <span className="text-muted-foreground">Method:</span> {jobCard.highEndAdvanceMethod}
+                        </p>
+                      )}
+                      {jobCard.highEndAdvanceReference && (
+                        <p>
+                          <span className="text-muted-foreground">Reference:</span> {jobCard.highEndAdvanceReference}
+                        </p>
+                      )}
+                      {jobCard.highEndAdvanceCollectedAt && (
+                        <p className="text-xs text-muted-foreground">
+                          Recorded {formatDate(jobCard.highEndAdvanceCollectedAt)}
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-muted-foreground">No advance recorded for this job.</p>
+                  )}
+                  {invoiceForJob && (
+                    <p className="text-xs text-amber-700 dark:text-amber-400">
+                      Editing is disabled because an invoice exists for this job.
+                    </p>
+                  )}
+                  {currentStatus === "DELIVERED" && !invoiceForJob && (
+                    <p className="text-xs text-muted-foreground">Job delivered — advance is read-only here.</p>
+                  )}
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="space-y-1.5 sm:col-span-1">
+                      <Label htmlFor="he-adv-amt">Amount (₹)</Label>
+                      <Input
+                        id="he-adv-amt"
+                        type="number"
+                        min={0}
+                        step={1}
+                        placeholder="0"
+                        value={highEndAdvAmount}
+                        onChange={(e) => setHighEndAdvAmount(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Method</Label>
+                      <Select
+                        value={highEndAdvMethod}
+                        onValueChange={(v) => setHighEndAdvMethod(v as PaymentMethod)}
+                      >
+                        <SelectTrigger className="h-9">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="CASH">Cash</SelectItem>
+                          <SelectItem value="UPI">UPI</SelectItem>
+                          <SelectItem value="CARD">Card</SelectItem>
+                          <SelectItem value="WALLET">Wallet</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5 sm:col-span-1">
+                      <Label htmlFor="he-adv-ref">Reference (optional)</Label>
+                      <Input
+                        id="he-adv-ref"
+                        placeholder="Txn / ref no."
+                        value={highEndAdvRef}
+                        onChange={(e) => setHighEndAdvRef(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="button" size="sm" onClick={saveHighEndAdvance}>
+                      Save advance
+                    </Button>
+                    <Button type="button" size="sm" variant="outline" onClick={clearHighEndAdvance}>
+                      Clear
+                    </Button>
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+      )}
 
       {jobCard.highEndServiceIds && jobCard.highEndServiceIds.length > 0 && (
         <Card>
@@ -2203,6 +2556,11 @@ export default function JobCardDetailPage() {
                         <p className="text-xs text-muted-foreground tabular-nums">
                           {new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(item.price)}
                         </p>
+                        {item.durationMinutes != null && (
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            Est. {item.durationMinutes} min
+                          </p>
+                        )}
                       </label>
                     </div>
                     {item.isCompleted ? (

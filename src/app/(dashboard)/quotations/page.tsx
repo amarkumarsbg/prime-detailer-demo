@@ -379,14 +379,18 @@ export default function QuotationsPage() {
     const jobNumber = getNextJobNumber();
     const now = new Date().toISOString();
 
-    const serviceItems: ServiceItem[] = q.services.map((s, idx) => ({
-      id: `si-${jobId}-${idx}`,
-      jobCardId: jobId,
-      serviceCatalogId: s.serviceCatalogId,
-      name: s.name,
-      price: s.price,
-      isCompleted: false,
-    }));
+    const serviceItems: ServiceItem[] = q.services.map((s, idx) => {
+      const cat = serviceCatalog.find((c) => c.id === s.serviceCatalogId);
+      return {
+        id: `si-${jobId}-${idx}`,
+        jobCardId: jobId,
+        serviceCatalogId: s.serviceCatalogId,
+        name: s.name,
+        price: s.price,
+        isCompleted: false,
+        durationMinutes: cat?.durationMinutes,
+      };
+    });
 
     const incentivePercent = 5;
     const incentiveAmount = Math.round((q.grandTotal * incentivePercent) / 100);

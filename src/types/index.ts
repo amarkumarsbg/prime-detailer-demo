@@ -225,6 +225,24 @@ export interface ServiceCatalogItem {
   gstPercent?: number;
 }
 
+export interface TimerAdjustment {
+  adjustedBy: string;
+  adjustedAt: string;
+  deltaMinutes: number;
+  reason?: string;
+}
+
+/** Frozen metrics when the job is marked delivered (service timer). */
+export interface ServiceTimerDeliverySnapshot {
+  closedAt: string;
+  allocatedMinutes: number;
+  activeElapsedMs: number;
+  overdueMs: number;
+  totalPauseMs: number;
+  bufferTotalMinutes: number;
+  bufferRemainingMinutes: number;
+}
+
 export interface ServiceItem {
   id: string;
   jobCardId: string;
@@ -234,6 +252,8 @@ export interface ServiceItem {
   isCompleted: boolean;
   completedAt?: string;
   completedBy?: string;
+  /** Copied from catalog at job creation for service timer allocation */
+  durationMinutes?: number;
 }
 
 export interface InspectionPhoto {
@@ -287,9 +307,32 @@ export interface JobCard {
   highEndServiceIds?: string[];
   /** For each high-end service id, months until the first maintenance reminder (preset from reminderIntervals or a custom value). */
   highEndFirstFollowUpMonthsByServiceId?: Record<string, number>;
+  /** Optional override (0–100): suggested advance as % of estimate on job card; falls back to Settings when unset. */
+  highEndAdvanceHintPercent?: number;
+  /** When true, staff chose not to offer optional advance on this job (set at job creation). */
+  waiveHighEndAdvance?: boolean;
+  /** Optional partial advance when high-end programs are on the job (staff-entered). */
+  highEndAdvanceAmountInr?: number;
+  highEndAdvanceCollectedAt?: string;
+  highEndAdvanceMethod?: PaymentMethod;
+  highEndAdvanceReference?: string;
   whatsappLog?: WhatsAppLog[];
   /** Set when materials were deducted from stock at Ready (billing no longer deducts). */
   inventoryConsumedAt?: string;
+  /** ISO — service timer starts first time job enters In Service with a mechanic */
+  serviceTimerStartedAt?: string;
+  /** Main allocated minutes (sum of service durations + optional future main adjustments) */
+  serviceAllocatedMinutes?: number;
+  bufferTotalMinutes?: number;
+  bufferRemainingMinutes?: number;
+  timerIsPaused?: boolean;
+  /** Start of current pause segment (when timerIsPaused) */
+  timerPausedAt?: string;
+  /** Completed pause segments only (ms); current pause computed live */
+  totalPausedMs?: number;
+  bufferAdjustments?: TimerAdjustment[];
+  /** Set when status becomes DELIVERED; read-only summary for the service timer */
+  serviceTimerDeliverySnapshot?: ServiceTimerDeliverySnapshot;
   createdBy: string;
   createdAt: string;
   updatedAt: string;

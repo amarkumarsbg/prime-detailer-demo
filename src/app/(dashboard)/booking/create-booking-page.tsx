@@ -41,6 +41,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -142,23 +143,6 @@ function joinDatetimeLocal(date: string, time: string): string {
 /** Pin native date/time picker icons to the trailing edge on mobile WebKit/Chromium. */
 const MOBILE_DATE_TIME_INPUT_ICON_END =
   "relative pr-10 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:right-3 [&::-webkit-calendar-picker-indicator]:top-1/2 [&::-webkit-calendar-picker-indicator]:-translate-y-1/2 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-100";
-
-/** datetime-local value is interpreted in the user's local timezone. */
-function resolveExpectedDeliveryIso(datetimeLocal: string, daysFromNowStr: string): string {
-  const trimmedDt = datetimeLocal.trim();
-  if (trimmedDt) {
-    const d = new Date(trimmedDt);
-    if (!Number.isNaN(d.getTime())) return d.toISOString();
-  }
-  const parsed = Number.parseInt(daysFromNowStr.trim(), 10);
-  if (Number.isFinite(parsed) && parsed > 0) {
-    const end = new Date();
-    end.setDate(end.getDate() + parsed);
-    end.setHours(18, 0, 0, 0);
-    return end.toISOString();
-  }
-  return new Date(Date.now() + 86400000).toISOString();
-}
 
 type JobWizardStepId =
   | "customer"
@@ -276,8 +260,6 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
   const scheduleDateInputRef = useRef<HTMLInputElement>(null);
   const prevMatchRef = useRef<string | null>(null);
 
-  const [expectedDelivery, setExpectedDelivery] = useState("");
-  const [deliveryDaysFromNow, setDeliveryDaysFromNow] = useState("");
   const [reportedIssues, setReportedIssues] = useState("");
   const [odometerReading, setOdometerReading] = useState("");
   const [termsAndConditions, setTermsAndConditions] = useState(
@@ -285,6 +267,10 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
   );
   const [selectedHighEndIds, setSelectedHighEndIds] = useState<string[]>([]);
   const [highEndFirstFollowUpById, setHighEndFirstFollowUpById] = useState<Record<string, number>>({});
+  /** When true, optional advance UI is hidden on the job card (customer/job-specific opt-out). */
+  const [waiveHighEndAdvance, setWaiveHighEndAdvance] = useState(false);
+  /** Manual % for suggested advance on job card (optional; empty = use Settings default on card). */
+  const [highEndAdvanceHintPercentInput, setHighEndAdvanceHintPercentInput] = useState("");
   const [referrerInfo, setReferrerInfo] = useState<{ id: string; name: string } | null>(null);
   const [referralError, setReferralError] = useState(false);
 
@@ -741,6 +727,20 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
     return serviceCatalog.filter((s) => ids.has(s.id));
   }, [serviceCatalog, selectedMainIds, selectedAddonIds]);
 
+  const qualifiesHighEndAdvanceContext = useMemo(
+    () =>
+      selectedHighEndIds.length > 0 ||
+      selectedCatalogItems.some((s) => s.isHighEnd),
+    [selectedHighEndIds, selectedCatalogItems]
+  );
+
+  useEffect(() => {
+    if (!qualifiesHighEndAdvanceContext) {
+      setWaiveHighEndAdvance(false);
+      setHighEndAdvanceHintPercentInput("");
+    }
+  }, [qualifiesHighEndAdvanceContext]);
+
   const catalogSubtotalExclGst = useMemo(() => {
     if (!vehicleSegment) return 0;
     return selectedCatalogItems.reduce((sum, s) => sum + priceForService(s, vehicleSegment), 0);
@@ -775,6 +775,26 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
     Math.max(0, catalogSubtotalExclGst - discountAmount) + highEndSubtotalExclGst;
   const gstAmount = Math.round(afterDiscount * GST_RATE * 100) / 100;
   const totalPayable = Math.round((afterDiscount + gstAmount) * 100) / 100;
+
+  const settingsDefaultAdvancePct = useSettingsStore((s) => s.highEndAdvanceSuggestedPercent) ?? 30;
+
+  const summaryAdvanceHintPct = useMemo(() => {
+    const t = highEndAdvanceHintPercentInput.trim();
+    if (t === "") return settingsDefaultAdvancePct;
+    const n = Number.parseFloat(t.replace(",", "."));
+    if (!Number.isFinite(n)) return settingsDefaultAdvancePct;
+    return Math.min(100, Math.max(0, Math.round(n * 100) / 100));
+  }, [highEndAdvanceHintPercentInput, settingsDefaultAdvancePct]);
+
+  const summarySuggestedAdvanceInr = useMemo(() => {
+    if (!qualifiesHighEndAdvanceContext || waiveHighEndAdvance) return 0;
+    return Math.round((summaryAdvanceHintPct / 100) * totalPayable * 100) / 100;
+  }, [
+    qualifiesHighEndAdvanceContext,
+    waiveHighEndAdvance,
+    summaryAdvanceHintPct,
+    totalPayable,
+  ]);
 
   const toggleMain = (id: string) => {
     setSelectedMainIds((prev) =>
@@ -931,6 +951,7 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
         name: s.name,
         price: Math.max(0, discounted),
         isCompleted: false,
+        durationMinutes: s.durationMinutes,
       };
     });
 
@@ -991,7 +1012,24 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
 
     const expectedDeliveryIso = isWalkIn
       ? new Date(bookingWhen).toISOString()
-      : resolveExpectedDeliveryIso(expectedDelivery, deliveryDaysFromNow);
+      : now;
+
+    const waiveAdvancePatch =
+      qualifiesHighEndAdvanceContext && waiveHighEndAdvance
+        ? ({ waiveHighEndAdvance: true } as const)
+        : {};
+
+    const parsedAdvanceHint = (() => {
+      const t = highEndAdvanceHintPercentInput.trim();
+      if (t === "") return undefined;
+      const n = Number.parseFloat(t.replace(",", "."));
+      if (!Number.isFinite(n)) return undefined;
+      return Math.min(100, Math.max(0, Math.round(n * 100) / 100));
+    })();
+    const advanceHintPatch =
+      qualifiesHighEndAdvanceContext && parsedAdvanceHint != null
+        ? ({ highEndAdvanceHintPercent: parsedAdvanceHint } as const)
+        : {};
 
     if (isWalkIn) {
       addJobCard({
@@ -1017,6 +1055,8 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
         termsAndConditions:
           "Walk-in: vehicle stored securely. Prices subject to inspection. GST as applicable.",
         notes: bookingNote,
+        ...waiveAdvancePatch,
+        ...advanceHintPatch,
         createdBy: user?.id ?? "USR-WALKIN",
         createdAt: now,
         updatedAt: now,
@@ -1034,6 +1074,15 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
       router.push(`/job-cards/${id}`);
       return;
     }
+
+    const termsWithHighEndNote = (() => {
+      const base = termsAndConditions.trim();
+      if (!qualifiesHighEndAdvanceContext) return base;
+      if (waiveHighEndAdvance) {
+        return `${base}\n\nOptional advance: turned off for this job when the card was created (no advance collection on the job card).`;
+      }
+      return `${base}\n\nOptional: a partial advance may be collected toward this job when high-end services are included (catalog and/or premium programs); record the amount on the job card when agreed.`;
+    })();
 
     addJobCard({
       id,
@@ -1056,7 +1105,7 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
       estimatedAmount,
       incentivePercent: Math.round(avgIncentive),
       incentiveAmount: Math.round((estimatedAmount * avgIncentive) / 100),
-      termsAndConditions,
+      termsAndConditions: termsWithHighEndNote,
       notes: bookingNote,
       highEndServiceIds: selectedHighEndIds.length > 0 ? selectedHighEndIds : undefined,
       highEndFirstFollowUpMonthsByServiceId:
@@ -1070,6 +1119,8 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
               })
             )
           : undefined,
+      ...waiveAdvancePatch,
+      ...advanceHintPatch,
       createdBy: user?.id ?? "USR-001",
       createdAt: now,
       updatedAt: now,
@@ -1190,13 +1241,15 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
     const s: JobWizardStepId[] = [
       "customer",
       "vehicle",
-      "schedule",
+      ...(isJobCard ? [] : (["schedule"] as const)),
       "smartSuggestions",
       "membership",
       "serviceSelection",
     ];
     if (isJobCard && highEndServices.length > 0) s.push("highEndServices");
-    s.push("addons", "pickupDrop", "mechanic");
+    s.push("addons");
+    if (!isJobCard) s.push("pickupDrop");
+    s.push("mechanic");
     if (isJobCard) {
       s.push("notesAndJobDetails", "jobSummary");
     } else {
@@ -1347,12 +1400,7 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
                       timeStyle: "short",
                     })
                   : "—"
-                : new Date(
-                    resolveExpectedDeliveryIso(expectedDelivery, deliveryDaysFromNow)
-                  ).toLocaleString(undefined, {
-                    dateStyle: "short",
-                    timeStyle: "short",
-                  })}
+                : "Current date & time when you create"}
             </dd>
           </div>
         </dl>
@@ -1396,7 +1444,78 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
             <span>Total payable</span>
             <span className="tabular-nums">{formatCurrency(totalPayable)}</span>
           </div>
+          {isJobCard && qualifiesHighEndAdvanceContext && !waiveHighEndAdvance && (
+            <div className="rounded-md border border-amber-200/70 bg-amber-50/60 dark:border-amber-900/40 dark:bg-amber-950/25 px-2.5 py-2 space-y-1.5 mt-2">
+              <div className="flex justify-between gap-2 text-xs">
+                <span className="text-amber-900 dark:text-amber-200/90">Advance hint (for invoice)</span>
+                <span className="tabular-nums font-medium text-amber-950 dark:text-amber-100">
+                  {summaryAdvanceHintPct}%
+                  {highEndAdvanceHintPercentInput.trim() === "" ? (
+                    <span className="font-normal text-muted-foreground"> (Settings default)</span>
+                  ) : null}
+                </span>
+              </div>
+              <div className="flex justify-between gap-2 text-xs">
+                <span className="text-muted-foreground">Suggested advance (~{summaryAdvanceHintPct}% of total)</span>
+                <span className="tabular-nums font-semibold text-amber-900 dark:text-amber-100">
+                  {formatCurrency(summarySuggestedAdvanceInr)}
+                </span>
+              </div>
+              <p className="text-[10px] text-muted-foreground leading-snug border-t border-amber-200/50 dark:border-amber-900/40 pt-1.5">
+                Same basis as the tax invoice advance line. Total payable stays the full job; this is what you may
+                collect up front.
+              </p>
+            </div>
+          )}
         </div>
+        <Separator />
+        {isJobCard && qualifiesHighEndAdvanceContext && (
+          <>
+            <div className="flex items-start justify-between gap-3 rounded-lg border border-amber-200/80 bg-amber-50/50 p-3 dark:border-amber-900/50 dark:bg-amber-950/20">
+              <div className="min-w-0 space-y-0.5">
+                <Label htmlFor="waive-advance" className="text-sm font-medium leading-snug">
+                  Show optional advance on job card
+                </Label>
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  Turn <span className="font-medium">off</span> if you will not take an advance from this customer.
+                  The advance section stays hidden; billing at delivery is unchanged.
+                </p>
+              </div>
+              <Switch
+                id="waive-advance"
+                checked={!waiveHighEndAdvance}
+                onCheckedChange={(on) => setWaiveHighEndAdvance(!on)}
+                className="shrink-0 mt-0.5"
+              />
+            </div>
+            <p className="text-[10px] text-muted-foreground">
+              When left on, recording an advance on the job remains optional — this only controls visibility for this job.
+            </p>
+            {qualifiesHighEndAdvanceContext && selectedHighEndIds.length === 0 && !waiveHighEndAdvance && (
+              <div className="space-y-1.5 rounded-lg border border-border/80 bg-background/80 p-3">
+                <Label htmlFor="advance-hint-summary" className="text-xs font-medium">
+                  Advance hint (% of job estimate)
+                </Label>
+                <Input
+                  id="advance-hint-summary"
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={0.5}
+                  inputMode="decimal"
+                  placeholder="e.g. 25 — empty uses Settings default"
+                  className="h-9 text-sm"
+                  value={highEndAdvanceHintPercentInput}
+                  onChange={(e) => setHighEndAdvanceHintPercentInput(e.target.value)}
+                />
+                <p className="text-[10px] text-muted-foreground leading-snug">
+                  Optional. Same as above: job card hint + auto advance line on the tax invoice (% × grand total) when
+                  generated. Leave empty to use Settings default on the card only.
+                </p>
+              </div>
+            )}
+          </>
+        )}
         <Separator />
         <div id={branchBlockId} className="space-y-2 scroll-mt-24">
           <Label className="flex items-center gap-2">
@@ -2195,153 +2314,66 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
               <CardTitle className="text-lg">Schedule</CardTitle>
             </CardHeader>
             <CardContent>
-              {isWalkIn ? (
-                <div className="min-w-0 max-w-md space-y-2">
-                  <Label className="md:hidden">Booking Date & Time</Label>
-                  <Label htmlFor="schedule-booking-when" className="hidden md:inline-flex">
-                    Booking Date & Time
-                  </Label>
-                  <div className="min-w-0 space-y-3 md:hidden">
-                    <div className="space-y-1.5">
-                      <Label htmlFor="schedule-booking-date" className="text-xs text-muted-foreground">
-                        Date
-                      </Label>
-                      <Input
-                        id="schedule-booking-date"
-                        type="date"
-                        value={splitDatetimeLocal(bookingWhen).date}
-                        onChange={(e) => {
-                          const { time } = splitDatetimeLocal(bookingWhen);
-                          setBookingWhen(joinDatetimeLocal(e.target.value, time));
-                        }}
-                        required
-                        className={cn("h-10 w-full min-w-0 max-w-full", MOBILE_DATE_TIME_INPUT_ICON_END)}
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="schedule-booking-time" className="text-xs text-muted-foreground">
-                        Time
-                      </Label>
-                      <Input
-                        id="schedule-booking-time"
-                        type="time"
-                        value={splitDatetimeLocal(bookingWhen).time}
-                        onChange={(e) => {
-                          let { date } = splitDatetimeLocal(bookingWhen);
-                          if (!date) date = datetimeLocalValue(new Date()).slice(0, 10);
-                          setBookingWhen(joinDatetimeLocal(date, e.target.value));
-                        }}
-                        required
-                        className={cn("h-10 w-full min-w-0 max-w-full", MOBILE_DATE_TIME_INPUT_ICON_END)}
-                      />
-                    </div>
-                  </div>
-                  <div className="relative hidden md:block">
-                    <Input
-                      id="schedule-booking-when"
-                      ref={scheduleDateInputRef}
-                      type="datetime-local"
-                      value={bookingWhen}
-                      onChange={(e) => setBookingWhen(e.target.value)}
-                      required
-                      className="h-10 pr-10 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:right-0 [&::-webkit-calendar-picker-indicator]:bottom-0 [&::-webkit-calendar-picker-indicator]:top-0 [&::-webkit-calendar-picker-indicator]:w-10 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-0"
-                    />
-                    <button
-                      type="button"
-                      className="absolute right-2 top-1/2 z-10 -translate-y-1/2 rounded-sm p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-                      aria-label="Open date and time picker"
-                      onClick={() => scheduleDateInputRef.current?.showPicker?.()}
-                    >
-                      <Calendar className="h-4 w-4 shrink-0" />
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="min-w-0 max-w-md space-y-3">
-                  <div className="space-y-2">
-                    <Label className="md:hidden">Booking Date & Time</Label>
-                    <Label htmlFor="schedule-expected-delivery" className="hidden md:inline-flex">
-                      Booking Date & Time
+              <div className="min-w-0 max-w-md space-y-2">
+                <Label className="md:hidden">Booking Date & Time</Label>
+                <Label htmlFor="schedule-booking-when" className="hidden md:inline-flex">
+                  Booking Date & Time
+                </Label>
+                <div className="min-w-0 space-y-3 md:hidden">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="schedule-booking-date" className="text-xs text-muted-foreground">
+                      Date
                     </Label>
-                    <div className="min-w-0 space-y-3 md:hidden">
-                      <div className="space-y-1.5">
-                        <Label htmlFor="schedule-expected-date" className="text-xs text-muted-foreground">
-                          Date
-                        </Label>
-                        <Input
-                          id="schedule-expected-date"
-                          type="date"
-                          value={splitDatetimeLocal(expectedDelivery).date}
-                          onChange={(e) => {
-                            const { time } = splitDatetimeLocal(expectedDelivery);
-                            setExpectedDelivery(joinDatetimeLocal(e.target.value, time));
-                            if (e.target.value) setDeliveryDaysFromNow("");
-                          }}
-                          className={cn("h-10 w-full min-w-0 max-w-full", MOBILE_DATE_TIME_INPUT_ICON_END)}
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label htmlFor="schedule-expected-time" className="text-xs text-muted-foreground">
-                          Time
-                        </Label>
-                        <Input
-                          id="schedule-expected-time"
-                          type="time"
-                          value={splitDatetimeLocal(expectedDelivery).time}
-                          onChange={(e) => {
-                            let { date } = splitDatetimeLocal(expectedDelivery);
-                            if (!date) date = datetimeLocalValue(new Date()).slice(0, 10);
-                            setExpectedDelivery(joinDatetimeLocal(date, e.target.value));
-                            setDeliveryDaysFromNow("");
-                          }}
-                          className={cn("h-10 w-full min-w-0 max-w-full", MOBILE_DATE_TIME_INPUT_ICON_END)}
-                        />
-                      </div>
-                    </div>
-                    <div className="relative hidden md:block">
-                      <Input
-                        id="schedule-expected-delivery"
-                        ref={scheduleDateInputRef}
-                        type="datetime-local"
-                        value={expectedDelivery}
-                        onChange={(e) => {
-                          setExpectedDelivery(e.target.value);
-                          if (e.target.value) setDeliveryDaysFromNow("");
-                        }}
-                        className="h-10 pr-10 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:right-0 [&::-webkit-calendar-picker-indicator]:bottom-0 [&::-webkit-calendar-picker-indicator]:top-0 [&::-webkit-calendar-picker-indicator]:w-10 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-0"
-                      />
-                      <button
-                        type="button"
-                        className="absolute right-2 top-1/2 z-10 -translate-y-1/2 rounded-sm p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-                        aria-label="Open date and time picker"
-                        onClick={() => scheduleDateInputRef.current?.showPicker?.()}
-                      >
-                        <Calendar className="h-4 w-4 shrink-0" />
-                      </button>
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <span className="text-sm text-muted-foreground">or in</span>
                     <Input
-                      type="number"
-                      min={1}
-                      max={365}
-                      placeholder="days"
-                      className="w-24"
-                      value={deliveryDaysFromNow}
+                      id="schedule-booking-date"
+                      type="date"
+                      value={splitDatetimeLocal(bookingWhen).date}
                       onChange={(e) => {
-                        const v = e.target.value;
-                        setDeliveryDaysFromNow(v);
-                        if (v.trim() !== "") setExpectedDelivery("");
+                        const { time } = splitDatetimeLocal(bookingWhen);
+                        setBookingWhen(joinDatetimeLocal(e.target.value, time));
                       }}
+                      required
+                      className={cn("h-10 w-full min-w-0 max-w-full", MOBILE_DATE_TIME_INPUT_ICON_END)}
                     />
-                    <span className="text-sm text-muted-foreground">days (6:00 PM that day)</span>
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    If both are empty, delivery defaults to tomorrow end of day.
-                  </p>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="schedule-booking-time" className="text-xs text-muted-foreground">
+                      Time
+                    </Label>
+                    <Input
+                      id="schedule-booking-time"
+                      type="time"
+                      value={splitDatetimeLocal(bookingWhen).time}
+                      onChange={(e) => {
+                        let { date } = splitDatetimeLocal(bookingWhen);
+                        if (!date) date = datetimeLocalValue(new Date()).slice(0, 10);
+                        setBookingWhen(joinDatetimeLocal(date, e.target.value));
+                      }}
+                      required
+                      className={cn("h-10 w-full min-w-0 max-w-full", MOBILE_DATE_TIME_INPUT_ICON_END)}
+                    />
+                  </div>
                 </div>
-              )}
+                <div className="relative hidden md:block">
+                  <Input
+                    id="schedule-booking-when"
+                    ref={scheduleDateInputRef}
+                    type="datetime-local"
+                    value={bookingWhen}
+                    onChange={(e) => setBookingWhen(e.target.value)}
+                    required
+                    className="h-10 pr-10 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:right-0 [&::-webkit-calendar-picker-indicator]:bottom-0 [&::-webkit-calendar-picker-indicator]:top-0 [&::-webkit-calendar-picker-indicator]:w-10 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-0"
+                  />
+                  <button
+                    type="button"
+                    className="absolute right-2 top-1/2 z-10 -translate-y-1/2 rounded-sm p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    aria-label="Open date and time picker"
+                    onClick={() => scheduleDateInputRef.current?.showPicker?.()}
+                  >
+                    <Calendar className="h-4 w-4 shrink-0" />
+                  </button>
+                </div>
+              </div>
             </CardContent>
           </Card>
           )}
@@ -2845,6 +2877,30 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
                     {selectedHighEndIds.length} high-end service{selectedHighEndIds.length !== 1 ? "s" : ""}{" "}
                     selected — reminders are created when the job is delivered.
                   </p>
+                )}
+                {selectedHighEndIds.length > 0 && (
+                  <div className="mt-4 space-y-2 rounded-lg border border-amber-200/90 bg-amber-50/50 p-4 dark:border-amber-900/50 dark:bg-amber-950/25">
+                    <Label htmlFor="advance-hint-hes" className="text-sm font-medium">
+                      Advance payment hint (% of job estimate)
+                    </Label>
+                    <p className="text-[11px] text-muted-foreground leading-relaxed">
+                      Enter any percentage (0–100). Shown on the job card as a hint, and when you generate the tax
+                      invoice it becomes an <span className="font-medium text-foreground">Advance paid</span> line (% ×
+                      invoice grand total) unless you save a different amount on the job card first.
+                    </p>
+                    <Input
+                      id="advance-hint-hes"
+                      type="number"
+                      min={0}
+                      max={100}
+                      step={0.5}
+                      inputMode="decimal"
+                      placeholder="e.g. 30, 40, 12.5"
+                      className="h-10 max-w-[220px]"
+                      value={highEndAdvanceHintPercentInput}
+                      onChange={(e) => setHighEndAdvanceHintPercentInput(e.target.value)}
+                    />
+                  </div>
                 )}
               </CardContent>
             </Card>

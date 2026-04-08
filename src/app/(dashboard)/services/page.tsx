@@ -80,9 +80,11 @@ export default function ServicesPage() {
   const kpis = useMemo(() => {
     const activePk = packages.filter((s) => s.isActive).length;
     const activeAd = addons.filter((s) => s.isActive).length;
+    const highEndPk = packages.filter((s) => s.isHighEnd).length;
     return {
       packages: packages.length,
       activePackages: activePk,
+      highEndPackages: highEndPk,
       addons: addons.length,
       activeAddons: activeAd,
     };
@@ -148,7 +150,7 @@ export default function ServicesPage() {
     <div className="space-y-4 sm:space-y-6">
       <PageHeader
         title="Service Management"
-        description="Manage service packages and add-ons"
+        description="Manage service packages and add-ons. Packages with the High-end badge qualify for optional advance on job cards (same flag as in Edit)."
         actions={
           <>
             <Button variant="outline" className="gap-2" onClick={() => router.refresh()}>
@@ -179,11 +181,16 @@ export default function ServicesPage() {
         }
       />
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         {(
           [
             { label: "PACKAGES", value: kpis.packages, accent: "text-foreground" },
             { label: "ACTIVE", value: kpis.activePackages, accent: "text-emerald-600" },
+            {
+              label: "HIGH-END",
+              value: kpis.highEndPackages,
+              accent: "text-amber-700 dark:text-amber-400",
+            },
             { label: "ADD-ONS", value: kpis.addons, accent: "text-foreground" },
             { label: "ACTIVE", value: kpis.activeAddons, accent: "text-emerald-600" },
           ] as const
