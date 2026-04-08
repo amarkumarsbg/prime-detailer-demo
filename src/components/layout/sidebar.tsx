@@ -17,7 +17,6 @@ import {
   Car,
   CarFront,
   ClipboardList,
-  Receipt,
   Wrench,
   X,
   UserCog,
@@ -95,9 +94,9 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     label: "Finance",
     items: [
       {
-        label: "Accounting",
-        href: "/accounting",
-        icon: Receipt,
+        label: "Reports",
+        href: "/reports",
+        icon: FileBarChart,
         roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER", "MANAGER", "RECEPTIONIST"],
       },
       {
@@ -136,7 +135,7 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     ],
   },
   {
-    label: "Analytics & admin",
+    label: "Analytics & Reports",
     items: [
       {
         label: "Locations",
@@ -151,7 +150,7 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
         roles: ["ADMIN", "MANAGER", "BRANCH_MANAGER"],
       },
       { label: "Mechanics", href: "/mechanics", icon: Gauge, roles: ["ADMIN", "MANAGER"] },
-      { label: "Analytics", href: "/reports", icon: BarChart3, roles: ["ADMIN", "MANAGER"] },
+      { label: "Analytics", href: "/reports/analytics", icon: BarChart3, roles: ["ADMIN", "MANAGER"] },
       {
         label: "Advanced Reports",
         href: "/advanced-reports",
@@ -163,6 +162,18 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     ],
   },
 ];
+
+/** Sidebar active state: Finance "Reports" links to `/reports` but must not stay lit on `/reports/analytics` (that page is the separate "Analytics" item). */
+function isNavItemActive(pathname: string, href: string): boolean {
+  if (href === "/reports") {
+    if (pathname === "/reports") return true;
+    if (pathname === "/reports/analytics" || pathname.startsWith("/reports/analytics/")) {
+      return false;
+    }
+    return pathname.startsWith("/reports/");
+  }
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
 
 function SidebarContent({
   onNavClick,
@@ -260,8 +271,7 @@ function SidebarContent({
               </h2>
               <div className="space-y-0.5 px-1.5">
                 {group.items.map((item) => {
-                  const isActive =
-                    pathname === item.href || pathname.startsWith(item.href + "/");
+                  const isActive = isNavItemActive(pathname, item.href);
                   return (
                     <Link
                       key={item.href}

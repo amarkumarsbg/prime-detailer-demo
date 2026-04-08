@@ -1,7 +1,7 @@
 "use client";
 
-import { AnalyticsReportsDashboard } from "@/components/analytics";
+import { ReportsHub } from "@/components/reports/reports-hub";
 
 export default function ReportsPage() {
-  return <AnalyticsReportsDashboard />;
+  return <ReportsHub />;
 }
