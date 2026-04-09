@@ -4,7 +4,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
-import { ArrowLeft, Car, ChevronRight, Pencil, Plus, Star, MessageSquare, Wallet, Copy, Share2, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Car, ChevronRight, Crown, Pencil, Plus, Star, MessageSquare, Wallet, Copy, Share2, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -36,7 +36,12 @@ import { useVehicleStore } from "@/store/vehicle-store";
 import { useWalletStore } from "@/store/wallet-store";
 import { useJobCardStore } from "@/store/job-card-store";
 import { useInvoiceStore } from "@/store/invoice-store";
-import { formatCurrency, formatDate, getInitials, cn } from "@/lib/utils";
+import {
+  MEMBERSHIP_TIER_DAYS,
+  useMembershipStore,
+} from "@/store/membership-store";
+import { useServiceCatalogStore } from "@/store/service-catalog-store";
+import { formatCurrency, formatDate, formatInrFull, getInitials, cn } from "@/lib/utils";
 import { getTransferTagForCustomer } from "@/lib/ownership-transfers";
 import {
   findVehicleByNormalizedReg,
@@ -128,6 +133,28 @@ export default function CustomerDetailPage() {
   const customerWalletTransactions = useMemo(() => {
     return getByCustomer(id);
   }, [id, getByCustomer]);
+
+  const membershipSubscriptions = useMembershipStore((s) => s.subscriptions);
+  const packages = useMembershipStore((s) => s.packages);
+  const catalog = useServiceCatalogStore((s) => s.catalog);
+  const activeMembership = useMemo(() => {
+    if (!customer) return undefined;
+    return useMembershipStore.getState().getActiveMembership(customer.id);
+  }, [customer, membershipSubscriptions]);
+  const membershipPackage = useMemo(
+    () => packages.find((p) => p.id === activeMembership?.packageId),
+    [packages, activeMembership?.packageId]
+  );
+  const membershipServiceNames = useMemo(() => {
+    if (!membershipPackage) return [];
+    const byId = new Map(catalog.map((s) => [s.id, s.name]));
+    return membershipPackage.includedServiceIds.map((sid) => byId.get(sid) ?? sid);
+  }, [membershipPackage, catalog]);
+  const membershipDaysLeft = useMemo(() => {
+    if (!activeMembership) return null;
+    const ms = new Date(activeMembership.endDate).getTime() - Date.now();
+    return Math.ceil(ms / (24 * 60 * 60 * 1000));
+  }, [activeMembership]);
 
   const referralCount = useMemo(() => {
     return allCustomers.filter((c) => c.referredBy === customer?.referralCode).length;
@@ -369,6 +396,7 @@ export default function CustomerDetailPage() {
           <TabsTrigger value="profile">Profile</TabsTrigger>
           <TabsTrigger value="vehicles">Vehicles</TabsTrigger>
           <TabsTrigger value="wallet">Wallet</TabsTrigger>
+          <TabsTrigger value="membership">Membership</TabsTrigger>
           <TabsTrigger value="service-history">Service History</TabsTrigger>
           <TabsTrigger value="billing">Billing</TabsTrigger>
           <TabsTrigger value="feedback">Feedback</TabsTrigger>
@@ -716,6 +744,77 @@ export default function CustomerDetailPage() {
                       </div>
                     </div>
                   ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="membership" className="space-y-4">
+          <Card>
+            <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Crown className="h-5 w-5 text-violet-600" />
+                Membership
+              </CardTitle>
+              <Button variant="outline" size="sm" asChild>
+                <Link href="/membership?tab=assign">Manage in Membership</Link>
+              </Button>
+            </CardHeader>
+            <CardContent>
+              {!activeMembership || !membershipPackage ? (
+                <p className="text-sm text-muted-foreground text-center py-8">
+                  No active membership. Assign a package from the Membership page.
+                </p>
+              ) : (
+                <div className="space-y-4">
+                  {membershipDaysLeft != null && membershipDaysLeft <= 7 && membershipDaysLeft >= 0 && (
+                    <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
+                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+                      <span>
+                        Expires in {membershipDaysLeft} day
+                        {membershipDaysLeft === 1 ? "" : "s"} — renew or extend from Membership.
+                      </span>
+                    </div>
+                  )}
+                  <div>
+                    <p className="text-sm text-muted-foreground">Package</p>
+                    <p className="font-semibold">{membershipPackage.name}</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Badge variant="secondary">{membershipPackage.tier}</Badge>
+                    <span className="text-xs text-muted-foreground self-center">
+                      {MEMBERSHIP_TIER_DAYS[membershipPackage.tier]} days window
+                    </span>
+                  </div>
+                  <div className="grid gap-1 sm:grid-cols-2">
+                    <div>
+                      <p className="text-xs text-muted-foreground">Valid from</p>
+                      <p className="text-sm font-medium tabular-nums">
+                        {formatDate(activeMembership.startDate)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Valid until</p>
+                      <p className="text-sm font-medium tabular-nums">
+                        {formatDate(activeMembership.endDate)}
+                      </p>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">List price (demo)</p>
+                    <p className="text-sm font-medium tabular-nums">
+                      {formatInrFull(membershipPackage.price)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium mb-2">Included services</p>
+                    <ul className="list-inside list-disc text-sm text-muted-foreground space-y-1">
+                      {membershipServiceNames.map((n) => (
+                        <li key={n}>{n}</li>
+                      ))}
+                    </ul>
+                  </div>
                 </div>
               )}
             </CardContent>

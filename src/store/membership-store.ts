@@ -1,0 +1,174 @@
+"use client";
+
+import { create } from "zustand";
+import { persist } from "zustand/middleware";
+import type {
+  CustomerMembership,
+  CustomerMembershipStatus,
+  MembershipPackage,
+  MembershipTier,
+} from "@/types";
+
+export const MEMBERSHIP_TIER_DAYS: Record<MembershipTier, number> = {
+  MONTHLY: 30,
+  QUARTERLY: 90,
+  HALF_YEARLY: 180,
+  YEARLY: 365,
+};
+
+function addDays(isoStart: string, days: number): string {
+  const d = new Date(isoStart);
+  d.setDate(d.getDate() + days);
+  d.setHours(23, 59, 59, 999);
+  return d.toISOString();
+}
+
+function seedPackages(): MembershipPackage[] {
+  const t = new Date().toISOString();
+  return [
+    {
+      id: "mem-pkg-monthly",
+      name: "Wash Club — Monthly",
+      tier: "MONTHLY",
+      price: 1999,
+      includedServiceIds: ["svc-016", "svc-017"],
+      isActive: true,
+      createdAt: t,
+    },
+    {
+      id: "mem-pkg-quarterly",
+      name: "Wash Club — Quarterly",
+      tier: "QUARTERLY",
+      price: 5499,
+      includedServiceIds: ["svc-016", "svc-017", "svc-021"],
+      isActive: true,
+      createdAt: t,
+    },
+    {
+      id: "mem-pkg-half",
+      name: "Detailing Pass — Half Yearly",
+      tier: "HALF_YEARLY",
+      price: 12999,
+      includedServiceIds: ["svc-021", "svc-015"],
+      isActive: true,
+      createdAt: t,
+    },
+    {
+      id: "mem-pkg-yearly",
+      name: "Detailing Pass — Yearly",
+      tier: "YEARLY",
+      price: 23999,
+      includedServiceIds: ["svc-016", "svc-021", "svc-015"],
+      isActive: true,
+      createdAt: t,
+    },
+  ];
+}
+
+interface MembershipState {
+  packages: MembershipPackage[];
+  subscriptions: CustomerMembership[];
+  upsertPackage: (pkg: MembershipPackage) => void;
+  removePackage: (id: string) => void;
+  setPackageActive: (id: string, isActive: boolean) => void;
+  assignMembership: (input: {
+    customerId: string;
+    packageId: string;
+    startDate?: string;
+    notes?: string;
+  }) => { ok: true; id: string } | { ok: false; error: string };
+  cancelMembership: (id: string) => void;
+  getActiveMembership: (customerId: string) => CustomerMembership | undefined;
+  /** Mark past endDate as EXPIRED (read-time normalization). */
+  subscriptionEffectiveStatus: (sub: CustomerMembership) => CustomerMembershipStatus;
+}
+
+function genId(prefix: string) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+export const useMembershipStore = create<MembershipState>()(
+  persist(
+    (set, get) => ({
+      packages: seedPackages(),
+      subscriptions: [],
+
+      upsertPackage: (pkg) =>
+        set((s) => {
+          const idx = s.packages.findIndex((p) => p.id === pkg.id);
+          if (idx >= 0) {
+            const next = [...s.packages];
+            next[idx] = pkg;
+            return { packages: next };
+          }
+          return { packages: [...s.packages, pkg] };
+        }),
+
+      removePackage: (id) =>
+        set((s) => ({
+          packages: s.packages.filter((p) => p.id !== id),
+        })),
+
+      setPackageActive: (id, isActive) =>
+        set((s) => ({
+          packages: s.packages.map((p) => (p.id === id ? { ...p, isActive } : p)),
+        })),
+
+      assignMembership: (input) => {
+        const pkg = get().packages.find((p) => p.id === input.packageId);
+        if (!pkg) return { ok: false, error: "Package not found" };
+        if (!pkg.isActive) return { ok: false, error: "Package is inactive" };
+
+        const start = input.startDate ?? new Date().toISOString();
+        const days = MEMBERSHIP_TIER_DAYS[pkg.tier];
+        const endDate = addDays(start, days);
+
+        const activeForCustomer = get().subscriptions.filter(
+          (sub) => sub.customerId === input.customerId && sub.status === "ACTIVE"
+        );
+        const now = Date.now();
+        const stillActive = activeForCustomer.some((sub) => new Date(sub.endDate).getTime() >= now);
+        if (stillActive) {
+          return {
+            ok: false,
+            error: "Customer already has an active membership. Cancel it first.",
+          };
+        }
+
+        const sub: CustomerMembership = {
+          id: genId("memsub"),
+          customerId: input.customerId,
+          packageId: input.packageId,
+          startDate: start,
+          endDate,
+          status: "ACTIVE",
+          notes: input.notes,
+        };
+
+        set((s) => ({ subscriptions: [sub, ...s.subscriptions] }));
+        return { ok: true, id: sub.id };
+      },
+
+      cancelMembership: (id) =>
+        set((s) => ({
+          subscriptions: s.subscriptions.map((sub) =>
+            sub.id === id ? { ...sub, status: "CANCELLED" as const } : sub
+          ),
+        })),
+
+      getActiveMembership: (customerId) => {
+        const now = Date.now();
+        return get()
+          .subscriptions.filter((s) => s.customerId === customerId && s.status === "ACTIVE")
+          .find((s) => new Date(s.endDate).getTime() >= now);
+      },
+
+      subscriptionEffectiveStatus: (sub) => {
+        if (sub.status === "CANCELLED") return "CANCELLED";
+        if (new Date(sub.endDate).getTime() < Date.now()) return "EXPIRED";
+        return sub.status;
+      },
+    }),
+    { name: "prime-detailer-membership-v1" }
+  )
+);

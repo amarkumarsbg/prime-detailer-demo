@@ -225,6 +225,31 @@ export interface ServiceCatalogItem {
   gstPercent?: number;
 }
 
+export type MembershipTier = "MONTHLY" | "QUARTERLY" | "HALF_YEARLY" | "YEARLY";
+
+export type CustomerMembershipStatus = "ACTIVE" | "EXPIRED" | "CANCELLED";
+
+export interface MembershipPackage {
+  id: string;
+  name: string;
+  tier: MembershipTier;
+  /** Demo list price (no payment processing). */
+  price: number;
+  includedServiceIds: string[];
+  isActive: boolean;
+  createdAt: string;
+}
+
+export interface CustomerMembership {
+  id: string;
+  customerId: string;
+  packageId: string;
+  startDate: string;
+  endDate: string;
+  status: CustomerMembershipStatus;
+  notes?: string;
+}
+
 export interface TimerAdjustment {
   adjustedBy: string;
   adjustedAt: string;

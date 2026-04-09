@@ -42,6 +42,7 @@ import {
   Gift,
   Building2,
   Landmark,
+  Crown,
 } from "lucide-react";
 
 type NavItem = {
@@ -84,6 +85,7 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     label: "Customers & fleet",
     items: [
       { label: "Customers", href: "/customers", icon: Users },
+      { label: "Membership", href: "/membership", icon: Crown },
       { label: "Vehicles", href: "/vehicles", icon: Car },
       { label: "Reminders", href: "/reminders", icon: Bell, roles: ["ADMIN", "MANAGER", "RECEPTIONIST"] },
       { label: "Follow-ups", href: "/follow-ups", icon: PhoneCall, roles: ["ADMIN", "MANAGER", "RECEPTIONIST"] },
