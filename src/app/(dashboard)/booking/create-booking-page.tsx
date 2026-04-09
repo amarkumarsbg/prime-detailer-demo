@@ -348,6 +348,8 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
 
   /** Desktop job-card: fit dashboard main without page scroll; compact density */
   const compactJobCardDesktop = isJobCard && isDesktopWide;
+  /** Job card wizard: denser customer step on all breakpoints to reduce scroll */
+  const compactCustomerStep = isJobCard;
 
   useEffect(() => {
     if (branchId) return;
@@ -1735,32 +1737,47 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
 
           <div
             className={cn(
-              "space-y-6",
+              isJobCard ? "space-y-4" : "space-y-6",
               isJobCard &&
                 isDesktopWide &&
-                "lg:flex lg:min-h-0 lg:flex-1 lg:basis-0 lg:flex-col lg:space-y-0 lg:gap-3 lg:overflow-y-auto lg:overflow-x-auto lg:overscroll-y-contain lg:pr-0.5 [-ms-overflow-style:none] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5",
+                "lg:flex lg:min-h-0 lg:flex-1 lg:basis-0 lg:flex-col lg:space-y-0 lg:gap-2.5 lg:overflow-y-auto lg:overflow-x-auto lg:overscroll-y-contain lg:pr-0.5 [-ms-overflow-style:none] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5",
               isJobCard && "max-lg:shrink-0 max-lg:overflow-visible"
             )}
           >
           {showJobWizardStep("customer") && (
           <Card
-            className={cn(
-              compactJobCardDesktop && "border-border/80 shadow-sm"
-            )}
+            className={cn(compactCustomerStep && "border-border/80 shadow-sm")}
           >
-            <CardHeader className={cn(compactJobCardDesktop && "space-y-0 py-2 pb-1.5")}>
-              <CardTitle className={cn(compactJobCardDesktop ? "text-base" : "text-lg")}>
+            <CardHeader
+              className={cn(
+                compactCustomerStep && "space-y-0 py-2 pb-1.5 pt-2.5 sm:py-2 sm:pb-1.5 sm:pt-3"
+              )}
+            >
+              <CardTitle className={cn(compactCustomerStep ? "text-base" : "text-lg")}>
                 Customer Information
               </CardTitle>
             </CardHeader>
-            <CardContent className={cn(compactJobCardDesktop ? "space-y-3 pt-0" : "space-y-6")}>
+            <CardContent
+              className={cn(
+                compactCustomerStep
+                  ? "space-y-2.5 pt-0 pb-3 sm:space-y-2.5 sm:pb-4 sm:pt-0"
+                  : "space-y-6"
+              )}
+            >
               <div>
-                <Label className="text-muted-foreground">Search Existing Customer</Label>
-                <div className={cn("mt-2 w-full max-w-md", compactJobCardDesktop && "mt-1.5 max-w-full")}>
+                <Label className={cn("text-muted-foreground", compactCustomerStep && "text-xs")}>
+                  Search Existing Customer
+                </Label>
+                <div
+                  className={cn(
+                    "mt-2 w-full max-w-md",
+                    compactCustomerStep && "mt-1 max-w-full"
+                  )}
+                >
                   <div className="relative w-full">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
                     <Input
-                      className={cn("pl-9", compactJobCardDesktop && "h-9")}
+                      className={cn("pl-9", compactCustomerStep && "h-9")}
                       placeholder="Enter Mobile or Vehicle number"
                       value={lookupQuery}
                       onChange={(e) => setLookupQuery(e.target.value)}
@@ -1770,20 +1787,28 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
                       autoComplete="off"
                     />
                   </div>
-                  {!compactJobCardDesktop && (
+                  {!compactCustomerStep && (
                     <p className="text-xs text-muted-foreground mt-1.5">
                       Matches update as you type (phone, name, or registration).
                     </p>
                   )}
                 </div>
                 {lookupPanelCustomers && lookupPanelCustomers.length > 0 && (
-                  <div className="space-y-2 rounded-lg border bg-muted/30 p-3 mt-3">
+                  <div
+                    className={cn(
+                      "space-y-2 rounded-lg border bg-muted/30 p-3 mt-3",
+                      compactCustomerStep && "space-y-1.5 p-2.5 mt-2"
+                    )}
+                  >
                     <p className="text-xs font-medium text-muted-foreground">Matching customers</p>
-                    <ul className="space-y-2">
+                    <ul className={cn("space-y-2", compactCustomerStep && "space-y-1.5")}>
                       {lookupPanelCustomers.map((c) => (
                         <li
                           key={c.id}
-                          className="flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-2"
+                          className={cn(
+                            "flex items-center justify-between gap-3 rounded-md border bg-background px-3",
+                            compactCustomerStep ? "py-1.5" : "py-2"
+                          )}
                         >
                           <div className="min-w-0">
                             <p className="font-medium truncate">{c.name}</p>
@@ -1808,66 +1833,80 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
               </div>
 
               <div>
-                <p className={cn("font-medium", compactJobCardDesktop ? "mb-2 text-sm" : "mb-3 text-sm")}>
+                <p
+                  className={cn(
+                    "font-medium",
+                    compactCustomerStep ? "mb-1.5 text-sm" : "mb-3 text-sm"
+                  )}
+                >
                   Customer Details
                 </p>
-                <div className={cn("grid grid-cols-1 sm:grid-cols-2", compactJobCardDesktop ? "gap-3" : "gap-4")}>
-                  <div className="space-y-2">
-                    <Label>Full Name</Label>
+                <div
+                  className={cn(
+                    "grid grid-cols-1 sm:grid-cols-2",
+                    compactCustomerStep ? "gap-2 sm:gap-3" : "gap-4"
+                  )}
+                >
+                  <div className={cn(compactCustomerStep ? "space-y-1" : "space-y-2")}>
+                    <Label className={cn(compactCustomerStep && "text-xs")}>Full Name</Label>
                     <Input
                       value={customerName}
                       onChange={(e) => setCustomerName(e.target.value)}
                       placeholder="Customer name"
                       readOnly={!!existingCustomerId}
-                      className={existingCustomerId ? "bg-muted/80" : ""}
+                      className={cn(existingCustomerId ? "bg-muted/80" : "", compactCustomerStep && "h-9")}
                       required
                     />
                     {existingCustomerId && (
                       <p className="text-xs text-muted-foreground">Existing customer — name locked</p>
                     )}
                   </div>
-                  <div className="space-y-2">
-                    <Label>Phone Number</Label>
+                  <div className={cn(compactCustomerStep ? "space-y-1" : "space-y-2")}>
+                    <Label className={cn(compactCustomerStep && "text-xs")}>Phone Number</Label>
                     <Input
                       value={customerPhone}
                       onChange={(e) => setCustomerPhone(e.target.value.replace(/\D/g, "").slice(-10))}
                       placeholder="Phone number"
                       maxLength={10}
                       readOnly={!!existingCustomerId}
-                      className={existingCustomerId ? "bg-muted/80" : ""}
+                      className={cn(existingCustomerId ? "bg-muted/80" : "", compactCustomerStep && "h-9")}
                       required
                     />
                   </div>
-                  <div className="space-y-2 sm:col-span-2">
-                    <Label>Email (Optional)</Label>
+                  <div className={cn("sm:col-span-2", compactCustomerStep ? "space-y-1" : "space-y-2")}>
+                    <Label className={cn(compactCustomerStep && "text-xs")}>Email (Optional)</Label>
                     <Input
                       type="email"
                       value={customerEmail}
                       onChange={(e) => setCustomerEmail(e.target.value)}
                       placeholder="Email address"
                       readOnly={!!existingCustomerId}
-                      className={existingCustomerId ? "bg-muted/80" : ""}
+                      className={cn(existingCustomerId ? "bg-muted/80" : "", compactCustomerStep && "h-9")}
                     />
                     {existingCustomerId && (
                       <p className="text-xs text-muted-foreground">Existing customer — email locked</p>
                     )}
                   </div>
                   {!existingCustomerId && isWalkIn && (
-                    <div className="space-y-2 sm:col-span-2">
-                      <Label>Referral code (optional)</Label>
+                    <div className={cn("sm:col-span-2", compactCustomerStep ? "space-y-1" : "space-y-2")}>
+                      <Label className={cn(compactCustomerStep && "text-xs")}>Referral code (optional)</Label>
                       <Input
                         value={referralCode}
                         onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
                         placeholder="Referral code"
+                        className={cn(compactCustomerStep && "h-9")}
                       />
                       <p className="text-xs text-muted-foreground">If referred by another customer</p>
                     </div>
                   )}
                   {!existingCustomerId && isJobCard && (
                     <>
-                      <Separator className="sm:col-span-2" />
-                      <div className="space-y-2 sm:col-span-2">
-                        <Label htmlFor="jobcard-referral" className="flex items-center gap-1.5">
+                      <Separator className={cn("sm:col-span-2", compactCustomerStep && "my-0.5")} />
+                      <div className={cn("sm:col-span-2", compactCustomerStep ? "space-y-1" : "space-y-2")}>
+                        <Label
+                          htmlFor="jobcard-referral"
+                          className={cn("flex items-center gap-1.5", compactCustomerStep && "text-xs")}
+                        >
                           <Ticket className="w-3.5 h-3.5" />
                           Have a referral code?
                         </Label>
@@ -1877,7 +1916,7 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
                             placeholder="e.g. REF-A001"
                             value={referralCode}
                             onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
-                            className="uppercase"
+                            className={cn("uppercase", compactCustomerStep && "h-9")}
                           />
                         </div>
                         {referrerInfo && (
