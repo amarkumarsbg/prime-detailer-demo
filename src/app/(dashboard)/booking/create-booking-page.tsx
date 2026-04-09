@@ -10,6 +10,7 @@ import {
   Car,
   Search,
   Sparkles,
+  Crown,
   Ticket,
   ChevronDown,
   ChevronUp,
@@ -25,6 +26,9 @@ import {
   Upload,
   X,
   Calendar,
+  Banknote,
+  Percent,
+  Wrench,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -41,7 +45,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -63,6 +66,7 @@ import { useVehicleCatalogStore } from "@/store/vehicle-catalog-store";
 import { useHighEndServiceStore } from "@/store/high-end-service-store";
 import { useWalletStore } from "@/store/wallet-store";
 import { useSettingsStore } from "@/store/settings-store";
+import { useMembershipStore, MEMBERSHIP_TIER_DAYS } from "@/store/membership-store";
 import { isAllBranchesScope } from "@/lib/all-branches";
 import { formatCurrency, cn } from "@/lib/utils";
 import {
@@ -73,9 +77,20 @@ import {
   sanitizeVehicleRegistrationInput,
 } from "@/lib/vehicle-registration";
 import { pushActivityLog } from "@/lib/activity-log-helper";
-import { defaultManualFirstFollowUpMonths } from "@/lib/high-end-follow-up";
+import {
+  defaultManualFirstFollowUpMonths,
+  HIGH_END_COMPLETION_PRESETS,
+  highEndCompletionSelectValue,
+} from "@/lib/high-end-follow-up";
 import { formatServiceDurationLabel } from "@/lib/service-duration";
-import type { Customer, Vehicle, VehicleSegment, ServiceCatalogItem, InspectionPhoto } from "@/types";
+import type {
+  Customer,
+  Vehicle,
+  VehicleSegment,
+  ServiceCatalogItem,
+  InspectionPhoto,
+  MembershipTier,
+} from "@/types";
 
 const GST_RATE = 0.18;
 const TRENDING_IDS = ["svc-016", "svc-017", "svc-021", "svc-018"];
@@ -138,6 +153,21 @@ function joinDatetimeLocal(date: string, time: string): string {
   if (!d) return "";
   const tm = time.trim() && /^\d{2}:\d{2}$/.test(time.trim()) ? time.trim() : "12:00";
   return `${d}T${tm}`;
+}
+
+function membershipTierLabel(tier: MembershipTier): string {
+  switch (tier) {
+    case "MONTHLY":
+      return "Monthly";
+    case "QUARTERLY":
+      return "Quarterly";
+    case "HALF_YEARLY":
+      return "Half-yearly";
+    case "YEARLY":
+      return "Yearly";
+    default:
+      return tier;
+  }
 }
 
 /** Pin native date/time picker icons to the trailing edge on mobile WebKit/Chromium. */
@@ -206,6 +236,15 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
     creditWallet,
     customers,
   } = useCustomerStore();
+  const membershipPackagesAll = useMembershipStore((s) => s.packages);
+  const membershipSubscriptions = useMembershipStore((s) => s.subscriptions);
+  const getActiveMembership = useMembershipStore((s) => s.getActiveMembership);
+  const assignMembership = useMembershipStore((s) => s.assignMembership);
+  const activeMembershipPackages = useMemo(
+    () =>
+      [...membershipPackagesAll.filter((p) => p.isActive)].sort((a, b) => a.price - b.price),
+    [membershipPackagesAll]
+  );
   const user = useAuthStore((s) => s.user);
   const currentBranch = useAuthStore((s) => s.currentBranch);
   const branches = useBranchStore((s) => s.branches);
@@ -229,6 +268,8 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
   const [selectedMainIds, setSelectedMainIds] = useState<string[]>([]);
   const [selectedAddonIds, setSelectedAddonIds] = useState<string[]>([]);
   const [mechanicId, setMechanicId] = useState("");
+  /** Empty = use catalog average; otherwise custom % of job estimate for incentive on this card. */
+  const [mechanicIncentivePercentOverride, setMechanicIncentivePercentOverride] = useState("");
   const [couponCode, setCouponCode] = useState("");
   const [couponApplied, setCouponApplied] = useState(false);
   const [branchId, setBranchId] = useState("");
@@ -267,12 +308,16 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
   );
   const [selectedHighEndIds, setSelectedHighEndIds] = useState<string[]>([]);
   const [highEndFirstFollowUpById, setHighEndFirstFollowUpById] = useState<Record<string, number>>({});
-  /** When true, optional advance UI is hidden on the job card (customer/job-specific opt-out). */
-  const [waiveHighEndAdvance, setWaiveHighEndAdvance] = useState(false);
-  /** Manual % for suggested advance on job card (optional; empty = use Settings default on card). */
-  const [highEndAdvanceHintPercentInput, setHighEndAdvanceHintPercentInput] = useState("");
+  /** Planned completion time (minutes) per selected high-end program. */
+  const [highEndCompletionMinutesById, setHighEndCompletionMinutesById] = useState<
+    Record<string, number>
+  >({});
+  /** Optional advance amount (₹, incl. GST cap) saved on the job card when creating. */
+  const [advanceAmountInput, setAdvanceAmountInput] = useState("");
   const [referrerInfo, setReferrerInfo] = useState<{ id: string; name: string } | null>(null);
   const [referralError, setReferralError] = useState(false);
+  /** When set, membership is activated for the customer when the booking / job card is submitted. */
+  const [wizardMembershipPackageId, setWizardMembershipPackageId] = useState<string | null>(null);
 
   const [checkInOpen, setCheckInOpen] = useState(false);
   const [checkInJob, setCheckInJob] = useState<{
@@ -331,6 +376,58 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
       setReferralError(true);
     }
   }, [referralCode, isJobCard, findByReferralCode]);
+
+  const activeMembershipForCustomer = useMemo(() => {
+    if (!existingCustomerId) return undefined;
+    return getActiveMembership(existingCustomerId);
+  }, [existingCustomerId, getActiveMembership, membershipSubscriptions]);
+
+  useEffect(() => {
+    setWizardMembershipPackageId(null);
+  }, [existingCustomerId]);
+
+  useEffect(() => {
+    if (activeMembershipForCustomer) setWizardMembershipPackageId(null);
+  }, [activeMembershipForCustomer]);
+
+  useEffect(() => {
+    setHighEndCompletionMinutesById((prev) => {
+      const allowed = new Set(selectedHighEndIds);
+      const next = { ...prev };
+      let changed = false;
+      for (const k of Object.keys(next)) {
+        if (!allowed.has(k)) {
+          delete next[k];
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [selectedHighEndIds]);
+
+  const activeMembershipPackageRow = useMemo(
+    () =>
+      activeMembershipForCustomer
+        ? membershipPackagesAll.find((p) => p.id === activeMembershipForCustomer.packageId)
+        : undefined,
+    [activeMembershipForCustomer, membershipPackagesAll]
+  );
+
+  const summaryMembershipLabel = useMemo(() => {
+    if (activeMembershipForCustomer && activeMembershipPackageRow) {
+      return `${activeMembershipPackageRow.name} (active)`;
+    }
+    if (wizardMembershipPackageId) {
+      const pkg = membershipPackagesAll.find((p) => p.id === wizardMembershipPackageId);
+      return pkg ? `${pkg.name} (with this job)` : "—";
+    }
+    return "None";
+  }, [
+    activeMembershipForCustomer,
+    activeMembershipPackageRow,
+    wizardMembershipPackageId,
+    membershipPackagesAll,
+  ]);
 
   const brandModels = useMemo(
     () => (vehicleBrand ? getModels(vehicleBrand) : []),
@@ -727,19 +824,17 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
     return serviceCatalog.filter((s) => ids.has(s.id));
   }, [serviceCatalog, selectedMainIds, selectedAddonIds]);
 
-  const qualifiesHighEndAdvanceContext = useMemo(
-    () =>
-      selectedHighEndIds.length > 0 ||
-      selectedCatalogItems.some((s) => s.isHighEnd),
-    [selectedHighEndIds, selectedCatalogItems]
-  );
+  const catalogAvgIncentivePercent = useMemo(() => {
+    if (selectedCatalogItems.length === 0) return 0;
+    return (
+      selectedCatalogItems.reduce((sum, s) => sum + s.incentivePercent, 0) /
+      selectedCatalogItems.length
+    );
+  }, [selectedCatalogItems]);
 
   useEffect(() => {
-    if (!qualifiesHighEndAdvanceContext) {
-      setWaiveHighEndAdvance(false);
-      setHighEndAdvanceHintPercentInput("");
-    }
-  }, [qualifiesHighEndAdvanceContext]);
+    setMechanicIncentivePercentOverride("");
+  }, [mechanicId]);
 
   const catalogSubtotalExclGst = useMemo(() => {
     if (!vehicleSegment) return 0;
@@ -776,25 +871,20 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
   const gstAmount = Math.round(afterDiscount * GST_RATE * 100) / 100;
   const totalPayable = Math.round((afterDiscount + gstAmount) * 100) / 100;
 
-  const settingsDefaultAdvancePct = useSettingsStore((s) => s.highEndAdvanceSuggestedPercent) ?? 30;
+  /** Parsed advance for summary & cap (matches submit logic). */
+  const summaryAdvanceAmount = useMemo(() => {
+    const t = advanceAmountInput.trim();
+    if (t === "") return 0;
+    const n = Number.parseFloat(t.replace(/,/g, ""));
+    if (!Number.isFinite(n) || n <= 0) return 0;
+    const rounded = Math.round(n * 100) / 100;
+    return Math.min(rounded, totalPayable);
+  }, [advanceAmountInput, totalPayable]);
 
-  const summaryAdvanceHintPct = useMemo(() => {
-    const t = highEndAdvanceHintPercentInput.trim();
-    if (t === "") return settingsDefaultAdvancePct;
-    const n = Number.parseFloat(t.replace(",", "."));
-    if (!Number.isFinite(n)) return settingsDefaultAdvancePct;
-    return Math.min(100, Math.max(0, Math.round(n * 100) / 100));
-  }, [highEndAdvanceHintPercentInput, settingsDefaultAdvancePct]);
-
-  const summarySuggestedAdvanceInr = useMemo(() => {
-    if (!qualifiesHighEndAdvanceContext || waiveHighEndAdvance) return 0;
-    return Math.round((summaryAdvanceHintPct / 100) * totalPayable * 100) / 100;
-  }, [
-    qualifiesHighEndAdvanceContext,
-    waiveHighEndAdvance,
-    summaryAdvanceHintPct,
-    totalPayable,
-  ]);
+  const balanceAfterAdvance = useMemo(
+    () => Math.max(0, Math.round((totalPayable - summaryAdvanceAmount) * 100) / 100),
+    [totalPayable, summaryAdvanceAmount]
+  );
 
   const toggleMain = (id: string) => {
     setSelectedMainIds((prev) =>
@@ -937,6 +1027,21 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
       });
     }
 
+    if (wizardMembershipPackageId) {
+      const memRes = assignMembership({
+        customerId: custId,
+        packageId: wizardMembershipPackageId,
+        notes: `${isJobCard ? "New job card" : "Booking"} ${jobNumber}`,
+      });
+      if (!memRes.ok) {
+        toast.error("Could not activate membership", { description: memRes.error });
+        return;
+      }
+      const pkgName =
+        membershipPackagesAll.find((p) => p.id === wizardMembershipPackageId)?.name ?? "Membership";
+      toast.success("Membership activated", { description: pkgName });
+    }
+
     const seg = vehicleSegment as VehicleSegment;
     const serviceItems = selectedCatalogItems.map((s) => {
       const base = priceForService(s, seg);
@@ -957,11 +1062,14 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
 
     const estimatedAmount =
       serviceItems.reduce((s, x) => s + x.price, 0) + highEndSubtotalExclGst;
-    const avgIncentive =
-      selectedCatalogItems.length > 0
-        ? selectedCatalogItems.reduce((sum, s) => sum + s.incentivePercent, 0) /
-          selectedCatalogItems.length
-        : 0;
+    const customIncRaw = mechanicIncentivePercentOverride.trim();
+    let incentivePercentFinal = catalogAvgIncentivePercent;
+    if (customIncRaw !== "") {
+      const n = Number.parseFloat(customIncRaw.replace(",", "."));
+      if (Number.isFinite(n)) {
+        incentivePercentFinal = Math.min(100, Math.max(0, Math.round(n * 100) / 100));
+      }
+    }
 
     let resolvedVehicleId: string;
     if (matchedVehicle) {
@@ -1014,22 +1122,15 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
       ? new Date(bookingWhen).toISOString()
       : now;
 
-    const waiveAdvancePatch =
-      qualifiesHighEndAdvanceContext && waiveHighEndAdvance
-        ? ({ waiveHighEndAdvance: true } as const)
-        : {};
-
-    const parsedAdvanceHint = (() => {
-      const t = highEndAdvanceHintPercentInput.trim();
-      if (t === "") return undefined;
-      const n = Number.parseFloat(t.replace(",", "."));
-      if (!Number.isFinite(n)) return undefined;
-      return Math.min(100, Math.max(0, Math.round(n * 100) / 100));
+    const advanceAmountPatch = (() => {
+      const t = advanceAmountInput.trim();
+      if (t === "") return {};
+      const n = Number.parseFloat(t.replace(/,/g, ""));
+      if (!Number.isFinite(n) || n <= 0) return {};
+      const rounded = Math.round(n * 100) / 100;
+      const capped = Math.min(rounded, totalPayable);
+      return { highEndAdvanceAmountInr: capped } as const;
     })();
-    const advanceHintPatch =
-      qualifiesHighEndAdvanceContext && parsedAdvanceHint != null
-        ? ({ highEndAdvanceHintPercent: parsedAdvanceHint } as const)
-        : {};
 
     if (isWalkIn) {
       addJobCard({
@@ -1050,13 +1151,12 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
         expectedDelivery: expectedDeliveryIso,
         services: serviceItems,
         estimatedAmount,
-        incentivePercent: Math.round(avgIncentive),
-        incentiveAmount: Math.round((estimatedAmount * avgIncentive) / 100),
+        incentivePercent: Math.round(incentivePercentFinal * 100) / 100,
+        incentiveAmount: Math.round((estimatedAmount * incentivePercentFinal) / 100 * 100) / 100,
         termsAndConditions:
           "Walk-in: vehicle stored securely. Prices subject to inspection. GST as applicable.",
         notes: bookingNote,
-        ...waiveAdvancePatch,
-        ...advanceHintPatch,
+        ...advanceAmountPatch,
         createdBy: user?.id ?? "USR-WALKIN",
         createdAt: now,
         updatedAt: now,
@@ -1075,14 +1175,7 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
       return;
     }
 
-    const termsWithHighEndNote = (() => {
-      const base = termsAndConditions.trim();
-      if (!qualifiesHighEndAdvanceContext) return base;
-      if (waiveHighEndAdvance) {
-        return `${base}\n\nOptional advance: turned off for this job when the card was created (no advance collection on the job card).`;
-      }
-      return `${base}\n\nOptional: a partial advance may be collected toward this job when high-end services are included (catalog and/or premium programs); record the amount on the job card when agreed.`;
-    })();
+    const termsWithAdvanceNote = `${termsAndConditions.trim()}\n\nOptional: a partial advance may be collected toward this job; record the amount on the job card when agreed.`;
 
     addJobCard({
       id,
@@ -1103,9 +1196,9 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
       expectedDelivery: expectedDeliveryIso,
       services: serviceItems,
       estimatedAmount,
-      incentivePercent: Math.round(avgIncentive),
-      incentiveAmount: Math.round((estimatedAmount * avgIncentive) / 100),
-      termsAndConditions: termsWithHighEndNote,
+      incentivePercent: Math.round(incentivePercentFinal * 100) / 100,
+      incentiveAmount: Math.round((estimatedAmount * incentivePercentFinal) / 100 * 100) / 100,
+      termsAndConditions: termsWithAdvanceNote,
       notes: bookingNote,
       highEndServiceIds: selectedHighEndIds.length > 0 ? selectedHighEndIds : undefined,
       highEndFirstFollowUpMonthsByServiceId:
@@ -1119,8 +1212,18 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
               })
             )
           : undefined,
-      ...waiveAdvancePatch,
-      ...advanceHintPatch,
+      highEndCompletionMinutesByServiceId:
+        selectedHighEndIds.length > 0
+          ? (() => {
+              const o: Record<string, number> = {};
+              for (const hesId of selectedHighEndIds) {
+                const m = highEndCompletionMinutesById[hesId];
+                if (m != null && Number.isFinite(m) && m > 0) o[hesId] = Math.round(m);
+              }
+              return Object.keys(o).length > 0 ? o : undefined;
+            })()
+          : undefined,
+      ...advanceAmountPatch,
       createdBy: user?.id ?? "USR-001",
       createdAt: now,
       updatedAt: now,
@@ -1364,6 +1467,10 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
             <dd className="font-mono text-xs">{vehicleNumber || "Not selected"}</dd>
           </div>
           <div className="flex justify-between gap-2 align-start">
+            <dt className="text-muted-foreground shrink-0">Membership</dt>
+            <dd className="text-right text-xs leading-snug max-w-[58%]">{summaryMembershipLabel}</dd>
+          </div>
+          <div className="flex justify-between gap-2 align-start">
             <dt className="text-muted-foreground shrink-0">Service(s)</dt>
             <dd className="text-right text-xs">
               {mainLabels.length ? mainLabels.join(", ") : "Not selected"}
@@ -1426,6 +1533,30 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
           </p>
         )}
         <Separator />
+        <div className="flex items-center gap-2">
+          <Banknote className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+          <span className="font-medium text-sm">Advance (₹)</span>
+        </div>
+        <div className="flex gap-2">
+          <Input
+            id="advance-amount-summary"
+            type="number"
+            min={0}
+            step={1}
+            inputMode="decimal"
+            placeholder="Optional amount"
+            className="text-xs tabular-nums"
+            value={advanceAmountInput}
+            onChange={(e) => setAdvanceAmountInput(e.target.value)}
+          />
+        </div>
+        {!compactJobCardDesktop && (
+          <p className="text-[10px] text-muted-foreground">
+            In rupees (incl. GST), capped at gross total below ({formatCurrency(totalPayable)}). Deducted in the summary
+            total. Saved on the job card for billing. Leave empty if none.
+          </p>
+        )}
+        <Separator />
         <div className="space-y-1 text-sm">
           <div className="flex justify-between">
             <span className="text-muted-foreground">Subtotal (excl. GST)</span>
@@ -1435,87 +1566,29 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
             <span>GST (18%)</span>
             <span className="tabular-nums">+{formatCurrency(gstAmount)}</span>
           </div>
+          {summaryAdvanceAmount > 0 ? (
+            <>
+              <div className="flex justify-between text-muted-foreground text-xs pt-0.5">
+                <span>Total (incl. GST)</span>
+                <span className="tabular-nums">{formatCurrency(totalPayable)}</span>
+              </div>
+              <div className="flex justify-between text-emerald-700 dark:text-emerald-400">
+                <span>Advance</span>
+                <span className="tabular-nums">−{formatCurrency(summaryAdvanceAmount)}</span>
+              </div>
+            </>
+          ) : null}
           <div
             className={cn(
               "flex justify-between font-bold text-primary pt-0.5",
-              compactJobCardDesktop ? "text-sm" : "text-base pt-1"
+              compactJobCardDesktop ? "text-sm" : "text-base pt-1",
+              summaryAdvanceAmount > 0 && "border-t border-border/60 mt-1 pt-1.5"
             )}
           >
-            <span>Total payable</span>
-            <span className="tabular-nums">{formatCurrency(totalPayable)}</span>
+            <span>{summaryAdvanceAmount > 0 ? "Balance due" : "Total payable"}</span>
+            <span className="tabular-nums">{formatCurrency(balanceAfterAdvance)}</span>
           </div>
-          {isJobCard && qualifiesHighEndAdvanceContext && !waiveHighEndAdvance && (
-            <div className="rounded-md border border-amber-200/70 bg-amber-50/60 dark:border-amber-900/40 dark:bg-amber-950/25 px-2.5 py-2 space-y-1.5 mt-2">
-              <div className="flex justify-between gap-2 text-xs">
-                <span className="text-amber-900 dark:text-amber-200/90">Advance hint (for invoice)</span>
-                <span className="tabular-nums font-medium text-amber-950 dark:text-amber-100">
-                  {summaryAdvanceHintPct}%
-                  {highEndAdvanceHintPercentInput.trim() === "" ? (
-                    <span className="font-normal text-muted-foreground"> (Settings default)</span>
-                  ) : null}
-                </span>
-              </div>
-              <div className="flex justify-between gap-2 text-xs">
-                <span className="text-muted-foreground">Suggested advance (~{summaryAdvanceHintPct}% of total)</span>
-                <span className="tabular-nums font-semibold text-amber-900 dark:text-amber-100">
-                  {formatCurrency(summarySuggestedAdvanceInr)}
-                </span>
-              </div>
-              <p className="text-[10px] text-muted-foreground leading-snug border-t border-amber-200/50 dark:border-amber-900/40 pt-1.5">
-                Same basis as the tax invoice advance line. Total payable stays the full job; this is what you may
-                collect up front.
-              </p>
-            </div>
-          )}
         </div>
-        <Separator />
-        {isJobCard && qualifiesHighEndAdvanceContext && (
-          <>
-            <div className="flex items-start justify-between gap-3 rounded-lg border border-amber-200/80 bg-amber-50/50 p-3 dark:border-amber-900/50 dark:bg-amber-950/20">
-              <div className="min-w-0 space-y-0.5">
-                <Label htmlFor="waive-advance" className="text-sm font-medium leading-snug">
-                  Show optional advance on job card
-                </Label>
-                <p className="text-[11px] text-muted-foreground leading-relaxed">
-                  Turn <span className="font-medium">off</span> if you will not take an advance from this customer.
-                  The advance section stays hidden; billing at delivery is unchanged.
-                </p>
-              </div>
-              <Switch
-                id="waive-advance"
-                checked={!waiveHighEndAdvance}
-                onCheckedChange={(on) => setWaiveHighEndAdvance(!on)}
-                className="shrink-0 mt-0.5"
-              />
-            </div>
-            <p className="text-[10px] text-muted-foreground">
-              When left on, recording an advance on the job remains optional — this only controls visibility for this job.
-            </p>
-            {qualifiesHighEndAdvanceContext && selectedHighEndIds.length === 0 && !waiveHighEndAdvance && (
-              <div className="space-y-1.5 rounded-lg border border-border/80 bg-background/80 p-3">
-                <Label htmlFor="advance-hint-summary" className="text-xs font-medium">
-                  Advance hint (% of job estimate)
-                </Label>
-                <Input
-                  id="advance-hint-summary"
-                  type="number"
-                  min={0}
-                  max={100}
-                  step={0.5}
-                  inputMode="decimal"
-                  placeholder="e.g. 25 — empty uses Settings default"
-                  className="h-9 text-sm"
-                  value={highEndAdvanceHintPercentInput}
-                  onChange={(e) => setHighEndAdvanceHintPercentInput(e.target.value)}
-                />
-                <p className="text-[10px] text-muted-foreground leading-snug">
-                  Optional. Same as above: job card hint + auto advance line on the tax invoice (% × grand total) when
-                  generated. Leave empty to use Settings default on the card only.
-                </p>
-              </div>
-            )}
-          </>
-        )}
         <Separator />
         <div id={branchBlockId} className="space-y-2 scroll-mt-24">
           <Label className="flex items-center gap-2">
@@ -1585,7 +1658,7 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
               "flex flex-col overflow-x-hidden px-3 py-2 sm:px-6 sm:py-3",
             isJobCard &&
               isDesktopWide &&
-              "min-h-0 flex-1 gap-2 overflow-hidden py-2 sm:px-4 max-lg:overflow-y-auto max-lg:overflow-x-hidden",
+              "min-h-0 flex-1 gap-2 overflow-hidden py-2 sm:px-4 max-lg:overflow-y-auto max-lg:overflow-x-hidden lg:min-w-0",
             isJobCard && !isDesktopWide && "min-h-0 flex-1 overflow-y-auto overflow-x-hidden"
           )}
         >
@@ -1665,7 +1738,7 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
               "space-y-6",
               isJobCard &&
                 isDesktopWide &&
-                "lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:space-y-0 lg:gap-3 lg:overflow-y-auto lg:overflow-x-hidden lg:pr-0.5 [-ms-overflow-style:none] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5",
+                "lg:flex lg:min-h-0 lg:flex-1 lg:basis-0 lg:flex-col lg:space-y-0 lg:gap-3 lg:overflow-y-auto lg:overflow-x-auto lg:overscroll-y-contain lg:pr-0.5 [-ms-overflow-style:none] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5",
               isJobCard && "max-lg:shrink-0 max-lg:overflow-visible"
             )}
           >
@@ -2456,15 +2529,82 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
           )}
 
           {showJobWizardStep("membership") && (
-          <Card className="overflow-hidden border-violet-200/60 dark:border-violet-900/40">
-            <div className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-3">
+          <Card className="min-w-0 border-violet-200/60 dark:border-violet-900/40">
+            <div className="flex items-center gap-2 rounded-t-xl bg-primary px-4 py-3 text-primary-foreground">
               <Ticket className="w-4 h-4 shrink-0 opacity-90" />
               <p className="text-sm font-bold tracking-wide">MEMBERSHIP STATUS</p>
             </div>
-            <CardContent className="py-6">
-              <p className="text-sm text-muted-foreground text-center">
-                No active membership found for this customer
-              </p>
+            <CardContent className="min-w-0 py-6 space-y-4">
+              {activeMembershipForCustomer && activeMembershipPackageRow ? (
+                <div className="rounded-xl border border-violet-200/80 bg-violet-50/50 px-4 py-3 dark:border-violet-900/50 dark:bg-violet-950/30">
+                  <div className="flex items-start gap-2">
+                    <Crown className="w-5 h-5 shrink-0 text-violet-600 dark:text-violet-400 mt-0.5" />
+                    <div className="min-w-0 space-y-1">
+                      <p className="font-semibold text-foreground">{activeMembershipPackageRow.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {membershipTierLabel(activeMembershipPackageRow.tier)} · valid until{" "}
+                        {new Date(activeMembershipForCustomer.endDate).toLocaleDateString(undefined, {
+                          day: "numeric",
+                          month: "short",
+                          year: "numeric",
+                        })}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : activeMembershipPackages.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center">
+                  No active packages in the catalog.{" "}
+                  <Link href="/membership" className="text-primary font-medium hover:underline">
+                    Add packages in Membership
+                  </Link>
+                </p>
+              ) : (
+                <>
+                  <p className="text-sm text-muted-foreground">
+                    Optional: activate a plan when the job is created, or leave none and handle it later in{" "}
+                    <Link href="/membership" className="text-primary font-medium hover:underline">
+                      Membership
+                    </Link>
+                    . Tap a selected plan again to clear.
+                  </p>
+                  <div className="grid min-w-0 w-full grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                    {activeMembershipPackages.map((pkg) => {
+                      const selected = wizardMembershipPackageId === pkg.id;
+                      const durationDays = MEMBERSHIP_TIER_DAYS[pkg.tier];
+                      return (
+                        <button
+                          key={pkg.id}
+                          type="button"
+                          onClick={() => setWizardMembershipPackageId(selected ? null : pkg.id)}
+                          className={cn(
+                            "flex min-h-[148px] min-w-0 flex-col rounded-2xl border-2 bg-card p-4 text-left shadow-sm transition-all",
+                            selected
+                              ? "border-primary bg-primary/5 ring-2 ring-primary/25 shadow-md"
+                              : "border-border hover:border-primary/40 hover:shadow-md"
+                          )}
+                        >
+                          <p className="text-sm font-semibold leading-snug line-clamp-3">{pkg.name}</p>
+                          <p className="mt-2 text-[11px] text-muted-foreground leading-snug">
+                            <span className="font-medium text-foreground/80">
+                              {membershipTierLabel(pkg.tier)}
+                            </span>
+                            <span className="text-muted-foreground/80"> · {durationDays} days</span>
+                          </p>
+                          <div className="mt-auto flex items-end justify-between gap-2 border-t border-border/60 pt-3">
+                            <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                              Plan price
+                            </span>
+                            <span className="text-base font-bold tabular-nums text-primary">
+                              {formatCurrency(pkg.price)}
+                            </span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
             </CardContent>
           </Card>
           )}
@@ -2782,89 +2922,201 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
                             </p>
                           </div>
                         </button>
-                        {isSelected && hes.reminderIntervals.length > 0 && (
-                          <div className="px-3 pb-3 pt-0 space-y-1.5 border-t border-amber-200/60 dark:border-amber-900/40">
-                            <Label htmlFor={`hes-next-${hes.id}`} className="text-xs text-muted-foreground">
-                              Next follow-up
-                            </Label>
-                            {(() => {
-                              const monthsVal =
-                                highEndFirstFollowUpById[hes.id] ?? hes.reminderIntervals[0];
-                              const followSelectValue = hes.reminderIntervals.includes(monthsVal)
-                                ? String(monthsVal)
-                                : "__custom__";
-                              return (
-                                <>
-                                  <Select
-                                    value={followSelectValue}
-                                    onValueChange={(v) => {
-                                      if (v === "__custom__") {
-                                        const next =
-                                          hes.reminderIntervals.includes(monthsVal)
-                                            ? defaultManualFirstFollowUpMonths(hes.reminderIntervals)
-                                            : monthsVal;
-                                        setHighEndFirstFollowUpById((prev) => ({
-                                          ...prev,
-                                          [hes.id]: next,
-                                        }));
-                                      } else {
-                                        const months = Number.parseInt(v, 10);
-                                        setHighEndFirstFollowUpById((prev) => ({
-                                          ...prev,
-                                          [hes.id]: months,
-                                        }));
-                                      }
-                                    }}
-                                  >
-                                    <SelectTrigger
-                                      id={`hes-next-${hes.id}`}
-                                      className="h-9 text-xs bg-background"
-                                    >
-                                      <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {hes.reminderIntervals.map((m) => (
-                                        <SelectItem key={m} value={String(m)}>
-                                          {formatHighEndIntervalMonths(m)} ({m} mo)
-                                        </SelectItem>
-                                      ))}
-                                      <SelectItem value="__custom__">Custom (enter months)</SelectItem>
-                                    </SelectContent>
-                                  </Select>
-                                  {followSelectValue === "__custom__" && (
-                                    <div className="space-y-1">
-                                      <Label
-                                        htmlFor={`hes-next-custom-${hes.id}`}
-                                        className="text-[10px] text-muted-foreground"
-                                      >
-                                        Months until first reminder
-                                      </Label>
-                                      <Input
-                                        id={`hes-next-custom-${hes.id}`}
-                                        type="number"
-                                        min={1}
-                                        max={120}
-                                        className="h-9 text-xs"
-                                        value={monthsVal === 0 ? "" : String(monthsVal)}
-                                        onChange={(e) => {
-                                          const raw = e.target.value;
-                                          if (raw === "") return;
-                                          const n = Math.min(
-                                            120,
-                                            Math.max(1, Number.parseInt(raw, 10) || 0)
-                                          );
-                                          if (n < 1) return;
-                                          setHighEndFirstFollowUpById((prev) => ({
-                                            ...prev,
-                                            [hes.id]: n,
-                                          }));
+                        {isSelected && (
+                          <div className="px-3 pb-3 pt-0 space-y-3 border-t border-amber-200/60 dark:border-amber-900/40">
+                            {hes.reminderIntervals.length > 0 && (
+                              <div className="space-y-1.5">
+                                <Label htmlFor={`hes-next-${hes.id}`} className="text-xs text-muted-foreground">
+                                  Next follow-up
+                                </Label>
+                                {(() => {
+                                  const monthsVal =
+                                    highEndFirstFollowUpById[hes.id] ?? hes.reminderIntervals[0];
+                                  const followSelectValue = hes.reminderIntervals.includes(monthsVal)
+                                    ? String(monthsVal)
+                                    : "__custom__";
+                                  return (
+                                    <>
+                                      <Select
+                                        value={followSelectValue}
+                                        onValueChange={(v) => {
+                                          if (v === "__custom__") {
+                                            const next =
+                                              hes.reminderIntervals.includes(monthsVal)
+                                                ? defaultManualFirstFollowUpMonths(hes.reminderIntervals)
+                                                : monthsVal;
+                                            setHighEndFirstFollowUpById((prev) => ({
+                                              ...prev,
+                                              [hes.id]: next,
+                                            }));
+                                          } else {
+                                            const months = Number.parseInt(v, 10);
+                                            setHighEndFirstFollowUpById((prev) => ({
+                                              ...prev,
+                                              [hes.id]: months,
+                                            }));
+                                          }
                                         }}
-                                      />
-                                    </div>
-                                  )}
-                                </>
-                              );
-                            })()}
+                                      >
+                                        <SelectTrigger
+                                          id={`hes-next-${hes.id}`}
+                                          className="h-9 text-xs bg-background"
+                                        >
+                                          <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {hes.reminderIntervals.map((m) => (
+                                            <SelectItem key={m} value={String(m)}>
+                                              {formatHighEndIntervalMonths(m)} ({m} mo)
+                                            </SelectItem>
+                                          ))}
+                                          <SelectItem value="__custom__">Custom (enter months)</SelectItem>
+                                        </SelectContent>
+                                      </Select>
+                                      {followSelectValue === "__custom__" && (
+                                        <div className="space-y-1">
+                                          <Label
+                                            htmlFor={`hes-next-custom-${hes.id}`}
+                                            className="text-[10px] text-muted-foreground"
+                                          >
+                                            Months until first reminder
+                                          </Label>
+                                          <Input
+                                            id={`hes-next-custom-${hes.id}`}
+                                            type="number"
+                                            min={1}
+                                            max={120}
+                                            className="h-9 text-xs"
+                                            value={monthsVal === 0 ? "" : String(monthsVal)}
+                                            onChange={(e) => {
+                                              const raw = e.target.value;
+                                              if (raw === "") return;
+                                              const n = Math.min(
+                                                120,
+                                                Math.max(1, Number.parseInt(raw, 10) || 0)
+                                              );
+                                              if (n < 1) return;
+                                              setHighEndFirstFollowUpById((prev) => ({
+                                                ...prev,
+                                                [hes.id]: n,
+                                              }));
+                                            }}
+                                          />
+                                        </div>
+                                      )}
+                                    </>
+                                  );
+                                })()}
+                              </div>
+                            )}
+                            <div className="space-y-1.5">
+                              <Label
+                                htmlFor={`hes-compl-${hes.id}`}
+                                className="text-xs text-muted-foreground flex items-center gap-1"
+                              >
+                                <Clock className="w-3 h-3 shrink-0" />
+                                Time to complete (planned)
+                              </Label>
+                              {(() => {
+                                const mins = highEndCompletionMinutesById[hes.id];
+                                const completionSelectValue =
+                                  mins != null && mins > 0
+                                    ? highEndCompletionSelectValue(mins)
+                                    : "__unset__";
+                                return (
+                                  <>
+                                    <Select
+                                      value={completionSelectValue}
+                                      onValueChange={(v) => {
+                                        if (v === "__unset__") {
+                                          setHighEndCompletionMinutesById((p) => {
+                                            const { [hes.id]: _, ...rest } = p;
+                                            return rest;
+                                          });
+                                          return;
+                                        }
+                                        if (v === "__custom__") {
+                                          const cur = highEndCompletionMinutesById[hes.id];
+                                          const nonPreset =
+                                            cur != null &&
+                                            cur > 0 &&
+                                            !HIGH_END_COMPLETION_PRESETS.some(
+                                              (x) => x.minutes === Math.round(cur)
+                                            );
+                                          setHighEndCompletionMinutesById((p) => ({
+                                            ...p,
+                                            [hes.id]: nonPreset ? Math.round(cur!) : 480,
+                                          }));
+                                          return;
+                                        }
+                                        const minutes = Number.parseInt(v, 10);
+                                        setHighEndCompletionMinutesById((p) => ({
+                                          ...p,
+                                          [hes.id]: minutes,
+                                        }));
+                                      }}
+                                    >
+                                      <SelectTrigger
+                                        id={`hes-compl-${hes.id}`}
+                                        className="h-9 text-xs bg-background"
+                                      >
+                                        <SelectValue placeholder="Not set" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="__unset__">Not set</SelectItem>
+                                        {HIGH_END_COMPLETION_PRESETS.map((p) => (
+                                          <SelectItem key={p.minutes} value={String(p.minutes)}>
+                                            {p.label}
+                                          </SelectItem>
+                                        ))}
+                                        <SelectItem value="__custom__">Custom hours…</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                    {completionSelectValue === "__custom__" && (
+                                      <div className="space-y-1">
+                                        <Label
+                                          htmlFor={`hes-compl-hr-${hes.id}`}
+                                          className="text-[10px] text-muted-foreground"
+                                        >
+                                          Hours (custom)
+                                        </Label>
+                                        <Input
+                                          id={`hes-compl-hr-${hes.id}`}
+                                          type="number"
+                                          min={0.5}
+                                          max={720}
+                                          step={0.5}
+                                          inputMode="decimal"
+                                          className="h-9 text-xs"
+                                          value={
+                                            mins != null && mins > 0
+                                              ? String(Math.round((mins / 60) * 100) / 100)
+                                              : ""
+                                          }
+                                          onChange={(e) => {
+                                            const raw = e.target.value;
+                                            if (raw === "") {
+                                              setHighEndCompletionMinutesById((p) => {
+                                                const { [hes.id]: _, ...rest } = p;
+                                                return rest;
+                                              });
+                                              return;
+                                            }
+                                            const h = Number.parseFloat(raw.replace(",", "."));
+                                            if (!Number.isFinite(h) || h <= 0) return;
+                                            const capMin = Math.min(43200, Math.round(h * 60));
+                                            setHighEndCompletionMinutesById((p) => ({
+                                              ...p,
+                                              [hes.id]: capMin,
+                                            }));
+                                          }}
+                                        />
+                                      </div>
+                                    )}
+                                  </>
+                                );
+                              })()}
+                            </div>
                           </div>
                         )}
                       </div>
@@ -2877,30 +3129,6 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
                     {selectedHighEndIds.length} high-end service{selectedHighEndIds.length !== 1 ? "s" : ""}{" "}
                     selected — reminders are created when the job is delivered.
                   </p>
-                )}
-                {selectedHighEndIds.length > 0 && (
-                  <div className="mt-4 space-y-2 rounded-lg border border-amber-200/90 bg-amber-50/50 p-4 dark:border-amber-900/50 dark:bg-amber-950/25">
-                    <Label htmlFor="advance-hint-hes" className="text-sm font-medium">
-                      Advance payment hint (% of job estimate)
-                    </Label>
-                    <p className="text-[11px] text-muted-foreground leading-relaxed">
-                      Enter any percentage (0–100). Shown on the job card as a hint, and when you generate the tax
-                      invoice it becomes an <span className="font-medium text-foreground">Advance paid</span> line (% ×
-                      invoice grand total) unless you save a different amount on the job card first.
-                    </p>
-                    <Input
-                      id="advance-hint-hes"
-                      type="number"
-                      min={0}
-                      max={100}
-                      step={0.5}
-                      inputMode="decimal"
-                      placeholder="e.g. 30, 40, 12.5"
-                      className="h-10 max-w-[220px]"
-                      value={highEndAdvanceHintPercentInput}
-                      onChange={(e) => setHighEndAdvanceHintPercentInput(e.target.value)}
-                    />
-                  </div>
                 )}
               </CardContent>
             </Card>
@@ -3017,32 +3245,121 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
           )}
 
           {showJobWizardStep("mechanic") && (
-          <Card>
-            <CardHeader>
+          <Card className="min-w-0 border-border/90">
+            <CardHeader className="pb-3 shrink-0">
               <CardTitle className="text-lg">Assign mechanic (optional)</CardTitle>
+              <p className="text-sm text-muted-foreground font-normal">
+                Tap a mechanic to assign. Custom incentive % is optional — empty uses the catalog average from selected
+                services ({catalogAvgIncentivePercent.toFixed(1)}%). Leave unassigned if you prefer to set this on the
+                job card later.
+                {mechanics.length > 4 ? (
+                  <span className="mt-1 block text-xs">Scroll the list below if there are many mechanics.</span>
+                ) : null}
+              </p>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <Select value={mechanicId} onValueChange={setMechanicId}>
-                <SelectTrigger className="max-w-md">
-                  <SelectValue placeholder="Floor manager / mechanic" />
-                </SelectTrigger>
-                <SelectContent>
-                  {mechanics.map((m) => (
-                    <SelectItem key={m.id} value={m.id}>
-                      {m.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <CardContent className="space-y-4 min-w-0">
+              {mechanics.length === 0 ? (
+                <p className="text-sm text-muted-foreground rounded-xl border border-dashed border-border/80 bg-muted/30 px-4 py-6 text-center">
+                  No mechanics in staff. Add staff with role Mechanic in Settings.
+                </p>
+              ) : (
+                <div
+                  className={cn(
+                    "min-h-0 max-h-[min(72vh,780px)] space-y-3 overflow-y-auto overflow-x-hidden overscroll-y-contain touch-pan-y rounded-lg border border-border/40 bg-muted/10 py-2 pl-1 pr-2 [-webkit-overflow-scrolling:touch] [scrollbar-width:thin] [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border",
+                    compactJobCardDesktop && "max-h-[min(65vh,640px)]"
+                  )}
+                >
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 min-w-0">
+                    {mechanics.map((m) => {
+                      const selected = mechanicId === m.id;
+                      return (
+                        <div
+                          key={m.id}
+                          className={cn(
+                            "rounded-2xl border-2 bg-card p-4 shadow-sm transition-all min-w-0",
+                            selected
+                              ? "border-primary ring-2 ring-primary/20"
+                              : "border-border hover:border-primary/35"
+                          )}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => setMechanicId(m.id)}
+                            className="flex w-full items-start gap-3 text-left"
+                          >
+                            <div
+                              className={cn(
+                                "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl",
+                                selected ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"
+                              )}
+                            >
+                              <Wrench className="h-5 w-5" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="font-semibold leading-snug">{m.name}</p>
+                              <p className="text-[11px] text-muted-foreground mt-0.5">Mechanic</p>
+                            </div>
+                            {selected ? (
+                              <Check className="h-5 w-5 shrink-0 text-primary" aria-hidden />
+                            ) : null}
+                          </button>
+                          {selected ? (
+                            <div className="mt-4 space-y-2 border-t border-border/70 pt-4">
+                              <Label
+                                htmlFor={`mechanic-incentive-${m.id}`}
+                                className="flex items-center gap-1.5 text-xs font-medium"
+                              >
+                                <Percent className="h-3.5 w-3.5" />
+                                Custom incentive (% of estimate)
+                              </Label>
+                              <Input
+                                id={`mechanic-incentive-${m.id}`}
+                                type="number"
+                                min={0}
+                                max={100}
+                                step={0.5}
+                                inputMode="decimal"
+                                placeholder={catalogAvgIncentivePercent.toFixed(1)}
+                                className="h-9 text-sm"
+                                value={mechanicIncentivePercentOverride}
+                                onChange={(e) => setMechanicIncentivePercentOverride(e.target.value)}
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                              <p className="text-[10px] text-muted-foreground leading-snug">
+                                Empty = use catalog average ({catalogAvgIncentivePercent.toFixed(1)}% from selected
+                                services).
+                              </p>
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {mechanicId ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="text-muted-foreground"
+                      onClick={() => setMechanicId("")}
+                    >
+                      Clear mechanic selection
+                    </Button>
+                  ) : null}
+                </div>
+              )}
               {isJobCard && (
-                <div className="space-y-2 max-w-md">
-                  <Label htmlFor="odometerReading">Odometer reading (optional)</Label>
+                <div className="rounded-2xl border border-border/80 bg-muted/20 p-4 space-y-2">
+                  <Label htmlFor="odometerReading" className="text-sm font-medium">
+                    Odometer reading (optional)
+                  </Label>
                   <Input
                     id="odometerReading"
                     type="number"
                     placeholder="e.g. 25000"
                     value={odometerReading}
                     onChange={(e) => setOdometerReading(e.target.value)}
+                    className="max-w-md"
                   />
                 </div>
               )}
@@ -3182,10 +3499,10 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
               <div className="flex items-center justify-between gap-2">
                 <div className="min-w-0">
                   <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                    Total
+                    {summaryAdvanceAmount > 0 ? "Balance due" : "Total"}
                   </p>
                   <p className="text-base font-bold text-primary tabular-nums leading-tight sm:text-lg">
-                    {formatCurrency(totalPayable)}
+                    {formatCurrency(balanceAfterAdvance)}
                   </p>
                 </div>
                 <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
@@ -3232,9 +3549,11 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
           ) : (
             <div className="mx-auto flex max-w-lg items-center justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-[10px] text-muted-foreground uppercase">Total</p>
+                <p className="text-[10px] text-muted-foreground uppercase">
+                  {summaryAdvanceAmount > 0 ? "Balance due" : "Total"}
+                </p>
                 <p className="text-lg font-bold text-primary tabular-nums leading-tight">
-                  {formatCurrency(totalPayable)}
+                  {formatCurrency(balanceAfterAdvance)}
                 </p>
               </div>
               <div className="flex shrink-0 gap-2">
@@ -3301,7 +3620,7 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
                 Tap Next to move through each section — one screen at a time on mobile.
               </DialogDescription>
             </DialogHeader>
-            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden overscroll-y-contain [-webkit-overflow-scrolling:touch] md:overflow-hidden">
+            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden overscroll-y-contain [-webkit-overflow-scrolling:touch]">
               {bookingForm}
             </div>
           </DialogContent>

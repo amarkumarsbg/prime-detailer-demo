@@ -48,6 +48,11 @@ function generateReferralCode(): string {
   return `REF-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
 }
 
+/** Normalize plate / search for fuzzy match (ignore spaces, dashes, case). */
+function normalizeVehicleToken(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
 export default function CustomersPage() {
   const router = useRouter();
   const { customers, addCustomer: addCustomerToStore } = useCustomerStore();
@@ -62,7 +67,11 @@ export default function CustomersPage() {
         ? customers.filter(isInactiveCustomer)
         : customers;
     return source.map((c) => {
-      const vehiclesCount = vehicles.filter((v) => v.customerId === c.id).length;
+      const customerVehicles = vehicles.filter((v) => v.customerId === c.id);
+      const vehiclesCount = customerVehicles.length;
+      const vehicleRegNormalizedList = customerVehicles.map((v) =>
+        normalizeVehicleToken(v.registrationNumber)
+      );
       return {
         id: c.id,
         name: c.name,
@@ -75,6 +84,8 @@ export default function CustomersPage() {
         lastVisitDate: c.lastVisitDate,
         isInactive: c.isInactive,
         memberSince: c.createdAt,
+        /** Hidden field for search (comma-separated normalized regs). */
+        _vehicleRegSearch: vehicleRegNormalizedList.join(","),
       };
     }) as Record<string, unknown>[];
   }, [customers, vehicles, activeFilter]);
@@ -285,8 +296,19 @@ export default function CustomersPage() {
       <DataTable
         data={tableData}
         columns={columns}
-        searchPlaceholder="Search by name, phone, or email..."
+        searchPlaceholder="Search by name, phone, email, or vehicle number..."
         searchKeys={["name", "phone", "email"]}
+        searchMatch={(item, q) => {
+          const name = String(item.name ?? "").toLowerCase();
+          const phone = String(item.phone ?? "").toLowerCase();
+          const email = String(item.email ?? "").toLowerCase();
+          if (name.includes(q) || phone.includes(q) || email.includes(q)) return true;
+          const qReg = normalizeVehicleToken(q);
+          if (qReg.length < 2) return false;
+          const blob = String(item._vehicleRegSearch ?? "");
+          if (!blob) return false;
+          return blob.split(",").some((reg) => reg.includes(qReg));
+        }}
         onRowClick={handleRowClick}
       />
     </div>

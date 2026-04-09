@@ -128,9 +128,6 @@ export default function SettingsPage() {
   const [incentiveCapPerJob, setIncentiveCapPerJob] = useState("5000");
   const [referralRewardAmount, setReferralRewardAmountLocal] = useState(String(settings.referralRewardAmount));
   const [newCustomerDiscount, setNewCustomerDiscountLocal] = useState(String(settings.newCustomerDiscount));
-  const [highEndAdvanceSuggestedPct, setHighEndAdvanceSuggestedPctLocal] = useState(
-    String(settings.highEndAdvanceSuggestedPercent ?? 30)
-  );
 
   const [reminderGeneralService, setReminderGeneralService] = useState("monthly");
   const [reminderOilChange, setReminderOilChange] = useState("3months");
@@ -758,31 +755,6 @@ export default function SettingsPage() {
               </p>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div className="flex flex-col sm:flex-row sm:items-end gap-3 p-4 rounded-lg border bg-muted/20 max-w-xl">
-                <div className="space-y-1.5 flex-1 min-w-0">
-                  <Label className="flex items-center gap-1.5">
-                    <Percent className="w-3.5 h-3.5" />
-                    Suggested advance (% of job estimate)
-                  </Label>
-                  <p className="text-xs text-muted-foreground">
-                    Shown as a hint on the job card when high-end programs are on the job. Staff enters the actual
-                    advance; this is not auto-applied.
-                  </p>
-                </div>
-                <Input
-                  type="number"
-                  min={0}
-                  max={100}
-                  className="w-24 h-9 shrink-0"
-                  value={highEndAdvanceSuggestedPct}
-                  onChange={(e) => {
-                    setHighEndAdvanceSuggestedPctLocal(e.target.value);
-                    const num = Number(e.target.value);
-                    if (!isNaN(num) && num >= 0) settings.setHighEndAdvanceSuggestedPercent(num);
-                  }}
-                />
-              </div>
-
               {/* Existing high-end services */}
               <div className="space-y-3">
                 {highEndStore.services.map((svc) => (

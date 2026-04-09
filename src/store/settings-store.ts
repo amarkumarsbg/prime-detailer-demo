@@ -21,8 +21,6 @@ interface SettingsState {
   bankUpi: string;
   referralRewardAmount: number;
   newCustomerDiscount: number;
-  /** Helper on job card: suggested advance as % of estimate (high-end jobs only). */
-  highEndAdvanceSuggestedPercent: number;
   setBusinessProfile: (
     profile: Partial<
       Pick<
@@ -46,7 +44,6 @@ interface SettingsState {
   ) => void;
   setReferralRewardAmount: (amount: number) => void;
   setNewCustomerDiscount: (amount: number) => void;
-  setHighEndAdvanceSuggestedPercent: (percent: number) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -68,12 +65,9 @@ export const useSettingsStore = create<SettingsState>()(
       bankUpi: "[UPI ID or Number]",
       referralRewardAmount: 500,
       newCustomerDiscount: 200,
-      highEndAdvanceSuggestedPercent: 30,
       setBusinessProfile: (profile) => set((state) => ({ ...state, ...profile })),
       setReferralRewardAmount: (amount) => set({ referralRewardAmount: amount }),
       setNewCustomerDiscount: (amount) => set({ newCustomerDiscount: amount }),
-      setHighEndAdvanceSuggestedPercent: (percent) =>
-        set({ highEndAdvanceSuggestedPercent: Math.min(100, Math.max(0, percent)) }),
     }),
     { name: "prime-detailers-settings" }
   )

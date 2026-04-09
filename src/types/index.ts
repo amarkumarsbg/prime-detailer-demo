@@ -332,6 +332,8 @@ export interface JobCard {
   highEndServiceIds?: string[];
   /** For each high-end service id, months until the first maintenance reminder (preset from reminderIntervals or a custom value). */
   highEndFirstFollowUpMonthsByServiceId?: Record<string, number>;
+  /** Planned time to complete (minutes) per high-end program on this job. */
+  highEndCompletionMinutesByServiceId?: Record<string, number>;
   /** Optional override (0–100): suggested advance as % of estimate on job card; falls back to Settings when unset. */
   highEndAdvanceHintPercent?: number;
   /** When true, staff chose not to offer optional advance on this job (set at job creation). */

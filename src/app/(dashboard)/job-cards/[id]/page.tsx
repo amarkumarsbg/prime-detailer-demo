@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -70,11 +70,13 @@ import { useHighEndServiceStore } from "@/store/high-end-service-store";
 import { useServiceCatalogStore } from "@/store/service-catalog-store";
 import { useReminderStore } from "@/store/reminder-store";
 import { useAuthStore } from "@/store/auth-store";
-import { useSettingsStore } from "@/store/settings-store";
 import { createOrGetInvoiceForJob } from "@/lib/invoice-from-job-card";
 import {
   buildHighEndReminderMonthIntervals,
   defaultManualFirstFollowUpMonths,
+  formatHighEndCompletionMinutes,
+  HIGH_END_COMPLETION_PRESETS,
+  highEndCompletionSelectValue,
 } from "@/lib/high-end-follow-up";
 import { formatDate, formatCurrency, cn } from "@/lib/utils";
 import { pushActivityLog } from "@/lib/activity-log-helper";
@@ -182,10 +184,8 @@ export default function JobCardDetailPage() {
 
   const { services: highEndServiceConfigs } = useHighEndServiceStore();
   const { generateHighEndReminders } = useReminderStore();
-  const highEndAdvanceSuggestedPercent =
-    useSettingsStore((s) => s.highEndAdvanceSuggestedPercent) ?? 30;
-  const effectiveAdvanceHintPercent =
-    jobCard?.highEndAdvanceHintPercent ?? highEndAdvanceSuggestedPercent;
+  /** Fallback % for suggested advance copy on job card when creation left hint empty. */
+  const effectiveAdvanceHintPercent = jobCard?.highEndAdvanceHintPercent ?? 30;
   const serviceCatalog = useServiceCatalogStore((s) => s.catalog);
 
   /** Advance UI: premium programs and/or any catalog line marked high-end (not only the PPF wizard step). */
@@ -244,6 +244,24 @@ export default function JobCardDetailPage() {
   );
   const [detailTab, setDetailTab] = useState("overview");
   const [highEndFollowUpById, setHighEndFollowUpById] = useState<Record<string, number>>({});
+  const [highEndCompletionById, setHighEndCompletionById] = useState<Record<string, number>>({});
+
+  const persistHighEndCompletion = useCallback(
+    (next: Record<string, number>) => {
+      if (!jobCard) return;
+      setHighEndCompletionById(next);
+      const payload: Record<string, number> = {};
+      for (const sid of jobCard.highEndServiceIds ?? []) {
+        const m = next[sid];
+        if (m != null && m > 0 && Number.isFinite(m)) payload[sid] = Math.round(m);
+      }
+      updateJobCard(jobCard.id, {
+        highEndCompletionMinutesByServiceId: Object.keys(payload).length > 0 ? payload : undefined,
+        updatedAt: new Date().toISOString(),
+      });
+    },
+    [jobCard, updateJobCard]
+  );
 
   const [highEndAdvAmount, setHighEndAdvAmount] = useState("");
   const [highEndAdvMethod, setHighEndAdvMethod] = useState<PaymentMethod>("CASH");
@@ -536,6 +554,7 @@ export default function JobCardDetailPage() {
         raw != null && raw > 0 ? raw : cfg.reminderIntervals[0]!;
     }
     setHighEndFollowUpById(followUpNext);
+    setHighEndCompletionById({ ...(jobCard.highEndCompletionMinutesByServiceId ?? {}) });
   }, [id, jobCard, highEndServiceConfigs]);
 
   useEffect(() => {
@@ -1582,14 +1601,27 @@ export default function JobCardDetailPage() {
                 Optional advance (high-end)
               </CardTitle>
               <p className="text-sm text-muted-foreground mt-1">
-                Record a partial advance if the customer pays toward this job. Suggested:{" "}
-                {formatCurrency(
-                  Math.round((jobCard.estimatedAmount * effectiveAdvanceHintPercent) / 100)
-                )}{" "}
-                ({effectiveAdvanceHintPercent}% of estimate — hint
-                {jobCard.highEndAdvanceHintPercent != null ? ", from job creation" : ""}). If you save an amount
-                here, that value is used on the tax invoice; otherwise the % applies to the invoice total when
-                generated.
+                Record a partial advance if the customer pays toward this job.{" "}
+                {jobCard.highEndAdvanceAmountInr != null && jobCard.highEndAdvanceAmountInr > 0 ? (
+                  <>
+                    Planned amount on file:{" "}
+                    <span className="font-medium text-foreground">
+                      {formatCurrency(jobCard.highEndAdvanceAmountInr)}
+                    </span>
+                    . Add method and reference below when collected.
+                  </>
+                ) : (
+                  <>
+                    Suggested:{" "}
+                    {formatCurrency(
+                      Math.round((jobCard.estimatedAmount * effectiveAdvanceHintPercent) / 100)
+                    )}{" "}
+                    ({effectiveAdvanceHintPercent}% of estimate
+                    {jobCard.highEndAdvanceHintPercent != null ? ", from job creation" : ""}). If you save an amount
+                    here, that value is used on the tax invoice; otherwise this % applies to the invoice total when
+                    generated.
+                  </>
+                )}
               </p>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -1697,99 +1729,211 @@ export default function JobCardDetailPage() {
             <p className="text-sm text-muted-foreground mt-1">
               {currentStatus === "DELIVERED" || currentStatus === "CANCELLED"
                 ? "Reminders were generated from these first follow-up intervals when the job was delivered."
-                : "Set the first reminder interval for each premium service. On delivery, reminders are created for this milestone and all later ones in the schedule."}
+                : "Set the first reminder interval for each premium service (when a schedule exists). On delivery, reminders use that milestone and later ones. Planned time to complete is optional and separate from reminders."}
             </p>
           </CardHeader>
           <CardContent className="space-y-3">
             {jobCard.highEndServiceIds.map((hesId) => {
               const cfg = highEndServiceConfigs.find((c) => c.id === hesId);
-              if (!cfg || cfg.reminderIntervals.length === 0) return null;
+              if (!cfg) return null;
+              const hasReminders = cfg.reminderIntervals.length > 0;
               const canEdit =
                 currentStatus !== "DELIVERED" && currentStatus !== "CANCELLED";
-              const monthsVal = highEndFollowUpById[hesId] ?? cfg.reminderIntervals[0]!;
-              const followSelectValue = cfg.reminderIntervals.includes(monthsVal)
-                ? String(monthsVal)
-                : "__custom__";
+              const monthsVal = hasReminders
+                ? highEndFollowUpById[hesId] ?? cfg.reminderIntervals[0]!
+                : 0;
+              const followSelectValue = hasReminders
+                ? cfg.reminderIntervals.includes(monthsVal)
+                  ? String(monthsVal)
+                  : "__custom__"
+                : "";
+              const complMins = highEndCompletionById[hesId];
+              const completionSelectValue =
+                complMins != null && complMins > 0
+                  ? highEndCompletionSelectValue(complMins)
+                  : "__unset__";
+
               return (
                 <div
                   key={hesId}
-                  className="flex flex-col sm:flex-row sm:items-end gap-3 p-3 rounded-lg border bg-muted/30"
+                  className="flex flex-col lg:flex-row lg:items-end gap-3 p-3 rounded-lg border bg-muted/30"
                 >
                   <div className="flex-1 min-w-0">
                     <p className="font-medium">{cfg.name}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      Schedule:{" "}
-                      {cfg.reminderIntervals.map((m) => formatHighEndIntervalMonths(m)).join(", ")}
-                    </p>
+                    {hasReminders ? (
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Schedule:{" "}
+                        {cfg.reminderIntervals.map((m) => formatHighEndIntervalMonths(m)).join(", ")}
+                      </p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground mt-0.5">No reminder schedule</p>
+                    )}
                   </div>
-                  <div className="shrink-0 w-full sm:w-48 space-y-1.5">
-                    <Label htmlFor={`hes-follow-${hesId}`} className="text-xs text-muted-foreground">
-                      Next follow-up
+                  {hasReminders ? (
+                    <div className="shrink-0 w-full lg:w-44 space-y-1.5">
+                      <Label htmlFor={`hes-follow-${hesId}`} className="text-xs text-muted-foreground">
+                        Next follow-up
+                      </Label>
+                      {canEdit ? (
+                        <>
+                          <Select
+                            value={followSelectValue}
+                            onValueChange={(v) => {
+                              let months: number;
+                              if (v === "__custom__") {
+                                months = cfg.reminderIntervals.includes(monthsVal)
+                                  ? defaultManualFirstFollowUpMonths(cfg.reminderIntervals)
+                                  : monthsVal;
+                              } else {
+                                months = Number.parseInt(v, 10);
+                              }
+                              const next = { ...highEndFollowUpById, [hesId]: months };
+                              setHighEndFollowUpById(next);
+                              updateJobCard(jobCard.id, {
+                                highEndFirstFollowUpMonthsByServiceId: next,
+                                updatedAt: new Date().toISOString(),
+                              });
+                            }}
+                          >
+                            <SelectTrigger id={`hes-follow-${hesId}`} className="h-9">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {cfg.reminderIntervals.map((m) => (
+                                <SelectItem key={m} value={String(m)}>
+                                  {formatHighEndIntervalMonths(m)} ({m} mo)
+                                </SelectItem>
+                              ))}
+                              <SelectItem value="__custom__">Custom (enter months)</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          {followSelectValue === "__custom__" && (
+                            <div className="space-y-1">
+                              <Label htmlFor={`hes-follow-custom-${hesId}`} className="text-[10px] text-muted-foreground">
+                                Months until first reminder
+                              </Label>
+                              <Input
+                                id={`hes-follow-custom-${hesId}`}
+                                type="number"
+                                min={1}
+                                max={120}
+                                className="h-9"
+                                value={monthsVal === 0 ? "" : String(monthsVal)}
+                                onChange={(e) => {
+                                  const raw = e.target.value;
+                                  const n = raw === "" ? 0 : Math.min(120, Math.max(1, Number.parseInt(raw, 10)));
+                                  if (n === 0) return;
+                                  const next = { ...highEndFollowUpById, [hesId]: n };
+                                  setHighEndFollowUpById(next);
+                                  updateJobCard(jobCard.id, {
+                                    highEndFirstFollowUpMonthsByServiceId: next,
+                                    updatedAt: new Date().toISOString(),
+                                  });
+                                }}
+                              />
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <p className="text-sm font-medium py-2 tabular-nums">
+                          {formatHighEndIntervalMonths(monthsVal)} ({monthsVal} mo)
+                        </p>
+                      )}
+                    </div>
+                  ) : null}
+                  <div className="shrink-0 w-full lg:w-44 space-y-1.5">
+                    <Label
+                      htmlFor={`hes-compl-${hesId}`}
+                      className="text-xs text-muted-foreground flex items-center gap-1"
+                    >
+                      <Clock className="w-3 h-3 shrink-0" />
+                      Time to complete (planned)
                     </Label>
                     {canEdit ? (
                       <>
                         <Select
-                          value={followSelectValue}
+                          value={completionSelectValue}
                           onValueChange={(v) => {
-                            let months: number;
-                            if (v === "__custom__") {
-                              months = cfg.reminderIntervals.includes(monthsVal)
-                                ? defaultManualFirstFollowUpMonths(cfg.reminderIntervals)
-                                : monthsVal;
-                            } else {
-                              months = Number.parseInt(v, 10);
+                            if (v === "__unset__") {
+                              const { [hesId]: _removed, ...rest } = highEndCompletionById;
+                              persistHighEndCompletion(rest);
+                              return;
                             }
-                            const next = { ...highEndFollowUpById, [hesId]: months };
-                            setHighEndFollowUpById(next);
-                            updateJobCard(jobCard.id, {
-                              highEndFirstFollowUpMonthsByServiceId: next,
-                              updatedAt: new Date().toISOString(),
+                            if (v === "__custom__") {
+                              const cur = highEndCompletionById[hesId];
+                              const nonPreset =
+                                cur != null &&
+                                cur > 0 &&
+                                !HIGH_END_COMPLETION_PRESETS.some((x) => x.minutes === Math.round(cur));
+                              persistHighEndCompletion({
+                                ...highEndCompletionById,
+                                [hesId]: nonPreset ? Math.round(cur!) : 480,
+                              });
+                              return;
+                            }
+                            const minutes = Number.parseInt(v, 10);
+                            persistHighEndCompletion({
+                              ...highEndCompletionById,
+                              [hesId]: minutes,
                             });
                           }}
                         >
-                          <SelectTrigger id={`hes-follow-${hesId}`} className="h-9">
-                            <SelectValue />
+                          <SelectTrigger id={`hes-compl-${hesId}`} className="h-9 text-xs bg-background">
+                            <SelectValue placeholder="Not set" />
                           </SelectTrigger>
                           <SelectContent>
-                            {cfg.reminderIntervals.map((m) => (
-                              <SelectItem key={m} value={String(m)}>
-                                {formatHighEndIntervalMonths(m)} ({m} mo)
+                            <SelectItem value="__unset__">Not set</SelectItem>
+                            {HIGH_END_COMPLETION_PRESETS.map((p) => (
+                              <SelectItem key={p.minutes} value={String(p.minutes)}>
+                                {p.label}
                               </SelectItem>
                             ))}
-                            <SelectItem value="__custom__">Custom (enter months)</SelectItem>
+                            <SelectItem value="__custom__">Custom hours…</SelectItem>
                           </SelectContent>
                         </Select>
-                        {followSelectValue === "__custom__" && (
+                        {completionSelectValue === "__custom__" && (
                           <div className="space-y-1">
-                            <Label htmlFor={`hes-follow-custom-${hesId}`} className="text-[10px] text-muted-foreground">
-                              Months until first reminder
+                            <Label htmlFor={`hes-compl-hr-${hesId}`} className="text-[10px] text-muted-foreground">
+                              Hours (custom)
                             </Label>
                             <Input
-                              id={`hes-follow-custom-${hesId}`}
+                              id={`hes-compl-hr-${hesId}`}
                               type="number"
-                              min={1}
-                              max={120}
-                              className="h-9"
-                              value={monthsVal === 0 ? "" : String(monthsVal)}
+                              min={0.5}
+                              max={720}
+                              step={0.5}
+                              inputMode="decimal"
+                              className="h-9 text-xs"
+                              value={
+                                complMins != null && complMins > 0
+                                  ? String(Math.round((complMins / 60) * 100) / 100)
+                                  : ""
+                              }
                               onChange={(e) => {
                                 const raw = e.target.value;
-                                const n = raw === "" ? 0 : Math.min(120, Math.max(1, Number.parseInt(raw, 10)));
-                                if (n === 0) return;
-                                const next = { ...highEndFollowUpById, [hesId]: n };
-                                setHighEndFollowUpById(next);
-                                updateJobCard(jobCard.id, {
-                                  highEndFirstFollowUpMonthsByServiceId: next,
-                                  updatedAt: new Date().toISOString(),
+                                if (raw === "") {
+                                  const { [hesId]: _removed, ...rest } = highEndCompletionById;
+                                  persistHighEndCompletion(rest);
+                                  return;
+                                }
+                                const h = Number.parseFloat(raw.replace(",", "."));
+                                if (!Number.isFinite(h) || h <= 0) return;
+                                const capMin = Math.min(43200, Math.round(h * 60));
+                                persistHighEndCompletion({
+                                  ...highEndCompletionById,
+                                  [hesId]: capMin,
                                 });
                               }}
                             />
                           </div>
                         )}
                       </>
-                    ) : (
+                    ) : complMins != null && complMins > 0 ? (
                       <p className="text-sm font-medium py-2 tabular-nums">
-                        {formatHighEndIntervalMonths(monthsVal)} ({monthsVal} mo)
+                        {formatHighEndCompletionMinutes(complMins)}
                       </p>
+                    ) : (
+                      <p className="text-sm text-muted-foreground py-2">Not set</p>
                     )}
                   </div>
                 </div>
