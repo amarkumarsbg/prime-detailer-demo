@@ -240,6 +240,14 @@ export interface MembershipPackage {
   createdAt: string;
 }
 
+/** One redemption of an included membership service (demo; persisted on the subscription). */
+export interface MembershipServiceUsage {
+  usedAt: string;
+  serviceCatalogId: string;
+  serviceName?: string;
+  jobCardId?: string;
+}
+
 export interface CustomerMembership {
   id: string;
   customerId: string;
@@ -248,6 +256,10 @@ export interface CustomerMembership {
   endDate: string;
   status: CustomerMembershipStatus;
   notes?: string;
+  /** When set, this pass applies to that vehicle; omit for legacy customer-wide rows. */
+  vehicleId?: string;
+  /** Redemptions of included services during this subscription window. */
+  usageHistory?: MembershipServiceUsage[];
 }
 
 export interface TimerAdjustment {

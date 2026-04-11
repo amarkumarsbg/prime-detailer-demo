@@ -29,6 +29,7 @@ import {
   Banknote,
   Percent,
   Wrench,
+  ListChecks,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -53,6 +54,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { CustomerCreditCheckDialog } from "@/components/job-cards/customer-credit-check-dialog";
 import { AddAddonDialog } from "@/components/services/add-addon-dialog";
 import { AddServicePackageDialog } from "@/components/services/add-service-package-dialog";
 import { useServiceCatalogStore } from "@/store/service-catalog-store";
@@ -90,6 +92,7 @@ import type {
   ServiceCatalogItem,
   InspectionPhoto,
   MembershipTier,
+  MembershipServiceUsage,
 } from "@/types";
 
 const GST_RATE = 0.18;
@@ -204,7 +207,7 @@ const JOB_WIZARD_LABEL: Record<JobWizardStepId, string> = {
   notes: "Notes",
   notesAndJobDetails: "Notes & job details",
   jobDetails: "Job details",
-  jobSummary: "Job summary",
+  jobSummary: "Review & create",
 };
 
 export type CreateBookingVariant = "walk-in" | "job-card";
@@ -212,8 +215,10 @@ export type CreateBookingVariant = "walk-in" | "job-card";
 export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }) {
   const isWalkIn = variant === "walk-in";
   const isJobCard = variant === "job-card";
+  /** Shared stepped flow, summary panel, dialog on smaller viewports */
+  const useBookingWizard = isJobCard || isWalkIn;
   const router = useRouter();
-  /** Prevents mobile New Job Card dialog `onOpenChange` from navigating to `/job-cards` when we already go to `/job-cards/[id]`. */
+  /** Prevents create flow dialog `onOpenChange` from navigating away when we already route to `/job-cards/[id]`. */
   const skipJobCardListRedirectRef = useRef(false);
   const navigateToCreatedJobCard = useCallback((jobId: string) => {
     skipJobCardListRedirectRef.current = true;
@@ -239,6 +244,8 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
   const membershipPackagesAll = useMembershipStore((s) => s.packages);
   const membershipSubscriptions = useMembershipStore((s) => s.subscriptions);
   const getActiveMembership = useMembershipStore((s) => s.getActiveMembership);
+  const getUsedIncludedServiceIds = useMembershipStore((s) => s.getUsedIncludedServiceIds);
+  const recordMembershipUsages = useMembershipStore((s) => s.recordMembershipUsages);
   const assignMembership = useMembershipStore((s) => s.assignMembership);
   const activeMembershipPackages = useMemo(
     () =>
@@ -259,6 +266,7 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
   const [customerEmail, setCustomerEmail] = useState("");
   const [customerAddress, setCustomerAddress] = useState("");
   const [existingCustomerId, setExistingCustomerId] = useState<string | null>(null);
+  const [customerCreditDialogOpen, setCustomerCreditDialogOpen] = useState(false);
   const [lookupQuery, setLookupQuery] = useState("");
   const [vehicleNumber, setVehicleNumber] = useState("");
   const [vehicleBrand, setVehicleBrand] = useState("");
@@ -318,6 +326,11 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
   const [referralError, setReferralError] = useState(false);
   /** When set, membership is activated for the customer when the booking / job card is submitted. */
   const [wizardMembershipPackageId, setWizardMembershipPackageId] = useState<string | null>(null);
+  /** For an existing vehicle-scoped pass: whether this visit uses included services (Yes) or normal booking (No). */
+  const [membershipVisitChoice, setMembershipVisitChoice] = useState<null | "yes" | "no">(null);
+  /** Included catalog service ids redeemed on this job at ₹0 (subset of package; must match selectedMainIds when Yes). */
+  const [membershipRedeemServiceIds, setMembershipRedeemServiceIds] = useState<string[]>([]);
+  const [membershipServicesDialogOpen, setMembershipServicesDialogOpen] = useState(false);
 
   const [checkInOpen, setCheckInOpen] = useState(false);
   const [checkInJob, setCheckInJob] = useState<{
@@ -346,10 +359,10 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
     return () => mq.removeEventListener("change", apply);
   }, []);
 
-  /** Desktop job-card: fit dashboard main without page scroll; compact density */
-  const compactJobCardDesktop = isJobCard && isDesktopWide;
-  /** Job card wizard: denser customer step on all breakpoints to reduce scroll */
-  const compactCustomerStep = isJobCard;
+  /** Desktop wizard: fit dashboard main without page scroll; compact density */
+  const compactJobCardDesktop = useBookingWizard && isDesktopWide;
+  /** Wizard: denser customer step on all breakpoints to reduce scroll */
+  const compactCustomerStep = useBookingWizard;
 
   useEffect(() => {
     if (branchId) return;
@@ -379,18 +392,9 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
     }
   }, [referralCode, isJobCard, findByReferralCode]);
 
-  const activeMembershipForCustomer = useMemo(() => {
-    if (!existingCustomerId) return undefined;
-    return getActiveMembership(existingCustomerId);
-  }, [existingCustomerId, getActiveMembership, membershipSubscriptions]);
-
   useEffect(() => {
     setWizardMembershipPackageId(null);
   }, [existingCustomerId]);
-
-  useEffect(() => {
-    if (activeMembershipForCustomer) setWizardMembershipPackageId(null);
-  }, [activeMembershipForCustomer]);
 
   useEffect(() => {
     setHighEndCompletionMinutesById((prev) => {
@@ -406,30 +410,6 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
       return changed ? next : prev;
     });
   }, [selectedHighEndIds]);
-
-  const activeMembershipPackageRow = useMemo(
-    () =>
-      activeMembershipForCustomer
-        ? membershipPackagesAll.find((p) => p.id === activeMembershipForCustomer.packageId)
-        : undefined,
-    [activeMembershipForCustomer, membershipPackagesAll]
-  );
-
-  const summaryMembershipLabel = useMemo(() => {
-    if (activeMembershipForCustomer && activeMembershipPackageRow) {
-      return `${activeMembershipPackageRow.name} (active)`;
-    }
-    if (wizardMembershipPackageId) {
-      const pkg = membershipPackagesAll.find((p) => p.id === wizardMembershipPackageId);
-      return pkg ? `${pkg.name} (with this job)` : "—";
-    }
-    return "None";
-  }, [
-    activeMembershipForCustomer,
-    activeMembershipPackageRow,
-    wizardMembershipPackageId,
-    membershipPackagesAll,
-  ]);
 
   const brandModels = useMemo(
     () => (vehicleBrand ? getModels(vehicleBrand) : []),
@@ -459,6 +439,7 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
       prevMatchRef.current = null;
       setExistingCustomerId(null);
       setSelectedVehicleId(null);
+      if (isJobCard) setCustomerCreditDialogOpen(false);
       return;
     }
     if (prevMatchRef.current === found.id) {
@@ -485,7 +466,8 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
     } else {
       setSelectedVehicleId(null);
     }
-  }, [customerPhone, customerEmail, findByPhone, findByEmail, brandNames, vehicles]);
+    if (isJobCard) setCustomerCreditDialogOpen(true);
+  }, [customerPhone, customerEmail, findByPhone, findByEmail, brandNames, vehicles, isJobCard]);
 
   const applySelectedCustomer = (c: Customer) => {
     prevMatchRef.current = c.id;
@@ -512,6 +494,7 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
     setLookupPanelCustomers(null);
     setLookupQuery("");
     toast.success("Customer selected", { description: c.name });
+    if (isJobCard) setCustomerCreditDialogOpen(true);
   };
 
   const cancelLookup = () => {
@@ -781,6 +764,99 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
     return vehicles.filter((v) => v.customerId === existingCustomerId);
   }, [existingCustomerId, vehicles]);
 
+  const vehiclesWithActiveMembership = useMemo(() => {
+    if (!existingCustomerId) return [];
+    return ownedVehicles.filter((v) => getActiveMembership(existingCustomerId, v.id) != null);
+  }, [existingCustomerId, ownedVehicles, getActiveMembership, membershipSubscriptions]);
+
+  /**
+   * Garage vehicle for membership: explicit garage selection, or the owned vehicle whose plate matches
+   * the registration field (so the Membership step works after the inline vehicle step without clicking garage).
+   */
+  const membershipLookupVehicleId = useMemo(() => {
+    if (!existingCustomerId) return null;
+    if (selectedVehicleId) return selectedVehicleId;
+    const reg = normalizeRegistrationNumber(sanitizeVehicleRegistrationInput(vehicleNumber));
+    if (!reg) return null;
+    const match = ownedVehicles.find(
+      (v) => normalizeRegistrationNumber(v.registrationNumber) === reg
+    );
+    return match?.id ?? null;
+  }, [existingCustomerId, selectedVehicleId, vehicleNumber, ownedVehicles]);
+
+  const activeMembershipForSelectedVehicle = useMemo(() => {
+    if (!existingCustomerId) return undefined;
+    if (membershipLookupVehicleId) {
+      return getActiveMembership(existingCustomerId, membershipLookupVehicleId);
+    }
+    const now = Date.now();
+    return membershipSubscriptions.find(
+      (s) =>
+        s.customerId === existingCustomerId &&
+        s.status === "ACTIVE" &&
+        !s.vehicleId &&
+        new Date(s.endDate).getTime() >= now
+    );
+  }, [
+    existingCustomerId,
+    membershipLookupVehicleId,
+    getActiveMembership,
+    membershipSubscriptions,
+  ]);
+
+  useEffect(() => {
+    if (activeMembershipForSelectedVehicle) setWizardMembershipPackageId(null);
+  }, [activeMembershipForSelectedVehicle]);
+
+  useEffect(() => {
+    setMembershipVisitChoice(null);
+    setMembershipRedeemServiceIds([]);
+  }, [existingCustomerId, selectedVehicleId, membershipLookupVehicleId, activeMembershipForSelectedVehicle?.id]);
+
+  useEffect(() => {
+    if (membershipVisitChoice !== "yes") return;
+    setSelectedMainIds(membershipRedeemServiceIds);
+  }, [membershipVisitChoice, membershipRedeemServiceIds]);
+
+  const activeMembershipPackageRow = useMemo(
+    () =>
+      activeMembershipForSelectedVehicle
+        ? membershipPackagesAll.find((p) => p.id === activeMembershipForSelectedVehicle.packageId)
+        : undefined,
+    [activeMembershipForSelectedVehicle, membershipPackagesAll]
+  );
+
+  const redeemingMembershipVisit = Boolean(
+    activeMembershipForSelectedVehicle && membershipVisitChoice === "yes"
+  );
+
+  const summaryMembershipLabel = useMemo(() => {
+    if (activeMembershipForSelectedVehicle && activeMembershipPackageRow) {
+      let base = `${activeMembershipPackageRow.name} (active)`;
+      if (membershipVisitChoice === "yes") {
+        base +=
+          membershipRedeemServiceIds.length > 0
+            ? ` · redeeming ${membershipRedeemServiceIds.length} included service(s)`
+            : " · add-ons only (included services not used)";
+      } else if (membershipVisitChoice === "no") {
+        base += " · not used this visit";
+      }
+      return base;
+    }
+    if (wizardMembershipPackageId) {
+      const pkg = membershipPackagesAll.find((p) => p.id === wizardMembershipPackageId);
+      return pkg ? `${pkg.name} (with this job)` : "—";
+    }
+    return "None";
+  }, [
+    activeMembershipForSelectedVehicle,
+    activeMembershipPackageRow,
+    wizardMembershipPackageId,
+    membershipVisitChoice,
+    membershipRedeemServiceIds.length,
+    membershipPackagesAll,
+  ]);
+
   const showVehicleDetailsForm =
     !existingCustomerId || addingNewVehicle || ownedVehicles.length === 0;
 
@@ -838,10 +914,19 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
     setMechanicIncentivePercentOverride("");
   }, [mechanicId]);
 
+  const membershipMainServiceZeroIds = useMemo(() => {
+    if (membershipVisitChoice !== "yes") return new Set<string>();
+    return new Set(membershipRedeemServiceIds);
+  }, [membershipVisitChoice, membershipRedeemServiceIds]);
+
   const catalogSubtotalExclGst = useMemo(() => {
     if (!vehicleSegment) return 0;
-    return selectedCatalogItems.reduce((sum, s) => sum + priceForService(s, vehicleSegment), 0);
-  }, [selectedCatalogItems, vehicleSegment]);
+    return selectedCatalogItems.reduce((sum, s) => {
+      const isMain = selectedMainIds.includes(s.id);
+      if (isMain && membershipMainServiceZeroIds.has(s.id)) return sum;
+      return sum + priceForService(s, vehicleSegment);
+    }, 0);
+  }, [selectedCatalogItems, vehicleSegment, selectedMainIds, membershipMainServiceZeroIds]);
 
   const highEndSubtotalExclGst = useMemo(() => {
     return selectedHighEndIds.reduce((sum, hid) => {
@@ -918,11 +1003,15 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (
-      isJobCard &&
+      useBookingWizard &&
       wizardSteps.length > 0 &&
       jobCreateStep < wizardSteps.length - 1
     ) {
-      toast.error("Complete all wizard steps before creating the job card.");
+      toast.error(
+        isJobCard
+          ? "Complete all wizard steps before creating the job card."
+          : "Complete all wizard steps before creating the booking."
+      );
       return;
     }
     if (!branchId) {
@@ -1029,10 +1118,19 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
       });
     }
 
+    const seg = vehicleSegment as VehicleSegment;
+    let resolvedVehicleId: string;
+    if (matchedVehicle) {
+      resolvedVehicleId = matchedVehicle.id;
+    } else {
+      resolvedVehicleId = `veh-local-${Date.now()}`;
+    }
+
     if (wizardMembershipPackageId) {
       const memRes = assignMembership({
         customerId: custId,
         packageId: wizardMembershipPackageId,
+        vehicleId: resolvedVehicleId,
         notes: `${isJobCard ? "New job card" : "Booking"} ${jobNumber}`,
       });
       if (!memRes.ok) {
@@ -1044,8 +1142,22 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
       toast.success("Membership activated", { description: pkgName });
     }
 
-    const seg = vehicleSegment as VehicleSegment;
     const serviceItems = selectedCatalogItems.map((s) => {
+      const isFreeMain =
+        membershipVisitChoice === "yes" &&
+        membershipRedeemServiceIds.includes(s.id) &&
+        selectedMainIds.includes(s.id);
+      if (isFreeMain) {
+        return {
+          id: `si-${id}-${s.id}`,
+          jobCardId: id,
+          serviceCatalogId: s.id,
+          name: s.name,
+          price: 0,
+          isCompleted: false,
+          durationMinutes: s.durationMinutes,
+        };
+      }
       const base = priceForService(s, seg);
       const share =
         catalogSubtotalExclGst > 0 ? base / catalogSubtotalExclGst : 1 / selectedCatalogItems.length;
@@ -1073,9 +1185,7 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
       }
     }
 
-    let resolvedVehicleId: string;
     if (matchedVehicle) {
-      resolvedVehicleId = matchedVehicle.id;
       setVehicles((prev) =>
         prev.map((v) =>
           v.id === matchedVehicle!.id
@@ -1092,7 +1202,6 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
         )
       );
     } else {
-      resolvedVehicleId = `veh-local-${Date.now()}`;
       setVehicles((prev) => [
         {
           id: resolvedVehicleId,
@@ -1164,6 +1273,20 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
         updatedAt: now,
       });
 
+      if (membershipVisitChoice === "yes" && membershipRedeemServiceIds.length > 0) {
+        const sub = getActiveMembership(custId, resolvedVehicleId);
+        if (sub) {
+          recordMembershipUsages(
+            sub.id,
+            membershipRedeemServiceIds.map((sid) => ({
+              serviceCatalogId: sid,
+              serviceName: serviceCatalog.find((c) => c.id === sid)?.name,
+              jobCardId: id,
+            }))
+          );
+        }
+      }
+
       pushActivityLog({
         action: "CREATED",
         entityType: "JOB_CARD",
@@ -1173,7 +1296,7 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
       });
 
       toast.success("Booking created", { description: jobNumber });
-      router.push(`/job-cards/${id}`);
+      navigateToCreatedJobCard(id);
       return;
     }
 
@@ -1230,6 +1353,20 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
       createdAt: now,
       updatedAt: now,
     });
+
+    if (membershipVisitChoice === "yes" && membershipRedeemServiceIds.length > 0) {
+      const sub = getActiveMembership(custId, resolvedVehicleId);
+      if (sub) {
+        recordMembershipUsages(
+          sub.id,
+          membershipRedeemServiceIds.map((sid) => ({
+            serviceCatalogId: sid,
+            serviceName: serviceCatalog.find((c) => c.id === sid)?.name,
+            jobCardId: id,
+          }))
+        );
+      }
+    }
 
     pushActivityLog({
       action: "CREATED",
@@ -1351,38 +1488,69 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
       "membership",
       "serviceSelection",
     ];
-    if (isJobCard && highEndServices.length > 0) s.push("highEndServices");
+    if (highEndServices.length > 0) s.push("highEndServices");
     s.push("addons");
     if (!isJobCard) s.push("pickupDrop");
     s.push("mechanic");
     if (isJobCard) {
       s.push("notesAndJobDetails", "jobSummary");
     } else {
-      s.push("notes");
+      s.push("notes", "jobSummary");
     }
     return s;
   }, [isJobCard, highEndServices.length]);
 
   useEffect(() => {
-    if (!isJobCard) return;
+    if (!useBookingWizard) return;
     setJobCreateStep((prev) => Math.min(prev, Math.max(0, wizardSteps.length - 1)));
-  }, [isJobCard, wizardSteps.length]);
+  }, [useBookingWizard, wizardSteps.length]);
 
   const jobWizardStepId = wizardSteps[jobCreateStep] ?? "customer";
   const jobWizardStepCount = wizardSteps.length;
-  const jobCardWizardIncomplete =
-    isJobCard && jobWizardStepCount > 0 && jobCreateStep < jobWizardStepCount - 1;
+  const bookingWizardIncomplete =
+    useBookingWizard && jobWizardStepCount > 0 && jobCreateStep < jobWizardStepCount - 1;
+
+  const jobWizardStepSkipped = useCallback(
+    (stepId: JobWizardStepId) => {
+      if (!useBookingWizard) return false;
+      if (!redeemingMembershipVisit) return false;
+      return stepId === "serviceSelection" || stepId === "highEndServices";
+    },
+    [useBookingWizard, redeemingMembershipVisit]
+  );
+
+  /** Membership "Yes" hides service + high-end steps; keep step index from pointing at a hidden step (e.g. after Back). */
+  useEffect(() => {
+    if (!useBookingWizard || !redeemingMembershipVisit) return;
+    setJobCreateStep((prev) => {
+      let n = prev;
+      while (
+        n < wizardSteps.length &&
+        wizardSteps[n] != null &&
+        jobWizardStepSkipped(wizardSteps[n]!)
+      ) {
+        n++;
+      }
+      return Math.min(wizardSteps.length - 1, Math.max(0, n));
+    });
+  }, [useBookingWizard, redeemingMembershipVisit, wizardSteps, jobWizardStepSkipped]);
 
   const showJobWizardStep = (id: JobWizardStepId) => {
-    if (!isJobCard) return true;
-    if (id === "notes" || id === "jobDetails") {
-      return jobWizardStepId === "notesAndJobDetails";
+    if (!useBookingWizard) return true;
+    if (jobWizardStepSkipped(id)) return false;
+    if (isJobCard) {
+      if (id === "notes" || id === "jobDetails") {
+        return jobWizardStepId === "notesAndJobDetails";
+      }
+      return jobWizardStepId === id;
     }
+    if (id === "notesAndJobDetails" || id === "jobDetails") return false;
+    if (id === "notes") return jobWizardStepId === "notes";
     return jobWizardStepId === id;
   };
 
   const goNextJobWizard = () => {
-    if (!isJobCard) return;
+    if (!useBookingWizard) return;
     if (jobCreateStep >= jobWizardStepCount - 1) return;
     if (jobWizardStepId === "customer") {
       if (!customerName.trim() || customerPhone.replace(/\D/g, "").length < 10) {
@@ -1405,17 +1573,57 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
         toast.error("Select a vehicle type for pricing.");
         return;
       }
-    }
-    if (jobWizardStepId === "addons") {
+      const hasHighEndStep = highEndServices.length > 0;
       if (
-        selectedMainIds.length + selectedAddonIds.length === 0 &&
-        selectedHighEndIds.length === 0
+        !redeemingMembershipVisit &&
+        !hasHighEndStep &&
+        selectedMainIds.length === 0
       ) {
-        toast.error("Select at least one service, add-on, or high-end program.");
+        toast.error("Select at least one service to continue.");
         return;
       }
     }
-    setJobCreateStep((i) => Math.min(jobWizardStepCount - 1, i + 1));
+    if (jobWizardStepId === "membership") {
+      if (activeMembershipForSelectedVehicle && activeMembershipPackageRow) {
+        if (membershipVisitChoice === null) {
+          toast.error("Choose whether to use membership on this visit (Yes or No).");
+          return;
+        }
+        if (membershipVisitChoice === "yes") {
+          const used = getUsedIncludedServiceIds(activeMembershipForSelectedVehicle);
+          const remaining = activeMembershipPackageRow.includedServiceIds.filter((sid) => !used.has(sid));
+          if (remaining.length > 0 && membershipRedeemServiceIds.length === 0) {
+            toast.error(
+              "Open included services and pick at least one remaining service, or choose No for a normal booking."
+            );
+            return;
+          }
+          setSelectedMainIds(membershipRedeemServiceIds);
+          setSelectedHighEndIds([]);
+        }
+      }
+    }
+    setJobCreateStep((i) => {
+      let n = i + 1;
+      while (
+        n < jobWizardStepCount &&
+        wizardSteps[n] != null &&
+        jobWizardStepSkipped(wizardSteps[n]!)
+      ) {
+        n++;
+      }
+      return Math.min(jobWizardStepCount - 1, n);
+    });
+  };
+
+  const goBackJobWizard = () => {
+    setJobCreateStep((s) => {
+      let n = s - 1;
+      while (n >= 0 && wizardSteps[n] != null && jobWizardStepSkipped(wizardSteps[n]!)) {
+        n--;
+      }
+      return Math.max(0, n);
+    });
   };
 
   const renderSummaryCard = (branchBlockId: string) => (
@@ -1625,11 +1833,9 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
         <Button
           type="submit"
           className="w-full"
-          disabled={isJobCard ? jobCardWizardIncomplete : false}
+          disabled={bookingWizardIncomplete}
           title={
-            isJobCard && jobCardWizardIncomplete
-              ? "Complete all wizard steps first"
-              : undefined
+            bookingWizardIncomplete ? "Complete all wizard steps first" : undefined
           }
         >
           {isJobCard ? "Create job card" : "Create booking"}
@@ -1645,10 +1851,10 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
       <form
         onSubmit={handleSubmit}
         className={cn(
-          isJobCard
+          useBookingWizard
             ? "flex h-full min-h-0 flex-1 flex-col overflow-hidden overflow-x-hidden lg:flex-row lg:items-stretch lg:gap-3 lg:overflow-hidden"
             : "lg:flex lg:flex-row lg:items-start lg:gap-8",
-          isJobCard &&
+          useBookingWizard &&
             !isDesktopWide &&
             "pb-[calc(5.75rem+env(safe-area-inset-bottom,0px))] md:pb-0"
         )}
@@ -1656,15 +1862,15 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
         <div
           className={cn(
             "min-w-0 flex-1 space-y-6 lg:min-w-0",
-            isJobCard &&
+            useBookingWizard &&
               "flex flex-col overflow-x-hidden px-3 py-2 sm:px-6 sm:py-3",
-            isJobCard &&
+            useBookingWizard &&
               isDesktopWide &&
               "min-h-0 flex-1 gap-2 overflow-hidden py-2 sm:px-4 max-lg:overflow-y-auto max-lg:overflow-x-hidden lg:min-w-0",
-            isJobCard && !isDesktopWide && "min-h-0 flex-1 overflow-y-auto overflow-x-hidden"
+            useBookingWizard && !isDesktopWide && "min-h-0 flex-1 overflow-y-auto overflow-x-hidden"
           )}
         >
-          {isJobCard && (
+          {useBookingWizard && (
             <>
               <div
                 className={cn(
@@ -1737,11 +1943,11 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
 
           <div
             className={cn(
-              isJobCard ? "space-y-4" : "space-y-6",
-              isJobCard &&
+              useBookingWizard ? "space-y-4" : "space-y-6",
+              useBookingWizard &&
                 isDesktopWide &&
                 "lg:flex lg:min-h-0 lg:flex-1 lg:basis-0 lg:flex-col lg:space-y-0 lg:gap-2.5 lg:overflow-y-auto lg:overflow-x-auto lg:overscroll-y-contain lg:pr-0.5 [-ms-overflow-style:none] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5",
-              isJobCard && "max-lg:shrink-0 max-lg:overflow-visible"
+              useBookingWizard && "max-lg:shrink-0 max-lg:overflow-visible"
             )}
           >
           {showJobWizardStep("customer") && (
@@ -2568,29 +2774,163 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
           )}
 
           {showJobWizardStep("membership") && (
+          <>
           <Card className="min-w-0 border-violet-200/60 dark:border-violet-900/40">
             <div className="flex items-center gap-2 rounded-t-xl bg-primary px-4 py-3 text-primary-foreground">
               <Ticket className="w-4 h-4 shrink-0 opacity-90" />
               <p className="text-sm font-bold tracking-wide">MEMBERSHIP STATUS</p>
             </div>
             <CardContent className="min-w-0 py-6 space-y-4">
-              {activeMembershipForCustomer && activeMembershipPackageRow ? (
-                <div className="rounded-xl border border-violet-200/80 bg-violet-50/50 px-4 py-3 dark:border-violet-900/50 dark:bg-violet-950/30">
-                  <div className="flex items-start gap-2">
-                    <Crown className="w-5 h-5 shrink-0 text-violet-600 dark:text-violet-400 mt-0.5" />
-                    <div className="min-w-0 space-y-1">
-                      <p className="font-semibold text-foreground">{activeMembershipPackageRow.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {membershipTierLabel(activeMembershipPackageRow.tier)} · valid until{" "}
-                        {new Date(activeMembershipForCustomer.endDate).toLocaleDateString(undefined, {
-                          day: "numeric",
-                          month: "short",
-                          year: "numeric",
-                        })}
-                      </p>
+              {existingCustomerId && ownedVehicles.length > 1 && vehiclesWithActiveMembership.length > 0 ? (
+                <div className="rounded-lg border border-violet-200/70 bg-violet-50/40 px-3 py-2 text-xs dark:border-violet-900/45 dark:bg-violet-950/25">
+                  <p className="font-medium text-foreground mb-1">Vehicles with an active pass</p>
+                  <ul className="list-inside list-disc text-muted-foreground space-y-0.5">
+                    {vehiclesWithActiveMembership.map((v) => (
+                      <li key={v.id}>
+                        <span className="font-mono">{v.registrationNumber}</span>
+                        <span className="text-muted-foreground/90">
+                          {" "}
+                          — {v.make} {v.model}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
+              {activeMembershipForSelectedVehicle && activeMembershipPackageRow ? (
+                <>
+                  <div className="rounded-xl border border-violet-200/80 bg-violet-50/50 px-4 py-3 dark:border-violet-900/50 dark:bg-violet-950/30">
+                    <div className="flex items-start gap-2">
+                      <Crown className="w-5 h-5 shrink-0 text-violet-600 dark:text-violet-400 mt-0.5" />
+                      <div className="min-w-0 space-y-1">
+                        <p className="font-semibold text-foreground">{activeMembershipPackageRow.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {membershipTierLabel(activeMembershipPackageRow.tier)} · valid until{" "}
+                          {new Date(activeMembershipForSelectedVehicle.endDate).toLocaleDateString(undefined, {
+                            day: "numeric",
+                            month: "short",
+                            year: "numeric",
+                          })}
+                        </p>
+                        {membershipLookupVehicleId || selectedVehicleId ? (
+                          <p className="text-[11px] text-muted-foreground pt-0.5">
+                            Pass applies to this vehicle (
+                            {ownedVehicles.find(
+                              (v) => v.id === (membershipLookupVehicleId ?? selectedVehicleId)
+                            )?.registrationNumber ?? vehicleNumber}
+                            ).
+                          </p>
+                        ) : !activeMembershipForSelectedVehicle.vehicleId ? (
+                          <p className="text-[11px] text-muted-foreground pt-0.5">
+                            Customer-wide pass — included services bill at ₹0 when you choose Yes.
+                          </p>
+                        ) : null}
+                      </div>
                     </div>
                   </div>
-                </div>
+
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium">Use membership on this visit?</p>
+                    <p className="text-xs text-muted-foreground">
+                      Yes — included services bill at ₹0; you can add paid add-ons next. No — continue with normal
+                      service selection and pricing.
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={membershipVisitChoice === "yes" ? "default" : "outline"}
+                        className={membershipVisitChoice === "yes" ? "bg-violet-600 hover:bg-violet-700" : ""}
+                        onClick={() => {
+                          setMembershipVisitChoice("yes");
+                          setSelectedHighEndIds([]);
+                          setMembershipRedeemServiceIds([]);
+                          setMembershipServicesDialogOpen(true);
+                        }}
+                      >
+                        Yes
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={membershipVisitChoice === "no" ? "default" : "outline"}
+                        onClick={() => {
+                          const redeem = membershipRedeemServiceIds;
+                          setMembershipVisitChoice("no");
+                          setMembershipRedeemServiceIds([]);
+                          setSelectedMainIds((mains) => {
+                            const r = new Set(redeem);
+                            const onlyRedeem =
+                              redeem.length > 0 &&
+                              mains.length === redeem.length &&
+                              mains.every((id) => r.has(id));
+                            return onlyRedeem ? [] : mains;
+                          });
+                        }}
+                      >
+                        No
+                      </Button>
+                    </div>
+                  </div>
+
+                  {membershipVisitChoice === "yes" ? (
+                    <div className="space-y-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="gap-2 border-violet-200/80"
+                        onClick={() => setMembershipServicesDialogOpen(true)}
+                      >
+                        <ListChecks className="h-4 w-4" />
+                        Included services ({membershipRedeemServiceIds.length} selected)
+                      </Button>
+                      <p className="text-[11px] text-muted-foreground">
+                        Already-used included services cannot be selected again this period.
+                      </p>
+                    </div>
+                  ) : null}
+
+                  {(activeMembershipForSelectedVehicle.usageHistory?.length ?? 0) > 0 ? (
+                    <div className="rounded-lg border border-border/80 bg-muted/30 px-3 py-2">
+                      <p className="text-xs font-semibold text-foreground mb-2">Membership usage history</p>
+                      <ul className="max-h-36 space-y-1.5 overflow-y-auto text-[11px] text-muted-foreground">
+                        {[...(activeMembershipForSelectedVehicle.usageHistory ?? [])]
+                          .sort(
+                            (a: MembershipServiceUsage, b: MembershipServiceUsage) =>
+                              new Date(b.usedAt).getTime() - new Date(a.usedAt).getTime()
+                          )
+                          .map((u: MembershipServiceUsage, idx: number) => (
+                            <li key={`${u.usedAt}-${u.serviceCatalogId}-${idx}`} className="flex justify-between gap-2">
+                              <span className="min-w-0 truncate">
+                                {u.serviceName ??
+                                  serviceCatalog.find((c) => c.id === u.serviceCatalogId)?.name ??
+                                  u.serviceCatalogId}
+                              </span>
+                              <span className="shrink-0 tabular-nums">
+                                {new Date(u.usedAt).toLocaleString(undefined, {
+                                  day: "numeric",
+                                  month: "short",
+                                  year: "numeric",
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })}
+                              </span>
+                            </li>
+                          ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                </>
+              ) : existingCustomerId &&
+                !membershipLookupVehicleId &&
+                ownedVehicles.length > 0 &&
+                !activeMembershipForSelectedVehicle ? (
+                <p className="text-sm text-muted-foreground">
+                  Pick this customer&apos;s vehicle from the garage in the previous step, or enter a registration
+                  that matches a saved vehicle, to see an existing pass. You can still activate a new plan below.
+                </p>
               ) : activeMembershipPackages.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center">
                   No active packages in the catalog.{" "}
@@ -2600,8 +2940,14 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
                 </p>
               ) : (
                 <>
+                  <div className="rounded-lg border border-violet-200/70 bg-violet-50/50 px-3 py-2.5 text-xs text-muted-foreground dark:border-violet-900/45 dark:bg-violet-950/25">
+                    <span className="font-medium text-foreground">No active pass for this vehicle.</span> When a pass
+                    exists, you&apos;ll see <strong className="text-foreground">Yes / No</strong> here, included
+                    services in a popup, and history. Otherwise activate a new plan below (linked to this job&apos;s
+                    vehicle).
+                  </div>
                   <p className="text-sm text-muted-foreground">
-                    Optional: activate a plan when the job is created, or leave none and handle it later in{" "}
+                    Optional: activate a plan when the job is created, or handle it later in{" "}
                     <Link href="/membership" className="text-primary font-medium hover:underline">
                       Membership
                     </Link>
@@ -2646,6 +2992,63 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
               )}
             </CardContent>
           </Card>
+
+          <Dialog open={membershipServicesDialogOpen} onOpenChange={setMembershipServicesDialogOpen}>
+            <DialogContent className="max-h-[min(90vh,520px)] flex flex-col sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Included services</DialogTitle>
+                <DialogDescription>
+                  Select which included services to redeem on this visit. Used services are disabled. Bill amount for
+                  these lines will be ₹0; add-ons are charged separately.
+                </DialogDescription>
+              </DialogHeader>
+              {activeMembershipForSelectedVehicle && activeMembershipPackageRow ? (
+                <div className="min-h-0 flex-1 overflow-y-auto pr-1 space-y-2">
+                  {activeMembershipPackageRow.includedServiceIds.map((sid) => {
+                    const cat = serviceCatalog.find((c) => c.id === sid);
+                    const used = getUsedIncludedServiceIds(activeMembershipForSelectedVehicle).has(sid);
+                    const checked = membershipRedeemServiceIds.includes(sid);
+                    return (
+                      <label
+                        key={sid}
+                        className={cn(
+                          "flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-2.5 text-sm",
+                          used ? "border-border/50 bg-muted/40 opacity-60 cursor-not-allowed" : "border-border bg-card"
+                        )}
+                      >
+                        <Checkbox
+                          checked={checked}
+                          disabled={used}
+                          onCheckedChange={(v) => {
+                            if (used) return;
+                            const on = v === true;
+                            setMembershipRedeemServiceIds((prev) =>
+                              on ? [...prev, sid] : prev.filter((x) => x !== sid)
+                            );
+                          }}
+                          className="mt-0.5"
+                        />
+                        <span className="min-w-0">
+                          <span className="font-medium block">{cat?.name ?? sid}</span>
+                          {used ? (
+                            <span className="text-[11px] text-amber-700 dark:text-amber-300">Already used</span>
+                          ) : (
+                            <span className="text-[11px] text-muted-foreground">{cat?.category}</span>
+                          )}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              ) : null}
+              <DialogFooter className="gap-2 sm:gap-0">
+                <Button type="button" variant="outline" onClick={() => setMembershipServicesDialogOpen(false)}>
+                  Done
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+          </>
           )}
 
           {showJobWizardStep("serviceSelection") && (
@@ -2902,7 +3305,7 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
           </Card>
           )}
 
-          {isJobCard && highEndServices.length > 0 && showJobWizardStep("highEndServices") && (
+          {highEndServices.length > 0 && showJobWizardStep("highEndServices") && (
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-lg">
@@ -2910,8 +3313,9 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
                   High-End Services
                 </CardTitle>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Tag premium programs for maintenance reminders. Configured amounts (excl. GST) add to the job
-                  estimate on the right; actual line items still come from Service(s) above.
+                  <span className="font-medium text-foreground">Optional.</span> Tag premium programs for maintenance
+                  reminders. Configured amounts (excl. GST) add to the job estimate on the right; you can skip this step
+                  and continue with main services and/or add-ons only.
                 </p>
               </CardHeader>
               <CardContent>
@@ -3463,19 +3867,21 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
             </Card>
           )}
 
-          {isJobCard && showJobWizardStep("jobSummary") && (
+          {useBookingWizard && showJobWizardStep("jobSummary") && (
             <Card className="hidden lg:block border-dashed border-primary/25 bg-muted/30">
               <CardHeader className="pb-2">
                 <CardTitle className="text-base">Review &amp; create</CardTitle>
               </CardHeader>
               <CardContent className="text-sm text-muted-foreground">
-                Use the job summary on the right to apply a coupon, select a branch, then create the job card.
+                {isJobCard
+                  ? "Use the job summary on the right to apply a coupon, select a branch, then create the job card."
+                  : "Use the booking summary on the right to apply a coupon, select a branch, then create the booking."}
               </CardContent>
             </Card>
           )}
         </div>
 
-        {isJobCard && (
+        {useBookingWizard && (
           <div
             className={cn(
               "hidden shrink-0 flex-wrap items-center justify-between gap-2 border-t border-border md:flex",
@@ -3487,7 +3893,7 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
               variant="outline"
               size="sm"
               disabled={jobCreateStep === 0}
-              onClick={() => setJobCreateStep((s) => Math.max(0, s - 1))}
+              onClick={goBackJobWizard}
             >
               Back
             </Button>
@@ -3497,13 +3903,13 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
               </Button>
             ) : (
               <span className="text-xs text-muted-foreground text-right max-w-[14rem]">
-                Review the summary, select branch, then create the job.
+                Review the summary, select branch, then create the {isJobCard ? "job card" : "booking"}.
               </span>
             )}
           </div>
         )}
 
-        {isJobCard && jobWizardStepId === "jobSummary" && (
+        {useBookingWizard && jobWizardStepId === "jobSummary" && (
           <div className="mt-4 w-full shrink-0 pb-2 lg:hidden">
             {renderSummaryCard("booking-branch-select-block-mobile")}
           </div>
@@ -3514,27 +3920,22 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
         <aside
           className={cn(
             "mt-4 w-full shrink-0 sm:mt-6 lg:mt-0 lg:min-h-0 lg:w-[min(100%,340px)]",
-            isJobCard &&
-              (jobWizardStepId === "jobSummary" ? "hidden lg:block" : "hidden"),
-            compactJobCardDesktop
-              ? "lg:flex lg:h-full lg:flex-col lg:self-stretch"
-              : "lg:sticky lg:top-4 lg:z-20 lg:self-start"
+            jobWizardStepId !== "jobSummary" && "hidden",
+            jobWizardStepId === "jobSummary" &&
+              cn(
+                "hidden lg:flex lg:flex-col",
+                compactJobCardDesktop
+                  ? "lg:h-full lg:self-stretch"
+                  : "lg:sticky lg:top-4 lg:z-20 lg:self-start"
+              )
           )}
         >
           {renderSummaryCard("booking-branch-select-block")}
         </aside>
 
         {/* Mobile sticky actions */}
-        <div
-          className={cn(
-            "md:hidden fixed bottom-0 left-0 right-0 border-t border-border px-3 py-2.5 pb-[max(0.5rem,env(safe-area-inset-bottom))]",
-            isJobCard
-              ? "z-[100] bg-background shadow-[0_-6px_24px_rgba(15,23,42,0.08)]"
-              : "z-40 bg-background/95 backdrop-blur-md shadow-[0_-4px_24px_rgba(0,0,0,0.06)]"
-          )}
-        >
-          {isJobCard ? (
-            <div className="mx-auto flex max-w-lg flex-col gap-2">
+        <div className="md:hidden fixed bottom-0 left-0 right-0 z-[100] border-t border-border bg-background px-3 py-2.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] shadow-[0_-6px_24px_rgba(15,23,42,0.08)]">
+          <div className="mx-auto flex max-w-lg flex-col gap-2">
               <div className="flex items-center justify-between gap-2">
                 <div className="min-w-0">
                   <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -3551,7 +3952,7 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
                       variant="outline"
                       size="sm"
                       className="h-9"
-                      onClick={() => setJobCreateStep((s) => Math.max(0, s - 1))}
+                      onClick={goBackJobWizard}
                     >
                       Back
                     </Button>
@@ -3563,14 +3964,14 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
                   ) : (
                     <>
                       <Button type="button" variant="outline" size="sm" className="h-9" asChild>
-                        <Link href="/job-cards">Cancel</Link>
+                        <Link href={isJobCard ? "/job-cards" : "/bookings"}>Cancel</Link>
                       </Button>
                       <Button
                         type="submit"
                         className="min-w-[5rem] font-semibold shadow-sm"
-                        disabled={jobCardWizardIncomplete}
+                        disabled={bookingWizardIncomplete}
                         title={
-                          jobCardWizardIncomplete ? "Complete all wizard steps first" : undefined
+                          bookingWizardIncomplete ? "Complete all wizard steps first" : undefined
                         }
                       >
                         Create
@@ -3585,51 +3986,35 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
                 </p>
               )}
             </div>
-          ) : (
-            <div className="mx-auto flex max-w-lg items-center justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-[10px] text-muted-foreground uppercase">
-                  {summaryAdvanceAmount > 0 ? "Balance due" : "Total"}
-                </p>
-                <p className="text-lg font-bold text-primary tabular-nums leading-tight">
-                  {formatCurrency(balanceAfterAdvance)}
-                </p>
-              </div>
-              <div className="flex shrink-0 gap-2">
-                <Button type="button" variant="outline" size="sm" asChild>
-                  <Link href="/bookings">Cancel</Link>
-                </Button>
-                <Button type="submit" size="sm">
-                  Create
-                </Button>
-              </div>
-            </div>
-          )}
         </div>
       </form>
   );
 
+  const bookingListHref = isJobCard ? "/job-cards" : "/bookings";
+  const desktopTitle = isJobCard ? "New Job Card" : "Create Walk-In Booking";
+  const desktopBackLabel = isJobCard ? "Back to Job Cards" : "Back to Bookings";
+
   return (
     <>
-      {isJobCard && isDesktopWide ? (
+      {isDesktopWide ? (
         <div className="flex h-[calc(100dvh-7rem)] max-h-[calc(100dvh-7rem)] flex-col gap-2 overflow-hidden md:gap-3">
           <div className="flex shrink-0 flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
             <Button variant="ghost" size="sm" className="w-fit -ml-2 h-8" asChild>
-              <Link href="/job-cards">
+              <Link href={bookingListHref}>
                 <ArrowLeft className="w-4 h-4 mr-2" />
-                Back to Job Cards
+                {desktopBackLabel}
               </Link>
             </Button>
           </div>
           <div className="shrink-0">
-            <h1 className="text-lg font-bold tracking-tight sm:text-xl">New Job Card</h1>
+            <h1 className="text-lg font-bold tracking-tight sm:text-xl">{desktopTitle}</h1>
             <p className="mt-0.5 line-clamp-1 text-[11px] text-muted-foreground sm:text-xs">
               Use Next for each step — summary and Create stay on the right.
             </p>
           </div>
           <div className="min-h-0 flex-1 overflow-hidden">{bookingForm}</div>
         </div>
-      ) : isJobCard ? (
+      ) : (
         <Dialog
           open
           onOpenChange={(open) => {
@@ -3638,7 +4023,7 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
                 skipJobCardListRedirectRef.current = false;
                 return;
               }
-              router.push("/job-cards");
+              router.push(bookingListHref);
             }
           }}
         >
@@ -3650,7 +4035,7 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
           >
             <DialogHeader className="shrink-0 space-y-1 border-b border-border px-4 pb-2.5 pt-3 text-left sm:space-y-1.5 sm:px-6 sm:pb-3 sm:pt-4">
               <DialogTitle className="pr-10 text-base leading-tight sm:pr-8 sm:text-xl">
-                New Job Card
+                {desktopTitle}
               </DialogTitle>
               <p className="text-xs font-medium text-foreground sm:hidden">
                 Step {jobCreateStep + 1} of {jobWizardStepCount} — {JOB_WIZARD_LABEL[jobWizardStepId]}
@@ -3664,24 +4049,6 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
             </div>
           </DialogContent>
         </Dialog>
-      ) : (
-        <div className="space-y-4 sm:space-y-6 max-md:pb-[calc(6rem+env(safe-area-inset-bottom,0px))] md:pb-2">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <Button variant="ghost" size="sm" className="w-fit -ml-2" asChild>
-              <Link href="/bookings">
-                <ArrowLeft className="w-4 h-4 mr-2" />
-                Back to Bookings
-              </Link>
-            </Button>
-          </div>
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Create Walk-In Booking</h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              Capture customer and vehicle, choose services, then confirm branch and totals.
-            </p>
-          </div>
-          {bookingForm}
-        </div>
       )}
 
       <Dialog open={pricingService !== null} onOpenChange={(open) => !open && setPricingService(null)}>
@@ -3842,6 +4209,13 @@ export function CreateBookingPage({ variant }: { variant: CreateBookingVariant }
           </DialogContent>
         </Dialog>
       )}
+
+      <CustomerCreditCheckDialog
+        open={customerCreditDialogOpen && isJobCard}
+        onOpenChange={setCustomerCreditDialogOpen}
+        customerId={existingCustomerId}
+        customerName={customerName}
+      />
     </>
   );
 }

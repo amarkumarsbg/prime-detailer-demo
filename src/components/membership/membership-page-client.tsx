@@ -32,6 +32,7 @@ import {
   useMembershipStore,
 } from "@/store/membership-store";
 import { useCustomerStore } from "@/store/customer-store";
+import { useVehicleStore } from "@/store/vehicle-store";
 import { useServiceCatalogStore } from "@/store/service-catalog-store";
 import type { MembershipPackage, MembershipTier } from "@/types";
 import { formatDate, formatInrFull } from "@/lib/utils";
@@ -79,6 +80,7 @@ export function MembershipPageClient() {
 
   const catalog = useServiceCatalogStore((s) => s.catalog);
   const customers = useCustomerStore((s) => s.customers);
+  const vehicles = useVehicleStore((s) => s.vehicles);
 
   const activeServices = useMemo(
     () => [...catalog].filter((s) => s.isActive).sort((a, b) => a.name.localeCompare(b.name)),
@@ -169,14 +171,30 @@ export function MembershipPageClient() {
   };
 
   const [assignCustomerId, setAssignCustomerId] = useState<string>("");
+  const [assignVehicleId, setAssignVehicleId] = useState<string>("");
   const [assignPackageId, setAssignPackageId] = useState<string>("");
   const [assignStartDate, setAssignStartDate] = useState<string>("");
+
+  const customerVehiclesForAssign = useMemo(() => {
+    if (!assignCustomerId) return [];
+    return vehicles
+      .filter((v) => v.customerId === assignCustomerId)
+      .sort((a, b) => a.registrationNumber.localeCompare(b.registrationNumber));
+  }, [assignCustomerId, vehicles]);
+
+  useEffect(() => {
+    setAssignVehicleId("");
+  }, [assignCustomerId]);
 
   const activePackages = useMemo(() => packages.filter((p) => p.isActive), [packages]);
 
   const onAssign = () => {
     if (!assignCustomerId) {
       toast.error("Select a customer.");
+      return;
+    }
+    if (!assignVehicleId) {
+      toast.error("Select the vehicle this pass applies to.");
       return;
     }
     if (!assignPackageId) {
@@ -189,6 +207,7 @@ export function MembershipPageClient() {
     const res = assignMembership({
       customerId: assignCustomerId,
       packageId: assignPackageId,
+      vehicleId: assignVehicleId,
       startDate: start,
     });
     if (!res.ok) {
@@ -197,6 +216,7 @@ export function MembershipPageClient() {
     }
     toast.success("Membership activated (demo).");
     setAssignCustomerId("");
+    setAssignVehicleId("");
     setAssignPackageId("");
     setAssignStartDate("");
   };
@@ -206,9 +226,21 @@ export function MembershipPageClient() {
       const cust = customers.find((c) => c.id === sub.customerId);
       const pkg = packages.find((p) => p.id === sub.packageId);
       const eff = subscriptionEffectiveStatus(sub);
-      return { sub, custName: cust?.name ?? sub.customerId, pkgName: pkg?.name ?? sub.packageId, eff };
+      const veh = sub.vehicleId ? vehicles.find((v) => v.id === sub.vehicleId) : undefined;
+      const vehicleLabel = veh
+        ? `${veh.registrationNumber} · ${veh.make} ${veh.model}`
+        : sub.vehicleId
+          ? sub.vehicleId
+          : "Customer-wide (legacy)";
+      return {
+        sub,
+        custName: cust?.name ?? sub.customerId,
+        pkgName: pkg?.name ?? sub.packageId,
+        eff,
+        vehicleLabel,
+      };
     });
-  }, [subscriptions, customers, packages, subscriptionEffectiveStatus]);
+  }, [subscriptions, customers, packages, subscriptionEffectiveStatus, vehicles]);
 
   const setTab = (v: string) => {
     const t = v as TabValue;
@@ -322,8 +354,7 @@ export function MembershipPageClient() {
               <CardHeader>
                 <CardTitle className="text-lg">Activate membership</CardTitle>
                 <CardDescription>
-                  One active membership per customer at a time (demo). Start date optional — defaults
-                  to today.
+                  One active pass per vehicle per customer (demo). Start date optional — defaults to today.
                 </CardDescription>
               </CardHeader>
               <CardContent className="grid gap-4 sm:max-w-lg">
@@ -342,6 +373,31 @@ export function MembershipPageClient() {
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Vehicle</Label>
+                  <Select
+                    value={assignVehicleId || "none"}
+                    onValueChange={(v) => setAssignVehicleId(v === "none" ? "" : v)}
+                    disabled={!assignCustomerId}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder={assignCustomerId ? "Select vehicle" : "Pick customer first"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Select vehicle</SelectItem>
+                      {customerVehiclesForAssign.map((v) => (
+                        <SelectItem key={v.id} value={v.id}>
+                          {v.registrationNumber} · {v.make} {v.model}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {assignCustomerId && customerVehiclesForAssign.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">
+                      No vehicles on file — add one from the customer profile first.
+                    </p>
+                  ) : null}
                 </div>
                 <div className="space-y-2">
                   <Label>Package</Label>
@@ -388,6 +444,7 @@ export function MembershipPageClient() {
                   <thead>
                     <tr className="border-b border-border text-left text-xs font-medium uppercase text-muted-foreground">
                       <th className="px-2 py-2">Customer</th>
+                      <th className="px-2 py-2">Vehicle</th>
                       <th className="px-2 py-2">Package</th>
                       <th className="px-2 py-2">Valid through</th>
                       <th className="px-2 py-2">Status</th>
@@ -395,9 +452,10 @@ export function MembershipPageClient() {
                     </tr>
                   </thead>
                   <tbody>
-                    {subsWithLabels.map(({ sub, custName, pkgName, eff }) => (
+                    {subsWithLabels.map(({ sub, custName, pkgName, eff, vehicleLabel }) => (
                       <tr key={sub.id} className="border-b border-border/80">
                         <td className="px-2 py-2">{custName}</td>
+                        <td className="px-2 py-2 text-xs text-muted-foreground max-w-[200px]">{vehicleLabel}</td>
                         <td className="px-2 py-2">{pkgName}</td>
                         <td className="px-2 py-2 tabular-nums">{formatDate(sub.endDate)}</td>
                         <td className="px-2 py-2">

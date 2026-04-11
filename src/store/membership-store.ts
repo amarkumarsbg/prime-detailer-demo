@@ -6,6 +6,7 @@ import type {
   CustomerMembership,
   CustomerMembershipStatus,
   MembershipPackage,
+  MembershipServiceUsage,
   MembershipTier,
 } from "@/types";
 
@@ -65,6 +66,15 @@ function seedPackages(): MembershipPackage[] {
   ];
 }
 
+function subscriptionKey(vehicleId: string | undefined): string {
+  return vehicleId ?? "__legacy__";
+}
+
+function isSubscriptionActiveNow(sub: CustomerMembership): boolean {
+  if (sub.status !== "ACTIVE") return false;
+  return new Date(sub.endDate).getTime() >= Date.now();
+}
+
 interface MembershipState {
   packages: MembershipPackage[];
   subscriptions: CustomerMembership[];
@@ -76,9 +86,20 @@ interface MembershipState {
     packageId: string;
     startDate?: string;
     notes?: string;
+    vehicleId?: string;
   }) => { ok: true; id: string } | { ok: false; error: string };
   cancelMembership: (id: string) => void;
-  getActiveMembership: (customerId: string) => CustomerMembership | undefined;
+  /** Active membership for a customer; pass vehicleId to prefer a vehicle-scoped pass (legacy rows without vehicleId still match any vehicle). */
+  getActiveMembership: (
+    customerId: string,
+    vehicleId?: string | null
+  ) => CustomerMembership | undefined;
+  recordMembershipUsages: (
+    subscriptionId: string,
+    entries: Omit<MembershipServiceUsage, "usedAt">[]
+  ) => void;
+  /** Included services already redeemed at least once in this subscription window. */
+  getUsedIncludedServiceIds: (sub: CustomerMembership) => Set<string>;
   /** Mark past endDate as EXPIRED (read-time normalization). */
   subscriptionEffectiveStatus: (sub: CustomerMembership) => CustomerMembershipStatus;
 }
@@ -123,15 +144,17 @@ export const useMembershipStore = create<MembershipState>()(
         const days = MEMBERSHIP_TIER_DAYS[pkg.tier];
         const endDate = addDays(start, days);
 
-        const activeForCustomer = get().subscriptions.filter(
-          (sub) => sub.customerId === input.customerId && sub.status === "ACTIVE"
-        );
-        const now = Date.now();
-        const stillActive = activeForCustomer.some((sub) => new Date(sub.endDate).getTime() >= now);
-        if (stillActive) {
+        const wantKey = subscriptionKey(input.vehicleId);
+        const conflict = get().subscriptions.some((sub) => {
+          if (sub.customerId !== input.customerId || !isSubscriptionActiveNow(sub)) return false;
+          return subscriptionKey(sub.vehicleId) === wantKey;
+        });
+        if (conflict) {
           return {
             ok: false,
-            error: "Customer already has an active membership. Cancel it first.",
+            error: input.vehicleId
+              ? "This vehicle already has an active membership. Cancel it first."
+              : "Customer already has an active membership. Cancel it first.",
           };
         }
 
@@ -143,6 +166,8 @@ export const useMembershipStore = create<MembershipState>()(
           endDate,
           status: "ACTIVE",
           notes: input.notes,
+          vehicleId: input.vehicleId,
+          usageHistory: [],
         };
 
         set((s) => ({ subscriptions: [sub, ...s.subscriptions] }));
@@ -156,11 +181,44 @@ export const useMembershipStore = create<MembershipState>()(
           ),
         })),
 
-      getActiveMembership: (customerId) => {
-        const now = Date.now();
-        return get()
-          .subscriptions.filter((s) => s.customerId === customerId && s.status === "ACTIVE")
-          .find((s) => new Date(s.endDate).getTime() >= now);
+      getActiveMembership: (customerId, vehicleId) => {
+        const active = get().subscriptions.filter(
+          (s) => s.customerId === customerId && isSubscriptionActiveNow(s)
+        );
+        if (vehicleId) {
+          const exact = active.find((s) => s.vehicleId === vehicleId);
+          if (exact) return exact;
+          return active.find((s) => !s.vehicleId);
+        }
+        return active[0];
+      },
+
+      recordMembershipUsages: (subscriptionId, entries) => {
+        if (entries.length === 0) return;
+        const usedAt = new Date().toISOString();
+        set((s) => ({
+          subscriptions: s.subscriptions.map((sub) =>
+            sub.id === subscriptionId
+              ? {
+                  ...sub,
+                  usageHistory: [
+                    ...(sub.usageHistory ?? []),
+                    ...entries.map((e) => ({
+                      ...e,
+                      usedAt,
+                    })),
+                  ],
+                }
+              : sub
+          ),
+        }));
+      },
+
+      getUsedIncludedServiceIds: (sub) => {
+        const hist = sub.usageHistory ?? [];
+        const used = new Set<string>();
+        for (const u of hist) used.add(u.serviceCatalogId);
+        return used;
       },
 
       subscriptionEffectiveStatus: (sub) => {

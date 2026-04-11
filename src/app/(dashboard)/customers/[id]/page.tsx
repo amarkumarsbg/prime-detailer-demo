@@ -136,25 +136,72 @@ export default function CustomerDetailPage() {
 
   const membershipSubscriptions = useMembershipStore((s) => s.subscriptions);
   const packages = useMembershipStore((s) => s.packages);
+  const getActiveMembership = useMembershipStore((s) => s.getActiveMembership);
+  const subscriptionEffectiveStatus = useMembershipStore((s) => s.subscriptionEffectiveStatus);
   const catalog = useServiceCatalogStore((s) => s.catalog);
-  const activeMembership = useMemo(() => {
+  const serviceNameByCatalogId = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const s of catalog) m.set(s.id, s.name);
+    return m;
+  }, [catalog]);
+
+  const activeMembershipByVehicle = useMemo(() => {
+    if (!customer) return [];
+    return customerVehicles
+      .map((v) => {
+        const sub = getActiveMembership(customer.id, v.id);
+        if (!sub) return null;
+        const pkg = packages.find((p) => p.id === sub.packageId);
+        if (!pkg) return null;
+        const ms = new Date(sub.endDate).getTime() - Date.now();
+        const daysLeft = Math.ceil(ms / (24 * 60 * 60 * 1000));
+        return { vehicle: v, sub, pkg, daysLeft };
+      })
+      .filter((x): x is NonNullable<typeof x> => x != null);
+  }, [customer, customerVehicles, getActiveMembership, membershipSubscriptions, packages]);
+
+  const legacyActiveMembership = useMemo(() => {
     if (!customer) return undefined;
-    return useMembershipStore.getState().getActiveMembership(customer.id);
-  }, [customer, membershipSubscriptions]);
-  const membershipPackage = useMemo(
-    () => packages.find((p) => p.id === activeMembership?.packageId),
-    [packages, activeMembership?.packageId]
+    return membershipSubscriptions.find(
+      (s) =>
+        s.customerId === customer.id &&
+        !s.vehicleId &&
+        subscriptionEffectiveStatus(s) === "ACTIVE"
+    );
+  }, [customer, membershipSubscriptions, subscriptionEffectiveStatus]);
+
+  const legacyMembershipPackage = useMemo(
+    () => packages.find((p) => p.id === legacyActiveMembership?.packageId),
+    [packages, legacyActiveMembership?.packageId]
   );
-  const membershipServiceNames = useMemo(() => {
-    if (!membershipPackage) return [];
-    const byId = new Map(catalog.map((s) => [s.id, s.name]));
-    return membershipPackage.includedServiceIds.map((sid) => byId.get(sid) ?? sid);
-  }, [membershipPackage, catalog]);
-  const membershipDaysLeft = useMemo(() => {
-    if (!activeMembership) return null;
-    const ms = new Date(activeMembership.endDate).getTime() - Date.now();
-    return Math.ceil(ms / (24 * 60 * 60 * 1000));
-  }, [activeMembership]);
+
+  const membershipHistoryLines = useMemo(() => {
+    if (!customer) return [];
+    type Line = {
+      usedAt: string;
+      serviceName: string;
+      vehicleLabel: string;
+      jobCardId?: string;
+    };
+    const lines: Line[] = [];
+    for (const sub of membershipSubscriptions.filter((s) => s.customerId === customer.id)) {
+      const veh = sub.vehicleId ? vehicleList.find((x) => x.id === sub.vehicleId) : undefined;
+      const vehicleLabel = veh
+        ? `${veh.registrationNumber} (${veh.make} ${veh.model})`
+        : sub.vehicleId
+          ? sub.vehicleId
+          : "Customer-wide";
+      for (const u of sub.usageHistory ?? []) {
+        lines.push({
+          usedAt: u.usedAt,
+          serviceName: u.serviceName ?? serviceNameByCatalogId.get(u.serviceCatalogId) ?? u.serviceCatalogId,
+          vehicleLabel,
+          jobCardId: u.jobCardId,
+        });
+      }
+    }
+    return lines.sort((a, b) => new Date(b.usedAt).getTime() - new Date(a.usedAt).getTime());
+  }, [customer, membershipSubscriptions, vehicleList, serviceNameByCatalogId]);
 
   const referralCount = useMemo(() => {
     return allCustomers.filter((c) => c.referredBy === customer?.referralCode).length;
@@ -499,6 +546,8 @@ export default function CustomerDetailPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   {customerVehicles.map((vehicle: Vehicle) => {
                     const transferTag = getTransferTagForCustomer(vehicle, id);
+                    const vehicleHasMembership =
+                      customer != null && getActiveMembership(customer.id, vehicle.id) != null;
                     return (
                       <Link
                         key={vehicle.id}
@@ -528,6 +577,15 @@ export default function CustomerDetailPage() {
                                   ) : null}
                                 </p>
                                 <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                                  {vehicleHasMembership ? (
+                                    <Badge
+                                      variant="default"
+                                      className="gap-1 bg-violet-600 font-medium hover:bg-violet-600"
+                                    >
+                                      <Crown className="h-3 w-3" />
+                                      Membership
+                                    </Badge>
+                                  ) : null}
                                   <Badge variant="secondary" className="font-medium">
                                     {vehicle.fuelType}
                                   </Badge>
@@ -761,62 +819,117 @@ export default function CustomerDetailPage() {
                 <Link href="/membership?tab=assign">Manage in Membership</Link>
               </Button>
             </CardHeader>
-            <CardContent>
-              {!activeMembership || !membershipPackage ? (
+            <CardContent className="space-y-6">
+              {activeMembershipByVehicle.length === 0 && !legacyActiveMembership ? (
                 <p className="text-sm text-muted-foreground text-center py-8">
-                  No active membership. Assign a package from the Membership page.
+                  No active membership on any vehicle. Assign a package from the Membership page (link a pass to a
+                  vehicle).
                 </p>
               ) : (
                 <div className="space-y-4">
-                  {membershipDaysLeft != null && membershipDaysLeft <= 7 && membershipDaysLeft >= 0 && (
-                    <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
-                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-                      <span>
-                        Expires in {membershipDaysLeft} day
-                        {membershipDaysLeft === 1 ? "" : "s"} — renew or extend from Membership.
-                      </span>
+                  {activeMembershipByVehicle.map(({ vehicle, sub, pkg, daysLeft }) => (
+                    <div
+                      key={sub.id}
+                      className="rounded-xl border border-violet-200/80 bg-violet-50/40 p-4 dark:border-violet-900/50 dark:bg-violet-950/25"
+                    >
+                      <p className="text-xs font-medium uppercase tracking-wide text-violet-700 dark:text-violet-300">
+                        Vehicle
+                      </p>
+                      <p className="font-mono text-base font-semibold">{vehicle.registrationNumber}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {vehicle.make} {vehicle.model}
+                      </p>
+                      {daysLeft <= 7 && daysLeft >= 0 && (
+                        <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
+                          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+                          <span>
+                            Expires in {daysLeft} day{daysLeft === 1 ? "" : "s"} — renew from Membership.
+                          </span>
+                        </div>
+                      )}
+                      <div className="mt-3">
+                        <p className="text-sm text-muted-foreground">Package</p>
+                        <p className="font-semibold">{pkg.name}</p>
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <Badge variant="secondary">{pkg.tier}</Badge>
+                        <span className="text-xs text-muted-foreground self-center">
+                          {MEMBERSHIP_TIER_DAYS[pkg.tier]} days window
+                        </span>
+                      </div>
+                      <div className="mt-3 grid gap-1 sm:grid-cols-2">
+                        <div>
+                          <p className="text-xs text-muted-foreground">Valid from</p>
+                          <p className="text-sm font-medium tabular-nums">{formatDate(sub.startDate)}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Valid until</p>
+                          <p className="text-sm font-medium tabular-nums">{formatDate(sub.endDate)}</p>
+                        </div>
+                      </div>
+                      <div className="mt-3">
+                        <p className="text-xs text-muted-foreground mb-1">List price (demo)</p>
+                        <p className="text-sm font-medium tabular-nums">{formatInrFull(pkg.price)}</p>
+                      </div>
+                      <div className="mt-3">
+                        <p className="text-sm font-medium mb-2">Included services</p>
+                        <ul className="list-inside list-disc text-sm text-muted-foreground space-y-1">
+                          {pkg.includedServiceIds.map((sid) => (
+                            <li key={sid}>{serviceNameByCatalogId.get(sid) ?? sid}</li>
+                          ))}
+                        </ul>
+                      </div>
                     </div>
-                  )}
-                  <div>
-                    <p className="text-sm text-muted-foreground">Package</p>
-                    <p className="font-semibold">{membershipPackage.name}</p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Badge variant="secondary">{membershipPackage.tier}</Badge>
-                    <span className="text-xs text-muted-foreground self-center">
-                      {MEMBERSHIP_TIER_DAYS[membershipPackage.tier]} days window
-                    </span>
-                  </div>
-                  <div className="grid gap-1 sm:grid-cols-2">
-                    <div>
-                      <p className="text-xs text-muted-foreground">Valid from</p>
-                      <p className="text-sm font-medium tabular-nums">
-                        {formatDate(activeMembership.startDate)}
+                  ))}
+                  {legacyActiveMembership && legacyMembershipPackage ? (
+                    <div className="rounded-xl border border-border bg-muted/30 p-4">
+                      <Badge variant="outline" className="mb-2">
+                        Customer-wide (legacy)
+                      </Badge>
+                      <p className="font-semibold">{legacyMembershipPackage.name}</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Valid until {formatDate(legacyActiveMembership.endDate)}
                       </p>
                     </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Valid until</p>
-                      <p className="text-sm font-medium tabular-nums">
-                        {formatDate(activeMembership.endDate)}
-                      </p>
-                    </div>
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground mb-1">List price (demo)</p>
-                    <p className="text-sm font-medium tabular-nums">
-                      {formatInrFull(membershipPackage.price)}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium mb-2">Included services</p>
-                    <ul className="list-inside list-disc text-sm text-muted-foreground space-y-1">
-                      {membershipServiceNames.map((n) => (
-                        <li key={n}>{n}</li>
-                      ))}
-                    </ul>
-                  </div>
+                  ) : null}
                 </div>
               )}
+              <div>
+                <p className="text-sm font-semibold mb-2">Full membership usage history</p>
+                {membershipHistoryLines.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No recorded redemptions yet.</p>
+                ) : (
+                  <ul className="max-h-64 space-y-2 overflow-y-auto text-sm">
+                    {membershipHistoryLines.map((line, idx) => (
+                      <li
+                        key={`${line.usedAt}-${line.serviceName}-${idx}`}
+                        className="flex flex-col gap-0.5 rounded-md border border-border/60 px-3 py-2"
+                      >
+                        <span className="font-medium">{line.serviceName}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {line.vehicleLabel} ·{" "}
+                          {new Date(line.usedAt).toLocaleString(undefined, {
+                            day: "numeric",
+                            month: "short",
+                            year: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                          {line.jobCardId ? (
+                            <>
+                              {" "}
+                              ·{" "}
+                              <Link href={`/job-cards/${line.jobCardId}`} className="text-primary underline">
+                                Job
+                              </Link>
+                            </>
+                          ) : null}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
