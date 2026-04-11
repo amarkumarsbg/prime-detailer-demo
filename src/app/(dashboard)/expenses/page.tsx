@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { format } from "date-fns";
 import { PageHeader } from "@/components/shared/page-header";
 import { DataTable } from "@/components/shared/data-table";
@@ -122,7 +123,10 @@ function exportCsv(rows: Expense[]) {
   toast.success("Export started.");
 }
 
-export default function ExpensesPage() {
+function ExpensesPageContent() {
+  const searchParams = useSearchParams();
+  const highlight = searchParams.get("highlight")?.trim() ?? "";
+
   const expenses = useExpenseStore((s) => s.expenses);
   const customCategories = useExpenseStore((s) => s.customCategories);
   const removeExpense = useExpenseStore((s) => s.removeExpense);
@@ -138,6 +142,14 @@ export default function ExpensesPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [compareOn, setCompareOn] = useState(false);
   const [fullViewOn, setFullViewOn] = useState(false);
+
+  useEffect(() => {
+    if (!highlight) return;
+    setDateFilter({ kind: "preset", preset: "all" });
+    setBranchFilter("all");
+    setCategoryFilter("all");
+    setStatusFilter("all");
+  }, [highlight]);
 
   const categoryOptions = useMemo(() => {
     const set = new Set<string>();
@@ -427,6 +439,8 @@ export default function ExpensesPage() {
         <DataTable
           data={scoped}
           columns={columns}
+          focusItemId={highlight || undefined}
+          getRowDomId={(item) => `expense-row-${(item as Expense).id}`}
           searchPlaceholder="Search expenses..."
           searchKeys={["title", "category", "vendorName"]}
           searchMatch={(item, q) => {
@@ -482,5 +496,17 @@ export default function ExpensesPage() {
 
       <AddExpenseDialog open={dialogOpen} onOpenChange={setDialogOpen} />
     </div>
+  );
+}
+
+export default function ExpensesPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="p-6 text-sm text-muted-foreground">Loading expenses…</div>
+      }
+    >
+      <ExpensesPageContent />
+    </Suspense>
   );
 }

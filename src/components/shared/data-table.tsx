@@ -27,6 +27,10 @@ interface DataTableProps<T> {
   actions?: React.ReactNode;
   /** Hide built-in search (use when search lives in an external filter bar). */
   hideSearch?: boolean;
+  /** When set, row elements get this DOM `id` (e.g. `/expenses?highlight=` scroll). */
+  getRowDomId?: (item: T) => string | undefined;
+  /** When set with matching `item.id`, jump to that page and scroll the row into view (use with `getRowDomId`). */
+  focusItemId?: string;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -41,6 +45,8 @@ export function DataTable<T extends Record<string, any>>({
   renderMobileCard,
   actions,
   hideSearch = false,
+  getRowDomId,
+  focusItemId,
 }: DataTableProps<T>) {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
@@ -80,6 +86,28 @@ export function DataTable<T extends Record<string, any>>({
     });
   }, [filtered, sortKey, sortDir]);
 
+  useEffect(() => {
+    if (!focusItemId) return;
+    const idx = sorted.findIndex(
+      (item) => String((item as T & { id?: string }).id) === focusItemId
+    );
+    if (idx >= 0) setPage(Math.floor(idx / pageSize));
+  }, [focusItemId, sorted, pageSize]);
+
+  useEffect(() => {
+    if (!focusItemId || !getRowDomId) return;
+    const item = sorted.find(
+      (i) => String((i as T & { id?: string }).id) === focusItemId
+    );
+    if (!item) return;
+    const domId = getRowDomId(item);
+    if (!domId) return;
+    const t = window.setTimeout(() => {
+      document.getElementById(domId)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 120);
+    return () => window.clearTimeout(t);
+  }, [focusItemId, page, sorted, getRowDomId]);
+
   const totalPages = Math.ceil(sorted.length / pageSize);
   const paged = sorted.slice(page * pageSize, (page + 1) * pageSize);
 
@@ -118,9 +146,11 @@ export function DataTable<T extends Record<string, any>>({
             ) : (
               paged.map((item, i) => {
                 const rowKey = String((item as T & { id?: string }).id ?? `${page}-${i}`);
+                const domId = getRowDomId?.(item);
                 return (
                   <div
                     key={rowKey}
+                    id={domId}
                     role={onRowClick ? "button" : undefined}
                     tabIndex={onRowClick ? 0 : undefined}
                     onClick={() => onRowClick?.(item)}
@@ -171,9 +201,11 @@ export function DataTable<T extends Record<string, any>>({
                 paged.map((item, i) => {
                   const rowKey = String((item as T & { id?: string }).id ?? i);
                   const clickable = Boolean(onRowClick);
+                  const domId = getRowDomId?.(item);
                   return (
                     <tr
                       key={rowKey}
+                      id={domId}
                       role={clickable ? "button" : undefined}
                       tabIndex={clickable ? 0 : undefined}
                       className={

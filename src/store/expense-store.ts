@@ -37,6 +37,8 @@ interface ExpenseStore {
   vendorDirectory: ExpenseVendorProfile[];
   addExpense: (input: AddExpenseInput) => Expense;
   removeExpense: (id: string) => void;
+  /** Merge updates into an expense row (e.g. record vendor payment). */
+  updateExpense: (id: string, updates: Partial<Expense>) => boolean;
   addCustomCategory: (label: string, description?: string) => void;
   addVendorSuggestion: (name: string) => void;
   addVendorDirectoryEntry: (input: AddVendorDirectoryInput) => ExpenseVendorProfile | null;
@@ -44,7 +46,7 @@ interface ExpenseStore {
 
 export const useExpenseStore = create<ExpenseStore>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       expenses: seedExpenses.map((e) => ({ ...e })),
       customCategories: [] as string[],
       categoryDescriptions: {} as Record<string, string>,
@@ -108,6 +110,15 @@ export const useExpenseStore = create<ExpenseStore>()(
         set((state) => ({
           expenses: state.expenses.filter((e) => e.id !== id),
         })),
+
+      updateExpense: (id, updates) => {
+        const exists = get().expenses.some((e) => e.id === id);
+        if (!exists) return false;
+        set((state) => ({
+          expenses: state.expenses.map((e) => (e.id === id ? { ...e, ...updates } : e)),
+        }));
+        return true;
+      },
 
       addExpense: (input) => {
         const now = new Date().toISOString();

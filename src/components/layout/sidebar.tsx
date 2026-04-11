@@ -43,6 +43,7 @@ import {
   Building2,
   Landmark,
   Crown,
+  BookMarked,
 } from "lucide-react";
 
 type NavItem = {
@@ -105,6 +106,12 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
         label: "Cash & Bank",
         href: "/cash-bank",
         icon: Landmark,
+        roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER", "MANAGER", "RECEPTIONIST"],
+      },
+      {
+        label: "Shared Ledger",
+        href: "/shared-ledger",
+        icon: BookMarked,
         roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER", "MANAGER", "RECEPTIONIST"],
       },
       {
